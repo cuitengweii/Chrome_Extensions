@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Locale Shield Settings</title>
+  <link rel="stylesheet" href="options.css">
+</head>
+<body>
+  <main class="page-shell">
+    <section class="hero">
+      <div>
+        <p class="eyebrow">Locale Shield</p>
+        <h1>Profile, allowlist, and verification</h1>
+        <p class="hero-copy">This extension only masks front-end signals. Your real IP region still comes from the VPN, proxy, or network exit you choose outside the extension.</p>
+      </div>
+      <div class="hero-actions">
+        <button id="saveSettings" class="primary-button" type="button">Save settings</button>
+        <button id="verifyNetwork" class="secondary-button" type="button">Run network check</button>
+      </div>
+    </section>
+
+    <section class="layout-grid">
+      <article class="panel">
+        <h2>Location profile</h2>
+        <div class="field-grid">
+          <label>
+            Profile label
+            <input id="profileLabel" type="text" placeholder="Hong Kong (Sample)">
+          </label>
+          <label>
+            Timezone
+            <input id="profileTimezone" type="text" placeholder="Asia/Hong_Kong">
+          </label>
+          <label>
+            Latitude
+            <input id="profileLatitude" type="number" step="0.000001">
+          </label>
+          <label>
+            Longitude
+            <input id="profileLongitude" type="number" step="0.000001">
+          </label>
+          <label>
+            Accuracy (meters)
+            <input id="profileAccuracy" type="number" step="1" min="1">
+          </label>
+          <label>
+            Locale
+            <input id="profileLocale" type="text" placeholder="zh-CN">
+          </label>
+          <label class="full-width">
+            Languages
+            <textarea id="profileLanguages" placeholder="One locale per line"></textarea>
+          </label>
+        </div>
+      </article>
+
+      <article class="panel">
+        <h2>Allowlist</h2>
+        <label>
+          Hostnames
+          <textarea id="allowlistDomains" placeholder="channels.weixin.qq.com&#10;example.com"></textarea>
+        </label>
+        <p class="helper-copy">Use exact hostnames. Save will request host access for any newly added entries.</p>
+
+        <h2>Feature toggles</h2>
+        <div class="toggle-list">
+          <label class="toggle-row">
+            <input id="toggleGeolocation" type="checkbox">
+            <span>Mask geolocation coordinates</span>
+          </label>
+          <label class="toggle-row">
+            <input id="toggleTimezone" type="checkbox">
+            <span>Mask timezone and locale formatting</span>
+          </label>
+          <label class="toggle-row">
+            <input id="toggleLanguages" type="checkbox">
+            <span>Mask navigator language values</span>
+          </label>
+          <label class="toggle-row">
+            <input id="toggleWebrtc" type="checkbox">
+            <span>Restrict non-proxied WebRTC traffic</span>
+          </label>
+        </div>
+      </article>
+
+      <article class="panel verification-panel">
+        <h2>Network verification</h2>
+        <div class="verification-grid">
+          <div>
+            <span class="meta-label">Status</span>
+            <strong id="verificationStatus">Unverified</strong>
+          </div>
+          <div>
+            <span class="meta-label">Last check</span>
+            <strong id="verificationTime">Never</strong>
+          </div>
+          <div>
+            <span class="meta-label">Public IP</span>
+            <strong id="verificationIp">Unknown</strong>
+          </div>
+          <div>
+            <span class="meta-label">Observed region</span>
+            <strong id="verificationRegion">Unknown</strong>
+          </div>
+          <div>
+            <span class="meta-label">Observed timezone</span>
+            <strong id="verificationTimezone">Unknown</strong>
+          </div>
+          <div>
+            <span class="meta-label">Provider</span>
+            <strong id="verificationProvider">None</strong>
+          </div>
+        </div>
+        <p id="verificationNote" class="helper-copy">Run the check after your VPN or proxy is connected.</p>
+      </article>
+    </section>
+
+    <section class="status-bar">
+      <span id="formStatus">Ready.</span>
+    </section>
+  </main>
+  <script type="module" src="options.js"></script>
+</body>
+</html>

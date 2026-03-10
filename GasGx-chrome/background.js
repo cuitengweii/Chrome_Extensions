@@ -7,6 +7,7 @@ import { SUPABASE_CONFIG } from "./supabase-config.js";
 
 const LOG_PREFIX = "[GasGx Collector]";
 const DEBUGGER_VERSION = "1.3";
+const FALLBACK_QUEUE_TABLE = "scrape_queue";
 
 async function getCollectorSettings() {
   const data = await chrome.storage.local.get([COLLECTOR_SETTINGS_KEY]);
@@ -116,8 +117,50 @@ async function saveSocialPost(payload) {
     synced_at_utc: new Date().toISOString()
   };
 
+  const primaryResult = await insertRowsToTable({
+    table: SUPABASE_CONFIG.table,
+    onConflict: SUPABASE_CONFIG.onConflict,
+    rows: [row]
+  });
+  if (primaryResult.ok) return primaryResult;
+
+  const primaryError = String(primaryResult.error || "");
+  const missingPrimaryTable = primaryError.includes("Could not find the table") || primaryError.includes("PGRST205");
+  if (!missingPrimaryTable) {
+    return primaryResult;
+  }
+
+  console.warn(`${LOG_PREFIX} Primary table unavailable, falling back to ${FALLBACK_QUEUE_TABLE}:`, primaryError);
+  const queuePayload = buildScrapeQueuePayload(payload, postUrl, defaultPublisher);
+  const queueResult = await insertRowsToTable({
+    table: FALLBACK_QUEUE_TABLE,
+    rows: [queuePayload]
+  });
+  if (queueResult.ok) return queueResult;
+
+  return queueResult;
+}
+
+function buildScrapeQueuePayload(payload, postUrl, publisher) {
+  const category = String(payload?.category || "").trim();
+  const secondaryTag = String(payload?.author || "").trim();
+  return {
+    link: postUrl,
+    category,
+    publisher: String(publisher || "").trim(),
+    tag_choice: category,
+    secondary_tag: secondaryTag,
+    status: "pending",
+    summary: String(payload?.snippet || "").trim().slice(0, 1000),
+    subtitle: String(payload?.title || "").trim().slice(0, 500),
+    source_note: String(payload?.platform || "").trim(),
+    submitted_at: new Date().toISOString()
+  };
+}
+
+async function insertRowsToTable({ table, onConflict = "", rows }) {
   const requestUrl =
-    `${SUPABASE_CONFIG.url}/rest/v1/${encodeURIComponent(SUPABASE_CONFIG.table)}?on_conflict=${encodeURIComponent(SUPABASE_CONFIG.onConflict)}`;
+    `${SUPABASE_CONFIG.url}/rest/v1/${encodeURIComponent(table)}${onConflict ? `?on_conflict=${encodeURIComponent(onConflict)}` : ""}`;
 
   const response = await fetch(requestUrl, {
     method: "POST",
@@ -127,7 +170,7 @@ async function saveSocialPost(payload) {
       "Content-Type": "application/json",
       Prefer: "resolution=merge-duplicates,return=representation"
     },
-    body: JSON.stringify([row])
+    body: JSON.stringify(rows || [])
   });
 
   if (!response.ok) {

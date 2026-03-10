@@ -23,7 +23,10 @@ const DEFAULT_LINKEDIN_CONTROL_MENU_TRIGGER_SELECTORS = Object.freeze([
 const DEFAULT_LINKEDIN_COPY_LINK_MENU_ITEM_SELECTORS = Object.freeze([
   "[data-view-name='feed-control-menu-copy-link']",
   "[data-view-name*='copy-link']",
-  "[role='menuitem'][data-view-name*='copy-link']"
+  "[role='menuitem'][data-view-name*='copy-link']",
+  "[data-view-name*='copy'][role='menuitem']",
+  "[role='menuitem'][data-view-name*='copy']",
+  "[role='menuitem']"
 ]);
 
 const DEFAULT_X_ACTION_BAR_SELECTORS = Object.freeze([

@@ -1,7 +1,16 @@
 const INJECTED_FLAG = "data-gasgx-save-injected";
 const CATEGORY_PICKER_CLASS = "gasgx-category-picker";
 const FALLBACK_CATEGORY_OPTIONS = ["Insights", "Mining", "Gas Energy", "Events", "Generators", "Data"];
-const LINKEDIN_COPY_LINK_LABELS = ["Copy link", "Copy post link", "Copy post URL", "Copy article link"];
+const LINKEDIN_COPY_LINK_LABELS = [
+  "Copy link",
+  "Copy post link",
+  "Copy post URL",
+  "Copy article link",
+  "复制链接",
+  "复制动态链接",
+  "复制帖子链接",
+  "复制文章链接"
+];
 const LOG_PREFIX = "[GasGx Collector]";
 
 let categoryOptions = [...FALLBACK_CATEGORY_OPTIONS];
@@ -40,6 +49,11 @@ function detectPlatform() {
 
 function normalizeText(text) {
   return String(text || "").replace(/\s+/g, " ").trim();
+}
+
+function getElementLabel(element) {
+  if (!(element instanceof HTMLElement)) return "";
+  return normalizeText(element.innerText || element.textContent || element.getAttribute("aria-label") || "");
 }
 
 function unique(values) {
@@ -166,18 +180,67 @@ async function debuggerClickElement(element, purpose) {
   await debuggerClickPoint(rect.left + rect.width / 2, rect.top + rect.height / 2, purpose);
 }
 
+function getVisibleLinkedInMenuItems(rule) {
+  const menuSelectors = unique([
+    "[role='menu']",
+    ".artdeco-dropdown__content",
+    ".artdeco-dropdown__content-inner",
+    "[data-view-name*='feed-control-menu']"
+  ]);
+  const itemSelectors = unique([
+    ...(rule?.copyLinkMenuItemSelectors || []),
+    "[data-view-name='feed-control-menu-copy-link']",
+    "[data-view-name*='copy-link']",
+    "[data-view-name*='copy'][role='menuitem']",
+    "[role='menuitem'][data-view-name*='copy']",
+    "[role='menuitem']",
+    "button",
+    "a",
+    "li"
+  ]);
+  const seen = new Set();
+  const items = [];
+
+  for (const menuSelector of menuSelectors) {
+    const menus = [...document.querySelectorAll(menuSelector)]
+      .filter((node) => node instanceof HTMLElement && isVisibleElement(node));
+    for (const menu of menus) {
+      for (const itemSelector of itemSelectors) {
+        const found = [...menu.querySelectorAll(itemSelector)]
+          .filter((node) => node instanceof HTMLElement && isVisibleElement(node));
+        for (const node of found) {
+          const target = node.closest("button, a, [role='menuitem'], li, div") || node;
+          const key = `${target.tagName}:${getElementLabel(target)}:${Math.round(target.getBoundingClientRect().top)}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          items.push(target);
+        }
+      }
+    }
+  }
+
+  return items;
+}
+
 function findVisibleLinkedInCopyLinkItem(rule) {
-  for (const selector of unique(rule?.copyLinkMenuItemSelectors)) {
-    const node = [...document.querySelectorAll(selector)]
-      .find((item) => item instanceof HTMLElement && isVisibleElement(item));
-    if (node) return node.closest("button, a, [role='menuitem'], li, div") || node;
+  const visibleItems = getVisibleLinkedInMenuItems(rule);
+  const matched = visibleItems.find((item) => {
+    const label = getElementLabel(item).toLowerCase();
+    const aria = normalizeText(item.getAttribute("aria-label")).toLowerCase();
+    return LINKEDIN_COPY_LINK_LABELS.some((keyword) => label.includes(keyword.toLowerCase()) || aria.includes(keyword.toLowerCase()));
+  });
+  if (matched) return matched;
+
+  if (visibleItems.length >= 2) {
+    console.info(`${LOG_PREFIX} Using second visible LinkedIn menu item fallback`, visibleItems.map((item) => getElementLabel(item)));
+    return visibleItems[1];
   }
 
   const fallback = [...document.querySelectorAll("button, a, [role='menuitem'], li, p, span, div")]
     .find((node) => (
       node instanceof HTMLElement &&
       isVisibleElement(node) &&
-      LINKEDIN_COPY_LINK_LABELS.some((label) => normalizeText(node.textContent).toLowerCase().includes(label.toLowerCase()))
+      LINKEDIN_COPY_LINK_LABELS.some((label) => getElementLabel(node).toLowerCase().includes(label.toLowerCase()))
     ));
   return fallback ? (fallback.closest("button, a, [role='menuitem'], li, div") || fallback) : null;
 }
@@ -222,7 +285,14 @@ async function extractLinkedInPublicUrlViaCopyLink(postElement, rule) {
   if (!(trigger instanceof HTMLElement)) return existing;
 
   await debuggerClickElement(trigger, "linkedin-menu-trigger");
-  await wait(220);
+  let menuItems = [];
+  const menuDeadline = Date.now() + 1200;
+  while (Date.now() < menuDeadline) {
+    menuItems = getVisibleLinkedInMenuItems(rule);
+    if (menuItems.length) break;
+    await wait(80);
+  }
+  console.info(`${LOG_PREFIX} LinkedIn visible menu item count after trigger click: ${menuItems.length}`, menuItems.map((item) => getElementLabel(item)));
   const menuItem = findVisibleLinkedInCopyLinkItem(rule);
   if (!(menuItem instanceof HTMLElement)) {
     console.warn(`${LOG_PREFIX} LinkedIn copy-link menu item not found`);
@@ -428,10 +498,23 @@ function showCategoryPicker(anchorButton) {
     list.appendChild(option);
   });
 
-  const rect = anchorButton.getBoundingClientRect();
-  picker.style.top = `${window.scrollY + rect.bottom + 8}px`;
-  picker.style.left = `${window.scrollX + Math.max(16, rect.left)}px`;
   document.body.appendChild(picker);
+  const rect = anchorButton.getBoundingClientRect();
+  const pickerRect = picker.getBoundingClientRect();
+  const gap = 8;
+  const viewportPadding = 12;
+  const preferredTop = rect.bottom + gap;
+  const fallbackTop = rect.top - pickerRect.height - gap;
+  const top = fallbackTop >= viewportPadding
+    ? Math.min(preferredTop, window.innerHeight - pickerRect.height - viewportPadding)
+    : Math.min(preferredTop, window.innerHeight - pickerRect.height - viewportPadding);
+  const left = Math.min(
+    Math.max(viewportPadding, rect.left),
+    Math.max(viewportPadding, window.innerWidth - pickerRect.width - viewportPadding)
+  );
+  picker.style.top = `${Math.max(viewportPadding, top)}px`;
+  picker.style.left = `${left}px`;
+  console.info(`${LOG_PREFIX} Category picker opened`);
 
   return new Promise((resolve) => {
     let settled = false;

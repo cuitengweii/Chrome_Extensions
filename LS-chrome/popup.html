@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Locale Shield</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <main class="popup-shell">
+    <section class="hero-card">
+      <div class="hero-copy">
+        <p class="eyebrow">Locale Shield</p>
+        <h1 id="siteLabel">Current tab</h1>
+        <p id="siteSummary" class="hero-summary">Checking the active site.</p>
+      </div>
+      <button id="toggleSite" class="primary-button" type="button">Enable on this site</button>
+    </section>
+
+    <section class="status-grid">
+      <article class="status-card" data-tone="warn">
+        <span class="status-label">Network exit</span>
+        <strong id="networkLabel">Network exit unverified</strong>
+        <p id="networkDetail">Run a verification check after your VPN or proxy is connected.</p>
+      </article>
+
+      <article class="status-card" data-tone="muted">
+        <span class="status-label">Front-end mask</span>
+        <strong id="frontendLabel">Checking current site</strong>
+        <p id="frontendDetail">Waiting for the active tab state.</p>
+      </article>
+
+      <article class="status-card" data-tone="muted">
+        <span class="status-label">Compatibility</span>
+        <strong id="compatibilityLabel">No site report yet</strong>
+        <p id="compatibilityDetail">Reload the page after enabling this hostname.</p>
+      </article>
+    </section>
+
+    <div class="footer-actions">
+      <button id="openOptions" class="secondary-button" type="button">Open settings</button>
+      <span id="popupStatus" class="popup-status">Ready.</span>
+    </div>
+  </main>
+  <script type="module" src="popup.js"></script>
+</body>
+</html>

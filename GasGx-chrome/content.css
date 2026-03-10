@@ -50,7 +50,7 @@
 }
 
 .gasgx-category-picker {
-  position: absolute;
+  position: fixed;
   z-index: 2147483647;
   min-width: 220px;
   max-width: 280px;

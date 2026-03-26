@@ -9,24 +9,23 @@ import {
   extractHostname,
   isSupportedUrl,
   isDomainAllowlisted,
-  buildCompatibilityReport,
   getCompatibilityForHost
 } from "./settings.js";
 
-const LOG_PREFIX = "[Locale Shield]";
+const LOG_PREFIX = "[\u5c5e\u5730\u9690\u79c1\u76fe]";
 const WEBRTC_POLICY = "disable_non_proxied_udp";
 const VERIFICATION_PROVIDERS = [
   {
-    name: "ipapi.co",
-    url: "https://ipapi.co/json/",
+    name: "api.ip.sb",
+    url: "https://api.ip.sb/geoip",
     parse(data) {
-      if (!data || data.error) return null;
+      if (!data) return null;
       return {
-        ip: String(data.ip || "").trim(),
-        city: String(data.city || "").trim(),
-        region: String(data.region || "").trim(),
-        country: String(data.country_name || data.country || "").trim(),
-        timezone: String(data.timezone || "").trim()
+        ip: data.ip,
+        city: data.city,
+        region: data.region,
+        country: data.country,
+        timezone: data.timezone
       };
     }
   },
@@ -36,11 +35,39 @@ const VERIFICATION_PROVIDERS = [
     parse(data) {
       if (!data || data.success === false) return null;
       return {
-        ip: String(data.ip || "").trim(),
+        ip: data.ip,
+        city: data.city,
+        region: data.region,
+        country: data.country,
+        timezone: data.timezone?.id || data.timezone
+      };
+    }
+  },
+  {
+    name: "ipinfo.io",
+    url: "https://ipinfo.io/json",
+    parse(data) {
+      if (!data || data.error) return null;
+      return {
+        ip: data.ip,
+        city: data.city,
+        region: data.region,
+        country: data.country,
+        timezone: data.timezone
+      };
+    }
+  },
+  {
+    name: "ipapi.co",
+    url: "https://ipapi.co/json/",
+    parse(data) {
+      if (!data || data.error) return null;
+      return {
+        ip: data.ip,
         city: String(data.city || "").trim(),
         region: String(data.region || "").trim(),
-        country: String(data.country || "").trim(),
-        timezone: String(data.timezone?.id || data.timezone || "").trim()
+        country: String(data.country_name || data.country || "").trim(),
+        timezone: String(data.timezone || "").trim()
       };
     }
   }
@@ -61,6 +88,68 @@ function createAbortSignal(timeoutMs) {
       clearTimeout(timer);
     }
   };
+}
+
+function trimText(value) {
+  return String(value || "").trim();
+}
+
+function normalizeVerificationSnapshot(snapshot) {
+  if (!snapshot) return null;
+  return {
+    ip: trimText(snapshot.ip),
+    city: trimText(snapshot.city),
+    region: trimText(snapshot.region),
+    country: trimText(snapshot.country),
+    timezone: trimText(snapshot.timezone)
+  };
+}
+
+function isUsableVerificationSnapshot(snapshot) {
+  return Boolean(snapshot?.ip || snapshot?.timezone || snapshot?.city || snapshot?.region || snapshot?.country);
+}
+
+function extractProviderMessage(data) {
+  if (!data || typeof data !== "object") return "";
+  const candidates = [
+    data.message,
+    data.reason,
+    data.error,
+    data.detail,
+    data.description,
+    data.info
+  ];
+  return trimText(candidates.find((value) => typeof value === "string" && value.trim()));
+}
+
+function parseVerificationJson(providerName, text) {
+  try {
+    return JSON.parse(text);
+  } catch (_) {
+    const snippet = trimText(text).slice(0, 120);
+    throw new Error(`${providerName} \u8fd4\u56de\u4e86\u975e JSON \u5185\u5bb9${snippet ? `: ${snippet}` : ""}`);
+  }
+}
+
+function buildVerificationDetailText(snapshot, attempts) {
+  const lines = [];
+  if (snapshot?.provider) {
+    lines.push(`成功来源: ${snapshot.provider}`);
+  }
+  if (snapshot?.ip) {
+    lines.push(`IP: ${snapshot.ip}`);
+  }
+  if (snapshot?.timezone) {
+    lines.push(`时区: ${snapshot.timezone}`);
+  }
+  if (snapshot?.city || snapshot?.region || snapshot?.country) {
+    lines.push(`地区: ${[snapshot.city, snapshot.region, snapshot.country].filter(Boolean).join(", ")}`);
+  }
+  if (attempts?.length) {
+    lines.push("尝试链:");
+    lines.push(...attempts);
+  }
+  return lines.join("\n");
 }
 
 async function readSettings() {
@@ -131,28 +220,28 @@ async function applyWebRtcPolicy(settings) {
 function networkTitle(settings) {
   const { status, timezone, country, region, city } = settings.verification;
   if (status === "verified") {
-    return `Network verified${timezone ? ` (${timezone})` : ""}`;
+    return `\u7f51\u7edc\u5df2\u6821\u9a8c${timezone ? ` (${timezone})` : ""}`;
   }
   if (status === "mismatch") {
-    return `Network mismatch${country || region || city ? ` (${[city, region, country].filter(Boolean).join(", ")})` : ""}`;
+    return `\u7f51\u7edc\u4e0d\u5339\u914d${country || region || city ? ` (${[city, region, country].filter(Boolean).join(", ")})` : ""}`;
   }
   if (status === "error") {
-    return "Network verification failed";
+    return "\u7f51\u7edc\u6821\u9a8c\u5931\u8d25";
   }
-  return "Network exit unverified";
+  return "\u7f51\u7edc\u51fa\u53e3\u672a\u6821\u9a8c";
 }
 
 function compatibilityTitle(report) {
-  if (report.status === "limited") return `Compatibility limited: ${report.message || "bootstrap warning"}`;
-  if (report.status === "enabled") return "Front-end masking enabled";
-  return "Waiting for page reload";
+  if (report.status === "limited") return `\u517c\u5bb9\u6027\u53d7\u9650\uff1a${report.message || "\u542f\u52a8\u6ce8\u5165\u5f02\u5e38"}`;
+  if (report.status === "enabled") return "\u524d\u7aef\u4f2a\u88c5\u5df2\u542f\u7528";
+  return "\u7b49\u5f85\u9875\u9762\u5237\u65b0";
 }
 
 async function updateBadgeForTab(tab, settings = null) {
   if (!tab?.id || !tab.url || !isSupportedUrl(tab.url)) {
     if (tab?.id) {
       await chrome.action.setBadgeText({ tabId: tab.id, text: "" });
-      await chrome.action.setTitle({ tabId: tab.id, title: "Locale Shield" });
+      await chrome.action.setTitle({ tabId: tab.id, title: "\u5c5e\u5730\u9690\u79c1\u76fe" });
     }
     return;
   }
@@ -164,7 +253,7 @@ async function updateBadgeForTab(tab, settings = null) {
 
   if (!enabled) {
     await chrome.action.setBadgeText({ tabId: tab.id, text: "" });
-    await chrome.action.setTitle({ tabId: tab.id, title: "Locale Shield: site not allowlisted" });
+    await chrome.action.setTitle({ tabId: tab.id, title: "\u5c5e\u5730\u9690\u79c1\u76fe\uff1a\u5f53\u524d\u7ad9\u70b9\u672a\u52a0\u5165\u767d\u540d\u5355" });
     return;
   }
 
@@ -179,7 +268,7 @@ async function updateBadgeForTab(tab, settings = null) {
   await chrome.action.setBadgeBackgroundColor({ tabId: tab.id, color });
   await chrome.action.setTitle({
     tabId: tab.id,
-    title: `Locale Shield\n${networkTitle(normalizedSettings)}\n${compatibilityTitle(report)}`
+    title: `\u5c5e\u5730\u9690\u79c1\u76fe\n${networkTitle(normalizedSettings)}\n${compatibilityTitle(report)}`
   });
 }
 
@@ -189,49 +278,23 @@ async function refreshAllBadges(settings = null) {
   await Promise.all(tabs.map((tab) => updateBadgeForTab(tab, normalizedSettings)));
 }
 
-async function requestDomainAccess(domains) {
-  const normalizedDomains = [...new Set((domains || []).map((domain) => normalizeDomain(domain)).filter(Boolean))];
-  if (!normalizedDomains.length) return { grantedDomains: [], deniedDomains: [] };
-
-  const alreadyGranted = [];
-  const needsPrompt = [];
-
-  for (const domain of normalizedDomains) {
-    if (await hasOriginPermission(domain)) {
-      alreadyGranted.push(domain);
-    } else {
-      needsPrompt.push(domain);
-    }
-  }
-
-  if (!needsPrompt.length) {
-    return { grantedDomains: alreadyGranted, deniedDomains: [] };
-  }
-
-  const granted = await chrome.permissions.request({ origins: buildMatchPatterns(needsPrompt) });
-  return {
-    grantedDomains: granted ? normalizedDomains : alreadyGranted,
-    deniedDomains: granted ? [] : needsPrompt
-  };
-}
-
 async function removeDomainAccess(domains) {
   const normalizedDomains = [...new Set((domains || []).map((domain) => normalizeDomain(domain)).filter(Boolean))];
   if (!normalizedDomains.length) return;
   try {
     await chrome.permissions.remove({ origins: buildMatchPatterns(normalizedDomains) });
   } catch (error) {
-    console.warn(`${LOG_PREFIX} Failed to remove host permissions`, error);
+    console.warn(`${LOG_PREFIX} failed to remove host permissions`, error);
   }
 }
 
 function normalizeExecutionReport(rawReport) {
-  return buildCompatibilityReport("", {
+  return {
     status: rawReport?.status === "limited" ? "limited" : "enabled",
     message: String(rawReport?.message || "").trim(),
     issues: Array.isArray(rawReport?.issues) ? rawReport.issues : [],
     updatedAt: new Date().toISOString()
-  });
+  };
 }
 
 async function saveCompatibilityReport(hostname, report) {
@@ -252,12 +315,17 @@ async function saveCompatibilityReport(hostname, report) {
   });
 }
 
+function shouldDisableTimezoneHooks(hostname) {
+  const domain = normalizeDomain(hostname);
+  return domain === "channels.weixin.qq.com" || domain.endsWith(".weixin.qq.com");
+}
+
 function pushConfigIntoPage(config) {
   const bridge = window.__localeShieldBridge;
   if (!bridge || typeof bridge.updateConfig !== "function") {
     return {
       status: "limited",
-      message: "Bootstrap hook unavailable. Reload the page.",
+      message: "\u4e3b\u4e16\u754c\u6ce8\u5165\u6ca1\u6709\u6302\u4e0a\uff0c\u8bf7\u5237\u65b0\u9875\u9762\u3002",
       issues: ["bootstrap_unavailable"]
     };
   }
@@ -275,14 +343,14 @@ async function applySiteMask(tabId, url, settings = null) {
     profile: normalizedSettings.profile,
     toggles: {
       geolocation: normalizedSettings.toggles.geolocation,
-      timezone: normalizedSettings.toggles.timezone,
+      timezone: normalizedSettings.toggles.timezone && !shouldDisableTimezoneHooks(hostname),
       languages: normalizedSettings.toggles.languages
     }
   };
 
   let lastReport = {
     status: "limited",
-    message: "Bootstrap hook unavailable. Reload the page.",
+    message: "\u4e3b\u4e16\u754c\u6ce8\u5165\u6ca1\u6709\u6302\u4e0a\uff0c\u8bf7\u5237\u65b0\u9875\u9762\u3002",
     issues: ["bootstrap_unavailable"],
     updatedAt: new Date().toISOString()
   };
@@ -299,14 +367,16 @@ async function applySiteMask(tabId, url, settings = null) {
       });
       const report = normalizeExecutionReport(result?.[0]?.result);
       report.message ||= report.status === "enabled"
-        ? `Front-end masking active for ${normalizedSettings.profile.label}.`
-        : "Bootstrap hook unavailable. Reload the page.";
+        ? `${shouldDisableTimezoneHooks(hostname)
+          ? "\u5b89\u5168\u6a21\u5f0f\u5df2\u542f\u7528\uff08\u5df2\u8df3\u8fc7\u65f6\u533a Hook\uff09\uff0c"
+          : "\u524d\u7aef\u4f2a\u88c5\u5df2\u542f\u7528\uff0c"}${normalizedSettings.profile.label}`
+        : "\u4e3b\u4e16\u754c\u6ce8\u5165\u6ca1\u6709\u6302\u4e0a\uff0c\u8bf7\u5237\u65b0\u9875\u9762\u3002";
       lastReport = report;
       if (report.status === "enabled") break;
     } catch (error) {
       lastReport = {
         status: "limited",
-        message: error?.message || "Main-world injection failed.",
+        message: error?.message || "\u4e3b\u4e16\u754c\u811a\u672c\u6267\u884c\u5931\u8d25\u3002",
         issues: ["execute_script_failed"],
         updatedAt: new Date().toISOString()
       };
@@ -337,29 +407,46 @@ async function buildPopupState(url) {
 }
 
 async function fetchVerificationSnapshot() {
-  let lastError = "Verification providers failed.";
+  const attempts = [];
   for (const provider of VERIFICATION_PROVIDERS) {
     const { signal, clear } = createAbortSignal(6000);
     try {
       const response = await fetch(provider.url, {
         method: "GET",
         cache: "no-store",
+        headers: {
+          Accept: "application/json, text/plain, */*"
+        },
         signal
       });
-      const data = await response.json();
-      const snapshot = provider.parse(data);
-      if (!snapshot) throw new Error(`Unexpected response from ${provider.name}`);
+      const text = await response.text();
+      const data = parseVerificationJson(provider.name, text);
+      const detail = extractProviderMessage(data);
+
+      if (!response.ok) {
+        throw new Error(`${provider.name} HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
+      }
+
+      const snapshot = normalizeVerificationSnapshot(provider.parse(data));
+      if (!isUsableVerificationSnapshot(snapshot)) {
+        throw new Error(`${provider.name} \u8fd4\u56de\u7684\u6570\u636e\u4e0d\u5b8c\u6574${detail ? `: ${detail}` : ""}`);
+      }
+
       clear();
+      attempts.push(`${provider.name}: OK`);
       return {
         ...snapshot,
-        provider: provider.name
+        provider: provider.name,
+        attempts
       };
     } catch (error) {
       clear();
-      lastError = error?.message || `${provider.name} failed`;
+      attempts.push(error?.message || `${provider.name} failed`);
     }
   }
-  throw new Error(lastError);
+  const failure = new Error(attempts.length ? attempts.join(" | ") : "verification_failed");
+  failure.attempts = attempts;
+  throw failure;
 }
 
 async function runVerification() {
@@ -368,8 +455,8 @@ async function runVerification() {
     const snapshot = await fetchVerificationSnapshot();
     const status = snapshot.timezone && snapshot.timezone === settings.profile.timezone ? "verified" : "mismatch";
     const note = status === "verified"
-      ? `${snapshot.city || snapshot.region || snapshot.country || "Current exit"} matches ${settings.profile.timezone}.`
-      : `${snapshot.city || snapshot.region || snapshot.country || "Current exit"} reports ${snapshot.timezone || "an unknown timezone"}, expected ${settings.profile.timezone}.`;
+      ? `${snapshot.city || snapshot.region || snapshot.country || "\u5f53\u524d\u51fa\u53e3"} \u4e0e ${settings.profile.timezone} \u4e00\u81f4\u3002`
+      : `${snapshot.city || snapshot.region || snapshot.country || "\u5f53\u524d\u51fa\u53e3"} \u62a5\u544a\u7684\u65f6\u533a\u662f ${snapshot.timezone || "\u672a\u77e5"}\uff0c\u9884\u671f\u662f ${settings.profile.timezone}\u3002`;
 
     const updatedSettings = await mutateSettings((draft) => {
       draft.verification = {
@@ -382,7 +469,9 @@ async function runVerification() {
         country: snapshot.country,
         timezone: snapshot.timezone,
         provider: snapshot.provider,
-        note
+        note,
+        details: buildVerificationDetailText(snapshot, snapshot.attempts),
+        attempts: snapshot.attempts || []
       };
       return draft;
     });
@@ -395,8 +484,15 @@ async function runVerification() {
         ...draft.verification,
         status: "error",
         lastCheckedAt: new Date().toISOString(),
+        ip: "",
+        city: "",
+        region: "",
+        country: "",
+        timezone: "",
         provider: "",
-        note: error?.message || "Verification providers failed."
+        note: error?.message || "\u7f51\u7edc\u6821\u9a8c\u5931\u8d25",
+        details: buildVerificationDetailText(null, error?.attempts || []),
+        attempts: Array.isArray(error?.attempts) ? error.attempts : []
       };
       return draft;
     });
@@ -456,9 +552,11 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
     .catch((error) => console.warn(`${LOG_PREFIX} tab update sync failed`, error));
 });
 
-chrome.permissions.onRemoved.addListener(() => {
-  syncEnvironment().catch((error) => console.error(`${LOG_PREFIX} permissions sync failed`, error));
-});
+if (chrome.permissions?.onRemoved) {
+  chrome.permissions.onRemoved.addListener(() => {
+    syncEnvironment().catch((error) => console.error(`${LOG_PREFIX} permissions sync failed`, error));
+  });
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message?.type === "GET_STATE") {
@@ -480,12 +578,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       const currentlyAllowlisted = currentSettings.allowlistDomains.includes(hostname);
       const shouldEnable = typeof message?.enable === "boolean" ? message.enable : !currentlyAllowlisted;
 
-      if (shouldEnable) {
-        const permissionResult = await requestDomainAccess([hostname]);
-        if (!permissionResult.grantedDomains.includes(hostname)) {
-          return { ok: false, error: "site_permission_denied" };
-        }
-      } else {
+      if (shouldEnable && !(await hasOriginPermission(hostname))) {
+        return { ok: false, error: "site_permission_missing" };
+      }
+
+      if (!shouldEnable) {
         await removeDomainAccess([hostname]);
       }
 
@@ -501,27 +598,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         return draft;
       });
 
-      const grantedAllowlist = await getGrantedAllowlist(updatedSettings.allowlistDomains);
-      const finalSettings = grantedAllowlist.length === updatedSettings.allowlistDomains.length
-        ? updatedSettings
-        : await writeSettings({
-          ...updatedSettings,
-          allowlistDomains: grantedAllowlist
-        });
-
-      await applyWebRtcPolicy(finalSettings);
-      await syncRegisteredContentScripts(finalSettings);
-      await refreshAllBadges(finalSettings);
-
+      const finalSettings = await syncEnvironment();
       return {
         ok: true,
         reloadRequired: true,
-        settings: finalSettings
+        settings: finalSettings,
+        changed: updatedSettings.allowlistDomains.includes(hostname) === shouldEnable
       };
     })()
       .then((result) => sendResponse(result))
       .catch((error) => sendResponse({ ok: false, error: error?.message || "toggle_failed" }));
-
     return true;
   }
 
@@ -529,22 +615,16 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     const incoming = normalizeSettings(message?.payload || {});
     (async () => {
       const current = await readSettings();
-      const addedDomains = incoming.allowlistDomains.filter((domain) => !current.allowlistDomains.includes(domain));
-      const removedDomains = current.allowlistDomains.filter((domain) => !incoming.allowlistDomains.includes(domain));
-      const permissionResult = await requestDomainAccess(addedDomains);
-      const allowedNewDomains = permissionResult.grantedDomains.filter((domain) => addedDomains.includes(domain));
-      const deniedDomains = permissionResult.deniedDomains || [];
+      const requestedAllowlist = incoming.allowlistDomains.slice();
+      const grantedAllowlist = await getGrantedAllowlist(requestedAllowlist);
+      const removedDomains = current.allowlistDomains.filter((domain) => !grantedAllowlist.includes(domain));
+      const deniedDomains = requestedAllowlist.filter((domain) => !grantedAllowlist.includes(domain));
 
-      const nextAllowlist = [
-        ...current.allowlistDomains.filter((domain) => !removedDomains.includes(domain)),
-        ...allowedNewDomains
-      ];
-
-      incoming.allowlistDomains = [...new Set(nextAllowlist)];
+      incoming.allowlistDomains = grantedAllowlist;
       incoming.verification = {
         ...current.verification,
         compatibility: Object.fromEntries(
-          incoming.allowlistDomains
+          grantedAllowlist
             .map((domain) => [domain, current.verification.compatibility?.[domain]])
             .filter(([, report]) => report)
         )
@@ -560,7 +640,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return {
         ok: true,
         settings: syncedSettings,
-        warnings: deniedDomains.length ? [`Permissions were denied for: ${deniedDomains.join(", ")}`] : []
+        warnings: deniedDomains.length
+          ? [`\u90e8\u5206\u57df\u540d\u6ca1\u6709\u6388\u6743\uff0c\u5df2\u81ea\u52a8\u5ffd\u7565\uff1a${deniedDomains.join(", ")}`]
+          : []
       };
     })()
       .then((result) => sendResponse(result))

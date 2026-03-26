@@ -30,6 +30,8 @@ export const DEFAULT_SETTINGS = Object.freeze({
     timezone: "",
     provider: "",
     note: "",
+    details: "",
+    attempts: Object.freeze([]),
     compatibility: Object.freeze({})
   })
 });
@@ -159,6 +161,11 @@ function normalizeVerification(rawVerification = {}) {
     timezone: normalizeString(rawVerification.timezone),
     provider: normalizeString(rawVerification.provider),
     note: normalizeString(rawVerification.note).slice(0, 320),
+    details: normalizeString(rawVerification.details).slice(0, 1200),
+    attempts: unique((Array.isArray(rawVerification.attempts) ? rawVerification.attempts : [])
+      .map((item) => normalizeString(item))
+      .filter(Boolean))
+      .slice(0, 8),
     compatibility: normalizeCompatibility(rawVerification.compatibility)
   };
 }
@@ -244,28 +251,28 @@ export function summarizeNetworkState(settings) {
   if (status === "verified") {
     return {
       tone: "good",
-      label: "Network exit verified",
-      detail: verification.note || `${verification.country || verification.region || verification.city || "Current exit"} matches ${verification.timezone || "the configured timezone"}.`
+      label: "\u7f51\u7edc\u51fa\u53e3\u5df2\u6821\u9a8c",
+      detail: verification.note || `${verification.country || verification.region || verification.city || "\u5f53\u524d\u51fa\u53e3"} \u4e0e ${verification.timezone || "\u76ee\u6807\u65f6\u533a"} \u4e00\u81f4\u3002`
     };
   }
   if (status === "mismatch") {
     return {
       tone: "warn",
-      label: "Network exit mismatch",
-      detail: verification.note || "The public IP region does not match the configured timezone."
+      label: "\u7f51\u7edc\u51fa\u53e3\u4e0d\u5339\u914d",
+      detail: verification.note || "\u516c\u7f51 IP \u6240\u5728\u5730\u533a\u4e0e\u4f60\u914d\u7f6e\u7684\u65f6\u533a\u4e0d\u4e00\u81f4\u3002"
     };
   }
   if (status === "error") {
     return {
       tone: "warn",
-      label: "Network exit check failed",
-      detail: verification.note || "Verification services were unreachable."
+      label: "\u7f51\u7edc\u6821\u9a8c\u5931\u8d25",
+      detail: verification.note || "\u6821\u9a8c\u670d\u52a1\u6682\u65f6\u4e0d\u53ef\u7528\u3002"
     };
   }
   return {
     tone: "warn",
-    label: "Network exit unverified",
-    detail: "The public IP still needs to be checked with your VPN or proxy exit."
+    label: "\u7f51\u7edc\u51fa\u53e3\u672a\u6821\u9a8c",
+    detail: "\u8bf7\u5728\u8fde\u63a5 VPN \u6216\u4ee3\u7406\u540e\u518d\u6267\u884c\u4e00\u6b21\u7f51\u7edc\u6821\u9a8c\u3002"
   };
 }
 
@@ -274,8 +281,8 @@ export function summarizeFrontendState(settings, hostname) {
   if (!isDomainAllowlisted(hostname, normalized)) {
     return {
       tone: "muted",
-      label: "Front-end masking off",
-      detail: "This hostname is not on the allowlist."
+      label: "\u524d\u7aef\u4f2a\u88c5\u672a\u5f00\u542f",
+      detail: "\u5f53\u524d\u57df\u540d\u4e0d\u5728\u767d\u540d\u5355\u4e2d\u3002"
     };
   }
 
@@ -283,21 +290,21 @@ export function summarizeFrontendState(settings, hostname) {
   if (compatibility.status === "limited") {
     return {
       tone: "warn",
-      label: "Compatibility limited",
-      detail: compatibility.message || "The page bootstrap hook did not apply cleanly."
+      label: "\u517c\u5bb9\u6027\u53d7\u9650",
+      detail: compatibility.message || "\u9875\u9762\u542f\u52a8\u65f6\u7684\u4e3b\u4e16\u754c\u6ce8\u5165\u6ca1\u6709\u5b8c\u5168\u6210\u529f\u3002"
     };
   }
   if (compatibility.status === "enabled") {
     return {
       tone: "good",
-      label: "Front-end masking enabled",
-      detail: compatibility.message || "Geolocation, timezone, and language hooks are active on this site."
+      label: "\u524d\u7aef\u4f2a\u88c5\u5df2\u542f\u7528",
+      detail: compatibility.message || "\u5f53\u524d\u7ad9\u70b9\u7684\u5b9a\u4f4d\u3001\u65f6\u533a\u548c\u8bed\u8a00\u4f2a\u88c5\u5df2\u751f\u6548\u3002"
     };
   }
 
   return {
     tone: "muted",
-    label: "Waiting for page reload",
-    detail: "Reload this tab after enabling the site or changing the profile."
+    label: "\u7b49\u5f85\u9875\u9762\u5237\u65b0",
+    detail: "\u542f\u7528\u7ad9\u70b9\u6216\u4fee\u6539\u6863\u6848\u540e\uff0c\u8bf7\u5237\u65b0\u5f53\u524d\u9875\u9762\u3002"
   };
 }

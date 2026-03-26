@@ -21,12 +21,7 @@
 
   const NativeDateTimeFormat = Intl.DateTimeFormat;
   const nativeResolvedOptions = NativeDateTimeFormat.prototype.resolvedOptions;
-  const nativeDateToString = Date.prototype.toString;
   const nativeTimezoneOffset = Date.prototype.getTimezoneOffset;
-  const nativeLocaleString = Date.prototype.toLocaleString;
-  const nativeLocaleDateString = Date.prototype.toLocaleDateString;
-  const nativeLocaleTimeString = Date.prototype.toLocaleTimeString;
-  const explicitFormatterTimezones = new WeakMap();
   const formatterCache = new Map();
   const watchTimers = new Map();
 
@@ -64,6 +59,22 @@
   function recordIssue(issue) {
     if (!issue || state.issues.includes(issue)) return;
     state.issues.push(issue);
+  }
+
+  function describeIssue(issue) {
+    const labels = {
+      "navigator.geolocation unavailable": "\u5f53\u524d\u9875\u9762\u6ca1\u6709 navigator.geolocation",
+      "geolocation.getCurrentPosition override failed": "getCurrentPosition \u8986\u76d6\u5931\u8d25",
+      "geolocation.watchPosition override failed": "watchPosition \u8986\u76d6\u5931\u8d25",
+      "geolocation.clearWatch override failed": "clearWatch \u8986\u76d6\u5931\u8d25",
+      "navigator.permissions unavailable": "\u5f53\u524d\u9875\u9762\u6ca1\u6709 navigator.permissions",
+      "permissions.query override failed": "permissions.query \u8986\u76d6\u5931\u8d25",
+      "navigator.language override failed": "navigator.language \u8986\u76d6\u5931\u8d25",
+      "navigator.languages override failed": "navigator.languages \u8986\u76d6\u5931\u8d25",
+      "Intl.DateTimeFormat.resolvedOptions override failed": "resolvedOptions \u8986\u76d6\u5931\u8d25",
+      "Date.getTimezoneOffset override failed": "Date.getTimezoneOffset \u8986\u76d6\u5931\u8d25"
+    };
+    return labels[issue] || issue;
   }
 
   function safeDefine(target, property, descriptor) {
@@ -232,32 +243,6 @@
     }
   }
 
-  function installPermissionsHook() {
-    const permissionsObject = navigator.permissions;
-    if (!permissionsObject?.query) {
-      recordIssue("navigator.permissions unavailable");
-      return;
-    }
-
-    const permissionsPrototype = Object.getPrototypeOf(permissionsObject);
-    const nativeQuery = permissionsObject.query.bind(permissionsObject);
-    const query = function (descriptor) {
-      if (
-        state.config.toggles.geolocation &&
-        descriptor &&
-        typeof descriptor === "object" &&
-        descriptor.name === "geolocation"
-      ) {
-        return Promise.resolve(buildPermissionStatus("granted"));
-      }
-      return nativeQuery(descriptor);
-    };
-
-    if (!overrideMethod([permissionsPrototype, permissionsObject], "query", query)) {
-      recordIssue("permissions.query override failed");
-    }
-  }
-
   function installLanguageHooks() {
     const navigatorPrototype = Object.getPrototypeOf(navigator);
     const nativeLanguageGetter =
@@ -283,41 +268,16 @@
   }
 
   function installTimezoneHooks() {
-    const nativeDateTimeFormat = Intl.DateTimeFormat;
-
     const wrappedResolvedOptions = function (...args) {
       const resolved = nativeResolvedOptions.apply(this, args);
-      if (state.config.toggles.timezone && !explicitFormatterTimezones.get(this)) {
+      if (state.config.toggles.timezone) {
         resolved.timeZone = state.config.profile.timezone;
         resolved.locale = state.config.profile.locale;
       }
       return resolved;
     };
 
-    const WrappedDateTimeFormat = function (...args) {
-      const [locales, options] = args;
-      const hasExplicitTimeZone = Boolean(options && typeof options === "object" && options.timeZone);
-      const effectiveLocales = locales === undefined ? state.config.profile.locale : locales;
-      const effectiveOptions = hasExplicitTimeZone || !state.config.toggles.timezone
-        ? options
-        : { ...(options || {}), timeZone: state.config.profile.timezone };
-      const formatter = Reflect.construct(nativeDateTimeFormat, [effectiveLocales, effectiveOptions], new.target || WrappedDateTimeFormat);
-      explicitFormatterTimezones.set(formatter, hasExplicitTimeZone);
-      return formatter;
-    };
-
-    Object.setPrototypeOf(WrappedDateTimeFormat, nativeDateTimeFormat);
-    WrappedDateTimeFormat.prototype = nativeDateTimeFormat.prototype;
-
-    if (!safeDefine(Intl, "DateTimeFormat", {
-      configurable: true,
-      writable: true,
-      value: WrappedDateTimeFormat
-    })) {
-      recordIssue("Intl.DateTimeFormat override failed");
-    }
-
-    if (!overrideMethod([nativeDateTimeFormat.prototype], "resolvedOptions", wrappedResolvedOptions)) {
+    if (!overrideMethod([NativeDateTimeFormat.prototype], "resolvedOptions", wrappedResolvedOptions)) {
       recordIssue("Intl.DateTimeFormat.resolvedOptions override failed");
     }
 
@@ -329,49 +289,12 @@
     })) {
       recordIssue("Date.getTimezoneOffset override failed");
     }
-
-    const wrapLocaleMethod = (nativeMethod) => function (...args) {
-      if (!state.config.toggles.timezone) {
-        return nativeMethod.apply(this, args);
-      }
-      const [locales, options] = args;
-      const effectiveLocales = locales === undefined ? state.config.profile.locale : locales;
-      const effectiveOptions = options && typeof options === "object" && options.timeZone
-        ? options
-        : { ...(options || {}), timeZone: state.config.profile.timezone };
-      return nativeMethod.call(this, effectiveLocales, effectiveOptions);
-    };
-
-    if (!overrideMethod([Date.prototype], "toLocaleString", wrapLocaleMethod(nativeLocaleString))) {
-      recordIssue("Date.toLocaleString override failed");
-    }
-    if (!overrideMethod([Date.prototype], "toLocaleDateString", wrapLocaleMethod(nativeLocaleDateString))) {
-      recordIssue("Date.toLocaleDateString override failed");
-    }
-    if (!overrideMethod([Date.prototype], "toLocaleTimeString", wrapLocaleMethod(nativeLocaleTimeString))) {
-      recordIssue("Date.toLocaleTimeString override failed");
-    }
-
-    if (!overrideMethod([Date.prototype], "toString", function () {
-      if (!state.config.toggles.timezone) {
-        return nativeDateToString.call(this);
-      }
-      const formatter = new NativeDateTimeFormat(state.config.profile.locale, {
-        timeZone: state.config.profile.timezone,
-        dateStyle: "medium",
-        timeStyle: "long"
-      });
-      return `${formatter.format(this)} (${state.config.profile.timezone})`;
-    })) {
-      recordIssue("Date.toString override failed");
-    }
   }
 
   function installHooks() {
     if (state.installed) return;
     state.installed = true;
     installGeolocationHooks();
-    installPermissionsHook();
     installLanguageHooks();
     installTimezoneHooks();
   }
@@ -380,8 +303,8 @@
     return {
       status: state.issues.length ? "limited" : "enabled",
       message: state.issues.length
-        ? state.issues.join("; ")
-        : `Front-end masking active for ${state.config.profile.label}.`,
+        ? state.issues.map((issue) => describeIssue(issue)).join("\uff1b")
+        : `\u524d\u7aef\u4f2a\u88c5\u5df2\u5bf9 ${state.config.profile.label} \u751f\u6548\u3002`,
       issues: state.issues.slice(),
       profileLabel: state.config.profile.label,
       toggles: {

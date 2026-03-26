@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "Locale Shield",
-  "description": "Mask geolocation, timezone, language, and WebRTC signals on allowlisted sites while you manage the real network exit separately.",
-  "version": "0.1.0",
+  "name": "\u5c5e\u5730\u9690\u79c1\u76fe",
+  "description": "\u5728\u767d\u540d\u5355\u7ad9\u70b9\u4f2a\u88c5\u5b9a\u4f4d\u3001\u65f6\u533a\u3001\u8bed\u8a00\u4e0e WebRTC \u4fe1\u53f7\uff1b\u771f\u5b9e\u516c\u7f51\u51fa\u53e3\u4ecd\u7531\u5916\u90e8 VPN \u6216\u4ee3\u7406\u8d1f\u8d23\u3002",
+  "version": "0.1.4",
   "minimum_chrome_version": "116",
   "permissions": [
     "storage",
@@ -11,6 +11,8 @@
     "privacy"
   ],
   "host_permissions": [
+    "https://api.ip.sb/*",
+    "https://ipinfo.io/*",
     "https://ipapi.co/*",
     "https://ipwho.is/*"
   ],
@@ -23,7 +25,7 @@
     "type": "module"
   },
   "action": {
-    "default_title": "Locale Shield",
+    "default_title": "\u5c5e\u5730\u9690\u79c1\u76fe",
     "default_popup": "popup.html"
   },
   "options_ui": {

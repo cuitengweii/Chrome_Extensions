@@ -1,4 +1,5 @@
 import {
+  buildOriginPatterns,
   summarizeNetworkState,
   summarizeFrontendState
 } from "./settings.js";
@@ -14,9 +15,19 @@ const frontendLabel = document.getElementById("frontendLabel");
 const frontendDetail = document.getElementById("frontendDetail");
 const compatibilityLabel = document.getElementById("compatibilityLabel");
 const compatibilityDetail = document.getElementById("compatibilityDetail");
+const buildInfo = document.getElementById("buildInfo");
 
 let activeTab = null;
 let currentState = null;
+
+function text(value) {
+  return value;
+}
+
+function renderBuildInfo() {
+  const manifest = chrome.runtime.getManifest();
+  buildInfo.textContent = text(`\u7248\u672c\uff1a${manifest.version}`);
+}
 
 function setPopupStatus(message) {
   popupStatus.textContent = message;
@@ -31,13 +42,20 @@ async function getActiveTab() {
   return tab || null;
 }
 
+async function ensureSitePermission(hostname) {
+  const origins = buildOriginPatterns(hostname);
+  if (!origins.length) return false;
+  if (await chrome.permissions.contains({ origins })) return true;
+  return chrome.permissions.request({ origins });
+}
+
 async function loadState() {
   activeTab = await getActiveTab();
   if (!activeTab?.url) {
-    siteLabel.textContent = "No active page";
-    siteSummary.textContent = "Open an HTTP(S) page to manage site access.";
+    siteLabel.textContent = text("\u6ca1\u6709\u53ef\u7528\u7684\u9875\u9762");
+    siteSummary.textContent = text("\u8bf7\u6253\u5f00 HTTP(S) \u7f51\u9875\u540e\u518d\u7ba1\u7406\u7ad9\u70b9\u6743\u9650\u3002");
     toggleButton.disabled = true;
-    setPopupStatus("No compatible tab.");
+    setPopupStatus(text("\u5f53\u524d\u6807\u7b7e\u9875\u4e0d\u53ef\u7528\u3002"));
     return;
   }
 
@@ -57,13 +75,15 @@ async function loadState() {
 
 function renderState() {
   const { settings, site } = currentState;
-  siteLabel.textContent = site.hostname || "Unsupported page";
+  siteLabel.textContent = site.hostname || text("\u4e0d\u652f\u6301\u7684\u9875\u9762");
   siteSummary.textContent = site.supported
-    ? `Profile: ${settings.profile.label}`
-    : "Only HTTP(S) tabs can be managed.";
+    ? text(`\u5f53\u524d\u6863\u6848\uff1a${settings.profile.label}`)
+    : text("\u53ea\u652f\u6301 HTTP(S) \u7f51\u9875\u3002");
 
   toggleButton.disabled = !site.supported;
-  toggleButton.textContent = site.allowlisted ? "Disable on this site" : "Enable on this site";
+  toggleButton.textContent = site.allowlisted
+    ? text("\u5bf9\u5f53\u524d\u7ad9\u70b9\u5173\u95ed")
+    : text("\u5bf9\u5f53\u524d\u7ad9\u70b9\u542f\u7528");
 
   const networkSummary = summarizeNetworkState(settings);
   networkLabel.textContent = networkSummary.label;
@@ -77,32 +97,41 @@ function renderState() {
 
   const compatibility = site.compatibility || { status: "unknown" };
   if (!site.allowlisted) {
-    compatibilityLabel.textContent = "No active site report";
-    compatibilityDetail.textContent = "Enable this hostname to inject the front-end mask.";
+    compatibilityLabel.textContent = text("\u6682\u65e0\u7ad9\u70b9\u62a5\u544a");
+    compatibilityDetail.textContent = text("\u5148\u542f\u7528\u8fd9\u4e2a\u57df\u540d\uff0c\u518d\u5237\u65b0\u9875\u9762\u4ee5\u6ce8\u5165\u524d\u7aef\u4f2a\u88c5\u3002");
     setCardTone("compatibilityLabel", "muted");
   } else if (compatibility.status === "enabled") {
-    compatibilityLabel.textContent = "Main-world hook active";
-    compatibilityDetail.textContent = compatibility.message || "The page hook acknowledged the current profile.";
+    compatibilityLabel.textContent = text("\u4e3b\u4e16\u754c Hook \u5df2\u751f\u6548");
+    compatibilityDetail.textContent = compatibility.message || text("\u9875\u9762\u5df2\u786e\u8ba4\u5f53\u524d\u914d\u7f6e\u5df2\u6ce8\u5165\u3002");
     setCardTone("compatibilityLabel", "good");
   } else if (compatibility.status === "limited") {
-    compatibilityLabel.textContent = "Compatibility limited";
-    compatibilityDetail.textContent = compatibility.message || "The page hook did not apply cleanly.";
+    compatibilityLabel.textContent = text("\u517c\u5bb9\u6027\u53d7\u9650");
+    compatibilityDetail.textContent = compatibility.message || text("\u9875\u9762\u6ce8\u5165\u6ca1\u6709\u5b8c\u5168\u6210\u529f\u3002");
     setCardTone("compatibilityLabel", "warn");
   } else {
-    compatibilityLabel.textContent = "No site report yet";
-    compatibilityDetail.textContent = "Reload this tab after enabling the hostname.";
+    compatibilityLabel.textContent = text("\u6682\u65e0\u7ad9\u70b9\u62a5\u544a");
+    compatibilityDetail.textContent = text("\u542f\u7528\u57df\u540d\u6216\u4fee\u6539\u6863\u6848\u540e\uff0c\u8bf7\u5237\u65b0\u5f53\u524d\u9875\u9762\u3002");
     setCardTone("compatibilityLabel", "muted");
   }
 
-  setPopupStatus(site.supported ? "Ready." : "Unsupported tab.");
+  setPopupStatus(site.supported ? text("\u5c31\u7eea\u3002") : text("\u5f53\u524d\u6807\u7b7e\u9875\u4e0d\u53ef\u7528\u3002"));
 }
 
 toggleButton.addEventListener("click", async () => {
   if (!activeTab?.url || !currentState?.site?.hostname) return;
-  setPopupStatus("Updating site access...");
+  setPopupStatus(text("\u6b63\u5728\u66f4\u65b0\u7ad9\u70b9\u6388\u6743..."));
   toggleButton.disabled = true;
 
   try {
+    if (!currentState.site.allowlisted) {
+      const granted = await ensureSitePermission(currentState.site.hostname);
+      if (!granted) {
+        toggleButton.disabled = false;
+        setPopupStatus(text("\u4f60\u62d2\u7edd\u4e86\u8fd9\u4e2a\u57df\u540d\u7684\u8bbf\u95ee\u6743\u9650\u3002"));
+        return;
+      }
+    }
+
     const response = await chrome.runtime.sendMessage({
       type: "TOGGLE_DOMAIN",
       url: activeTab.url,
@@ -111,6 +140,9 @@ toggleButton.addEventListener("click", async () => {
     });
 
     if (!response?.ok) {
+      if (response?.error === "site_permission_missing") {
+        throw new Error(text("\u7f3a\u5c11\u5f53\u524d\u7ad9\u70b9\u7684\u8bbf\u95ee\u6388\u6743"));
+      }
       throw new Error(response?.error || "toggle_failed");
     }
 
@@ -118,11 +150,11 @@ toggleButton.addEventListener("click", async () => {
       await chrome.tabs.reload(activeTab.id);
     }
 
-    setPopupStatus("Site access updated. The tab was reloaded.");
+    setPopupStatus(text("\u7ad9\u70b9\u8bbe\u7f6e\u5df2\u66f4\u65b0\uff0c\u5f53\u524d\u9875\u9762\u5df2\u5237\u65b0\u3002"));
     await loadState();
   } catch (error) {
     toggleButton.disabled = false;
-    setPopupStatus(`Failed to update site: ${error.message}`);
+    setPopupStatus(`\u66f4\u65b0\u5931\u8d25\uff1a${error.message}`);
   }
 });
 
@@ -132,6 +164,8 @@ openOptionsButton.addEventListener("click", async () => {
 });
 
 loadState().catch((error) => {
-  console.error("[Locale Shield] Failed to load popup", error);
-  setPopupStatus(`Failed to load popup: ${error.message}`);
+  console.error("[\u5c5e\u5730\u9690\u79c1\u76fe] Failed to load popup", error);
+  setPopupStatus(`\u52a0\u8f7d\u5931\u8d25\uff1a${error.message}`);
 });
+
+renderBuildInfo();

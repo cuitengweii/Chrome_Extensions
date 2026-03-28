@@ -417,6 +417,38 @@ body.xac-popup-mode #xac-widget .xac-actions {
   grid-template-columns: minmax(0, 1fr);
 }
 
+body.xac-options-mode {
+  margin: 0;
+  min-width: 340px;
+  min-height: 560px;
+  width: 100%;
+  overflow-x: hidden;
+}
+
+body.xac-options-mode #xac-widget {
+  position: static;
+  right: auto;
+  bottom: auto;
+  width: clamp(340px, 96vw, 360px);
+  max-width: clamp(340px, 96vw, 360px);
+  padding: 10px;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  margin: 0 auto;
+}
+
+body.xac-options-mode #xac-widget .xac-grid-2,
+body.xac-options-mode #xac-widget .xac-actions {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+@media (max-width: 760px) {
+  body.xac-options-mode #xac-widget {
+    width: 100%;
+    max-width: 100%;
+  }
+}
+
 @media (max-width: 420px) {
   #xac-widget .xac-grid-2 {
     grid-template-columns: minmax(0, 1fr);

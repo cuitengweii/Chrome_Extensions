@@ -170,6 +170,7 @@
     lang: "en",
     open: false,
     isPopup: false,
+    isOptions: false,
     notice: "",
     pendingAction: "",
     loadingText: "",
@@ -408,12 +409,10 @@
     const root = document.getElementById("xac-widget")
     if (!root) return
 
-    root.className = state.open || state.isPopup ? "" : "xac-collapsed"
+    root.className = state.open || state.isPopup || state.isOptions ? "" : "xac-collapsed"
 
     const isLogged = Boolean(state.googleSession?.accessToken)
     const isBusy = Boolean(state.pendingAction)
-    const loginStatusClass = isLogged ? "xac-status-ok" : "xac-status-bad"
-    const loginStatusText = isLogged ? t("loggedIn") : t("loggedOut")
     const email = maskEmail(state.googleSession)
     const loginLabel = state.pendingAction === "login" ? t("loggingIn") : t("loginGoogle")
     const logoutLabel = state.pendingAction === "logout" ? t("loggingOut") : t("logout")
@@ -424,12 +423,13 @@
     const sparkReady = sparkMissingFields.length === 0
     const sparkStatusText = formatSparkMissingMessage(sparkMissingFields)
     const extensionVersion = chrome?.runtime?.getManifest?.()?.version || "-"
+    const showDetailActions = !state.isOptions
 
     root.innerHTML = `
       <div class="xac-shell">
         <button class="xac-toggle" id="xac-toggle" type="button">
           <span>${escapeHtml(t("panelTitle"))}</span>
-          <span>${state.isPopup ? "" : (state.open ? escapeHtml(t("toggleClose")) : escapeHtml(t("toggleOpen")))}</span>
+          <span>${state.isPopup || state.isOptions ? "" : (state.open ? escapeHtml(t("toggleClose")) : escapeHtml(t("toggleOpen")))}</span>
         </button>
         <div class="xac-panel">
           <div class="xac-row">
@@ -480,17 +480,30 @@
           <div class="xac-label">${escapeHtml(t("advancedSection"))}</div>
           <div class="xac-grid-2">
             <button type="button" class="xac-button" id="xac-open-advanced" ${isBusy ? "disabled" : ""}>${escapeHtml(t("openAdvancedPanel"))}</button>
-            <button type="button" class="xac-button" id="xac-open-options" ${isBusy ? "disabled" : ""}>${escapeHtml(t("openAdvancedOptions"))}</button>
+            ${state.isOptions
+              ? `<span></span>`
+              : `<button type="button" class="xac-button" id="xac-open-options" ${isBusy ? "disabled" : ""}>${escapeHtml(t("openAdvancedOptions"))}</button>`
+            }
           </div>
+          ${showDetailActions
+            ? `<div class="xac-grid-2">
+                <button type="button" class="xac-button" id="xac-open-search" ${isBusy ? "disabled" : ""}>${escapeHtml(t("openSearchEntry"))}</button>
+                <span></span>
+              </div>`
+            : ""
+          }
 
-          <div class="xac-label">${escapeHtml(t("promptLabel"))}</div>
-          <textarea class="xac-textarea" id="xac-prompt" placeholder="${escapeHtml(t("promptPlaceholder"))}">${escapeHtml(state.prompt)}</textarea>
-          ${sparkReady ? "" : `<div class="xac-note" style="color:#ffb9a6">${escapeHtml(sparkStatusText)}</div>`}
-          <button type="button" class="xac-button primary" id="xac-generate" ${isBusy ? "disabled" : ""}>${escapeHtml(generateLabel)}</button>
+          ${showDetailActions
+            ? `<div class="xac-label">${escapeHtml(t("promptLabel"))}</div>
+               <textarea class="xac-textarea" id="xac-prompt" placeholder="${escapeHtml(t("promptPlaceholder"))}">${escapeHtml(state.prompt)}</textarea>
+               ${sparkReady ? "" : `<div class="xac-note" style="color:#ffb9a6">${escapeHtml(sparkStatusText)}</div>`}
+               <button type="button" class="xac-button primary" id="xac-generate" ${isBusy ? "disabled" : ""}>${escapeHtml(generateLabel)}</button>
 
-          <div class="xac-label">${escapeHtml(t("output"))}</div>
-          <textarea class="xac-textarea" id="xac-output" placeholder="${escapeHtml(t("outputPlaceholder"))}" readonly>${escapeHtml(state.output)}</textarea>
-          <button type="button" class="xac-button" id="xac-copy" ${isBusy ? "disabled" : ""}>${escapeHtml(t("copyOutput"))}</button>
+               <div class="xac-label">${escapeHtml(t("output"))}</div>
+               <textarea class="xac-textarea" id="xac-output" placeholder="${escapeHtml(t("outputPlaceholder"))}" readonly>${escapeHtml(state.output)}</textarea>
+               <button type="button" class="xac-button" id="xac-copy" ${isBusy ? "disabled" : ""}>${escapeHtml(t("copyOutput"))}</button>`
+            : ""
+          }
 
           <div class="xac-footer">${escapeHtml(`Version: ${extensionVersion}`)}</div>
           ${state.loadingText ? `<div class="xac-note">${escapeHtml(state.loadingText)}</div>` : ""}
@@ -511,13 +524,14 @@
     const syncSparkBtn = document.getElementById("xac-sync-spark")
     const openAdvancedBtn = document.getElementById("xac-open-advanced")
     const openOptionsBtn = document.getElementById("xac-open-options")
+    const openSearchBtn = document.getElementById("xac-open-search")
     const generateBtn = document.getElementById("xac-generate")
     const copyBtn = document.getElementById("xac-copy")
     const promptBox = document.getElementById("xac-prompt")
 
     if (toggle) {
       toggle.onclick = () => {
-        if (state.isPopup) return
+        if (state.isPopup || state.isOptions) return
         state.open = !state.open
         render()
       }
@@ -617,6 +631,10 @@
 
     if (openOptionsBtn) {
       openOptionsBtn.onclick = async () => {
+        if (state.isOptions) {
+          setNotice(t("optionsOpened"))
+          return
+        }
         try {
           const done = await runPending("open-options", t("openingOptions"), async () => {
             if (chrome.runtime?.openOptionsPage) {
@@ -638,6 +656,18 @@
           setNotice(t("optionsOpened"))
         } catch (error) {
           setNotice(`${t("failed")}: ${normalizeRuntimeError(error)}`)
+        }
+      }
+    }
+
+    if (openSearchBtn) {
+      openSearchBtn.onclick = async () => {
+        const result = await runPending("open-search", t("openingSearch"), async () => send("xac:open-x-search", { query: state.prompt || "" }))
+        if (!result) return
+        if (result.ok) {
+          setNotice(t("searchOpened"))
+        } else {
+          setNotice(`${t("failed")}: ${normalizeRuntimeError(result.error)}`)
         }
       }
     }
@@ -728,9 +758,10 @@
   async function init() {
     const isPopup = /\/popup\.html$/i.test(window.location.pathname || "")
     const isOptions = /\/options\.html$/i.test(window.location.pathname || "")
-    state.isPopup = isPopup || isOptions
+    state.isPopup = isPopup
+    state.isOptions = isOptions
     if ((isPopup || isOptions) && document.body) {
-      document.body.classList.add("xac-popup-mode")
+      document.body.classList.add(isPopup ? "xac-popup-mode" : "xac-options-mode")
       state.open = true
     }
 

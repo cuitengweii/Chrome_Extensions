@@ -57,7 +57,7 @@
     }
   }
   const DEFAULT_QUICK = { engagementMode: 'safe', goal: 'engagement', length: 'short', customInstructions: '', persona: '' }
-  const DEFAULT_X_SEARCH_QUERY = '(gm OR gn) min_replies:1 -filter:replies'
+  const DEFAULT_X_SEARCH_QUERY = 'min_replies:1 -filter:replies'
   const DEFAULT_ADVANCED = {
     autoLike: false,
     autoRetweet: false,
@@ -366,14 +366,9 @@
   }
   const buildSearchQueryFromControls = (source) => {
     const adv = source && typeof source === 'object' ? source : {}
-    const useGm = true
-    const useGn = true
     const minReplies = clampNum(adv.searchMinReplies, 0, 9999, DEFAULT_ADVANCED.searchMinReplies)
     const includeTerms = parseSearchTerms(adv.searchIncludeTerms || adv.searchKeyword)
     const excludeTerms = parseSearchTerms(adv.searchExcludeTerms)
-    const tokenTerms = []
-    if (useGm) tokenTerms.push('gm')
-    if (useGn) tokenTerms.push('gn')
     const baseTerms = []
     if (includeTerms.length === 1) {
       const only = formatSearchTermForQuery(includeTerms[0])
@@ -382,8 +377,6 @@
       const formatted = includeTerms.map((term) => formatSearchTermForQuery(term)).filter(Boolean)
       if (formatted.length) baseTerms.push(`(${formatted.join(' OR ')})`)
     }
-    if (tokenTerms.length === 1) baseTerms.push(tokenTerms[0])
-    else baseTerms.push(`(${tokenTerms.join(' OR ')})`)
     excludeTerms.forEach((term) => {
       const formatted = formatSearchTermForQuery(term)
       if (formatted) baseTerms.push(`-${formatted}`)
@@ -1170,6 +1163,7 @@
     if (S.auto.active) return
     S.auto.active = true; S.auto.count = 0; S.auto.max = Math.max(0, Math.round(n(max, 0))); S.idle = 0
     setStatus(t('run')); ind(true)
+    render()
     const cfg = normalizeAdvanced(S.advanced)
 
     while (S.auto.active) {
@@ -1190,7 +1184,7 @@
     S.auto.active = false; ind(false); setStatus(t('stopped')); toast(`${t('done')}: ${S.auto.count}`, 'ok'); render()
   }
 
-  function stopAuto() { S.auto.active = false; ind(false); setStatus(t('stopped')) }
+  function stopAuto() { S.auto.active = false; ind(false); setStatus(t('stopped')); render() }
 
   function openPanelAndFocusAdvanced() {
     S.open = true
@@ -1344,6 +1338,8 @@
     const includeTerms = parseSearchTerms(S.advanced.searchIncludeTerms || S.advanced.searchKeyword)
     const includeTermA = includeTerms[0] || ''
     const includeTermB = includeTerms[1] || ''
+    const runToggleLabel = S.auto.active ? t('stop') : t('start')
+    const runToggleClass = S.auto.active ? '' : 'p'
     const d = S.editor?.draft || emptyProfileDraft()
     const hintBtn = (key) => `<button class="hint" type="button" data-help="${esc(key)}">?</button>`
     const hintLabel = (text, key) => `<div class="hlabel"><label>${esc(text)}</label>${key ? hintBtn(key) : ''}</div>`
@@ -1414,7 +1410,7 @@
           <div class="switch"><span>${esc(t('autoPost'))}</span><input id="xac-ap" type="checkbox" ${S.autoPost ? 'checked' : ''}/></div>
           ${hintLabel(t('max'), 'max')}
           <input id="xac-max" type="number" min="0" max="200" value="${esc(String(S.auto.max || 0))}"/>
-          <div class="r2"><button class="p" id="xac-s" ${isBusy ? 'disabled' : ''}>${esc(t('start'))}</button><button id="xac-x">${esc(t('stop'))}</button></div>
+          <button class="${runToggleClass}" id="xac-run-toggle" ${isBusy ? 'disabled' : ''}>${esc(runToggleLabel)}</button>
           <div class="status" id="xac-status">${esc(S.status || t('idle'))}</div>
         </div>
 
@@ -1637,8 +1633,14 @@
     })
     document.getElementById('xac-ap')?.addEventListener('change', async (e) => { S.autoPost = !!e.target.checked; await set({ [K.autoPost]: S.autoPost }) })
     document.getElementById('xac-max')?.addEventListener('change', (e) => { S.auto.max = Math.max(0, Math.round(n(e.target.value, 0))) })
-    document.getElementById('xac-s')?.addEventListener('click', async () => { const m = Math.max(0, Math.round(n(document.getElementById('xac-max')?.value, 0))); await startAuto(m) })
-    document.getElementById('xac-x')?.addEventListener('click', () => stopAuto())
+    document.getElementById('xac-run-toggle')?.addEventListener('click', async () => {
+      if (S.auto.active) {
+        stopAuto()
+        return
+      }
+      const m = Math.max(0, Math.round(n(document.getElementById('xac-max')?.value, 0)))
+      await startAuto(m)
+    })
 
     if (S.editor?.open) {
       const syncDraft = () => {

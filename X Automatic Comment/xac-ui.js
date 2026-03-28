@@ -432,8 +432,6 @@
           <span>${state.isPopup ? "" : (state.open ? escapeHtml(t("toggleClose")) : escapeHtml(t("toggleOpen")))}</span>
         </button>
         <div class="xac-panel">
-          <div class="xac-meta">${escapeHtml(t("panelSubTitle"))}</div>
-
           <div class="xac-row">
             <span class="xac-label">${escapeHtml(t("language"))}</span>
             <div class="xac-pill-group">
@@ -443,10 +441,6 @@
           </div>
 
           <div class="xac-account-card">
-            <div class="xac-row xac-account-top">
-              <span class="xac-label">${escapeHtml(t("authState"))}</span>
-              <strong class="${loginStatusClass} xac-status-pill">${escapeHtml(loginStatusText)}</strong>
-            </div>
             ${isLogged
               ? `<div class="xac-row xac-account-row">
                 <div class="xac-meta xac-account-email">${escapeHtml(email)}</div>

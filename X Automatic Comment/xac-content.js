@@ -6,7 +6,8 @@
     lang: 'xac.language',
     autoPost: 'xac.autoPostEnabled',
     googleSession: 'xac.googleSession',
-    profileMeta: 'xac.profileMeta'
+    profileMeta: 'xac.profileMeta',
+    advanced: 'xac.advancedSettings'
   }
   const DEFAULT_PROFILES = [
     { id: 'preset_growth', name: 'Growth Hacker', emoji: 'GH', tone: 'bold and data-driven', goal: 'engagement', length: 'short', instructions: 'Use one concrete insight and end with a thought-provoking line.', persona: 'I build growth systems for creator products.', language: 'en', preset: true },
@@ -56,6 +57,31 @@
     }
   }
   const DEFAULT_QUICK = { engagementMode: 'safe', goal: 'engagement', length: 'short', customInstructions: '', persona: '' }
+  const DEFAULT_X_SEARCH_QUERY = '(gm OR gn) min_replies:1 -filter:replies'
+  const DEFAULT_ADVANCED = {
+    autoLike: false,
+    autoRetweet: false,
+    autoFollow: false,
+    scrollStep: 900,
+    scrollDelayMs: 1800,
+    replyDelayMinMs: 3500,
+    replyDelayMaxMs: 8000,
+    actionDelayMs: 220,
+    maxIdleLoops: 6,
+    minTweetChars: 0,
+    skipIfContainsLinks: false,
+    skipIfContainsImages: false,
+    searchQuery: DEFAULT_X_SEARCH_QUERY,
+    searchIncludeTerms: '',
+    searchExcludeTerms: '',
+    searchKeyword: '',
+    searchUseGm: true,
+    searchUseGn: true,
+    searchMinReplies: 1,
+    searchExcludeReplies: true,
+    debugPrompt: '',
+    debugOutput: ''
+  }
   const I18N = {
     en: {
       title: 'X Automatic Comment', sub: 'Profile + Context + Auto Reply', open: 'Open', close: 'Close', lang: 'Language',
@@ -88,7 +114,75 @@
       cancel: 'Cancel',
       statusSaved: 'Profile saved',
       langZh: 'Chinese',
-      langEn: 'English'
+      langEn: 'English',
+      unknownError: 'Unknown error',
+      emptyModelOutput: 'Empty model output',
+      editorMissing: 'No editor found',
+      insertFailed: 'Failed to insert text into editor',
+      guideSec: 'Usage Guide',
+      guideLine1: 'Prompt + Output is debug mode for manual one-off generation.',
+      guideLine2: 'Custom instructions are short-term task constraints for this run.',
+      guideLine3: 'Persona memory is your long-term identity and stable tone.',
+      advancedSec: 'Advanced (Fully Open)',
+      autoLike: 'Auto-like',
+      autoRetweet: 'Auto-retweet',
+      autoFollow: 'Auto-follow',
+      scrollStep: 'Scroll step (px)',
+      scrollDelayMs: 'Scroll delay (ms)',
+      replyDelayMinMs: 'Reply delay min (ms)',
+      replyDelayMaxMs: 'Reply delay max (ms)',
+      actionDelayMs: 'Action delay (ms)',
+      maxIdleLoops: 'Max idle loops',
+      minTweetChars: 'Min tweet chars',
+      skipIfContainsLinks: 'Skip posts with links',
+      skipIfContainsImages: 'Skip posts with images',
+      searchQuery: 'Search query',
+      searchKeyword: 'Include words',
+      searchIncludeTerms: 'Include words',
+      searchExcludeTerms: 'Exclude words',
+      searchIncludePlaceholder: 'e.g. 闲鱼, 二手, 捡漏',
+      searchIncludePlaceholderA: 'Term A',
+      searchIncludePlaceholderB: 'Term B',
+      searchOr: 'OR',
+      searchExcludePlaceholder: 'e.g. 返利, 广告, 抽奖',
+      searchUseGm: 'Use GM',
+      searchUseGn: 'Use GN',
+      searchMinReplies: 'Min comments',
+      searchExcludeReplies: 'Exclude replies feed',
+      searchPreview: 'Query Preview',
+      openSearch: 'Open Search',
+      debugSec: 'Debug Prompt + Output',
+      debugGenerate: 'Generate Debug',
+      debugCopy: 'Copy Debug',
+      debugPrompt: 'Debug prompt',
+      debugOutput: 'Debug output',
+      savedAdvanced: 'Advanced settings saved',
+      stepProfile: 'Step 1 · Choose Profile',
+      stepProfileDesc: 'Select and edit who this account sounds like before generating anything.',
+      stepAccount: 'Preparation · Account',
+      stepAccountDesc: 'Confirm login status and language first to avoid misconfigured runs.',
+      stepStrategy: 'Step 2 · Set Strategy',
+      stepStrategyDesc: 'Choose interaction intensity, objective, and target reply length.',
+      stepContent: 'Step 3 · Content Constraints',
+      stepContentDesc: 'Add short-term instructions and long-term persona memory for output control.',
+      stepExecution: 'Step 4 · Run Settings',
+      stepExecutionDesc: 'Set send behavior and run limits before starting automation.',
+      stepAdvanced: 'Step 5 · Advanced',
+      stepAdvancedDesc: 'Fine-tune actions, pacing, filters, and debugging tools.',
+      sectionAutoActions: 'Auto Actions',
+      sectionFlow: 'Flow Pace',
+      sectionFilter: 'Content Filters',
+      helpMode: 'Controls tone intensity: Safe = low risk, Spicy = more direct, Viral = strongest hook.',
+      helpGoal: 'Defines reply objective: Engage / Authority / Debate / Network.',
+      helpLen: 'Controls expected length of generated replies: Short / Medium / Long.',
+      helpCi: 'Temporary instruction for this run only. Best for campaign-specific constraints.',
+      helpPersona: 'Long-term identity memory. Keeps stable voice across replies.',
+      helpAutoPost: 'When on, the extension will click the send button right after inserting generated text.',
+      helpMax: 'Auto-reply cap per run. 0 means unlimited until stopped.',
+      helpAutoActions: 'Extra actions after generating reply: like / retweet / follow.',
+      helpFlow: 'Controls scan and pacing speed: scroll speed, delay, reply interval, idle limit.',
+      helpFilter: 'Skip unsuitable posts by min text length, links/images, and quickly jump to search.',
+      helpDebug: 'Manual one-off prompt testing area. Use to tune output before full automation.'
     },
     zh: {
       title: 'X Automatic Comment', sub: '人设 + 上下文 + 自动回复', open: '展开', close: '收起', lang: '语言',
@@ -121,7 +215,75 @@
       cancel: '取消',
       statusSaved: '资料已保存',
       langZh: '中文',
-      langEn: '英文'
+      langEn: '英文',
+      unknownError: '未知错误',
+      emptyModelOutput: '模型返回为空',
+      editorMissing: '未找到回复输入框',
+      insertFailed: '写入回复框失败',
+      guideSec: '功能说明',
+      guideLine1: '提示词 + 输出是调试模式，用于手动单次生成。',
+      guideLine2: '自定义指令是本轮任务约束，影响当前回复策略。',
+      guideLine3: '人设记忆是长期身份设定，决定稳定语气与风格。',
+      advancedSec: '高级功能（全开放）',
+      autoLike: '自动点赞',
+      autoRetweet: '自动转推',
+      autoFollow: '自动关注',
+      scrollStep: '滚动步长（px）',
+      scrollDelayMs: '滚动间隔（ms）',
+      replyDelayMinMs: '回复间隔最小值（ms）',
+      replyDelayMaxMs: '回复间隔最大值（ms）',
+      actionDelayMs: '动作间隔（ms）',
+      maxIdleLoops: '最大空转次数',
+      minTweetChars: '推文字数下限',
+      skipIfContainsLinks: '跳过含链接推文',
+      skipIfContainsImages: '跳过含图片推文',
+      searchQuery: '搜索配置',
+      searchKeyword: '包含词',
+      searchIncludeTerms: '包含词',
+      searchExcludeTerms: '排除词',
+      searchIncludePlaceholder: '例如：闲鱼, 二手, 捡漏',
+      searchIncludePlaceholderA: '词1',
+      searchIncludePlaceholderB: '词2',
+      searchOr: '或',
+      searchExcludePlaceholder: '例如：返利, 广告, 抽奖',
+      searchUseGm: '启用 GM',
+      searchUseGn: '启用 GN',
+      searchMinReplies: '最小评论数',
+      searchExcludeReplies: '排除回复流',
+      searchPreview: '查询预览',
+      openSearch: '打开搜索',
+      debugSec: '调试提示词 + 输出',
+      debugGenerate: '调试生成',
+      debugCopy: '复制调试输出',
+      debugPrompt: '调试提示词',
+      debugOutput: '调试输出',
+      savedAdvanced: '高级设置已保存',
+      stepProfile: '步骤1 · 选择人设',
+      stepProfileDesc: '先选定账号“说话的人设”，再进行后续生成。',
+      stepAccount: '准备阶段 · 账号',
+      stepAccountDesc: '先确认登录状态与语言，避免后续配置错位。',
+      stepStrategy: '步骤2 · 设置策略',
+      stepStrategyDesc: '确定互动强度、目标和回复长度预期。',
+      stepContent: '步骤3 · 内容约束',
+      stepContentDesc: '补充本次任务约束与长期人设记忆，控制输出风格。',
+      stepExecution: '步骤4 · 执行设置',
+      stepExecutionDesc: '开始前先设置发送行为和自动回复上限。',
+      stepAdvanced: '步骤5 · 高级功能',
+      stepAdvancedDesc: '精细控制动作、节奏、过滤规则和调试能力。',
+      sectionAutoActions: '自动动作',
+      sectionFlow: '节奏控制',
+      sectionFilter: '内容过滤',
+      helpMode: '控制语气强度：稳健=低风险，激进=更直接，爆款=钩子最强。',
+      helpGoal: '定义回复目标：参与 / 权威 / 辩论 / 网络。',
+      helpLen: '控制期望回复长度：短 / 中等 / 长。',
+      helpCi: '本次任务的临时约束，适合活动或话题专项要求。',
+      helpPersona: '长期身份记忆，让回复风格在多次生成中保持稳定。',
+      helpAutoPost: '开启后，写入回复框后会自动点击发送按钮。',
+      helpMax: '本轮自动回复上限，0 表示不限制直到手动停止。',
+      helpAutoActions: '生成后附加动作：点赞 / 转推 / 关注。',
+      helpFlow: '控制扫描与执行节奏：滚动速度、间隔、回复间隔、空转次数。',
+      helpFilter: '通过最小字数、链接/图片过滤跳过不合适推文，并可快速跳转搜索。',
+      helpDebug: '手动单次调试区，先试提示词效果，再用于自动化。'
     }
   }
 
@@ -129,17 +291,162 @@
     lang: 'en', open: false, myHandle: '',
     profile: { profiles: [...DEFAULT_PROFILES], activeProfileId: DEFAULT_PROFILES[0].id, quickSettings: { ...DEFAULT_QUICK } },
     profileMeta: {},
+    advanced: { ...DEFAULT_ADVANCED },
     editor: { open: false, mode: 'new', targetId: '', draft: null },
     autoPost: false, signedIn: false, pendingAction: '', auto: { active: false, count: 0, max: 0 }, status: '', scheduled: false, idle: 0
   }
+
+  const HELP_KEY_TO_I18N = Object.freeze({
+    mode: 'helpMode',
+    goal: 'helpGoal',
+    len: 'helpLen',
+    ci: 'helpCi',
+    persona: 'helpPersona',
+    autoPost: 'helpAutoPost',
+    max: 'helpMax',
+    autoActions: 'helpAutoActions',
+    flow: 'helpFlow',
+    filter: 'helpFilter',
+    debug: 'helpDebug'
+  })
 
   const t = (k) => (I18N[S.lang] && I18N[S.lang][k]) || I18N.en[k] || k
   const normLang = (v) => String(v || '').toLowerCase().startsWith('zh') ? 'zh' : 'en'
   const s = (v, f = '') => { const t = typeof v === 'string' ? v.trim() : ''; return t || f }
   const n = (v, f = 0) => { const x = Number(v); return Number.isFinite(x) ? x : f }
   const b = (v, f = false) => typeof v === 'boolean' ? v : (typeof v === 'string' ? ['1','true','yes','on'].includes(v.toLowerCase()) : f)
+  const clampNum = (v, min, max, f) => Math.min(max, Math.max(min, Math.round(n(v, f))))
+  const normalizeSearchKeyword = (v) => String(v || '').replace(/\s+/g, ' ').trim()
+  const normalizeSearchTermInput = (v) => String(v || '')
+    .split(/[,\n;；，]+/)
+    .map((item) => normalizeSearchKeyword(item))
+    .filter(Boolean)
+    .join(', ')
+  const parseSearchTerms = (v) => normalizeSearchTermInput(v)
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean)
+  const formatSearchTermForQuery = (term) => {
+    const clean = normalizeSearchKeyword(term).replace(/^[-+]+/, '')
+    if (!clean) return ''
+    const unquoted = clean.replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1')
+    const escaped = unquoted.replace(/"/g, '\\"')
+    return /\s/.test(unquoted) ? `"${escaped}"` : escaped
+  }
+  const deriveSearchControlsFromQuery = (rawQuery) => {
+    const text = s(rawQuery, DEFAULT_X_SEARCH_QUERY)
+    const hasGm = /\bgm\b/i.test(text)
+    const hasGn = /\bgn\b/i.test(text)
+    const minMatch = text.match(/\bmin_replies:(\d{1,4})\b/i)
+    const excludeReplies = /\-filter:replies\b/i.test(text)
+    const excludedRawTerms = Array.from(text.matchAll(/(?:^|\s)-(?:"([^"]+)"|'([^']+)'|([^\s()]+))/g))
+      .map((match) => match[1] || match[2] || match[3] || '')
+      .map((term) => normalizeSearchKeyword(term))
+      .filter((term) => term && !/^filter:replies$/i.test(term))
+    const includeTerms = normalizeSearchTermInput(
+      text
+        .replace(/\bmin_replies:\d+\b/ig, ' ')
+        .replace(/\-filter:replies\b/ig, ' ')
+        .replace(/(?:^|\s)-(?:"[^"]+"|'[^']+'|[^\s()]+)/g, ' ')
+        .replace(/[()]/g, ' ')
+        .replace(/\bOR\b/ig, ' ')
+        .replace(/\bAND\b/ig, ' ')
+        .replace(/\bgm\b/ig, ' ')
+        .replace(/\bgn\b/ig, ' ')
+    )
+    return {
+      searchIncludeTerms: includeTerms,
+      searchExcludeTerms: normalizeSearchTermInput(excludedRawTerms.join(', ')),
+      searchKeyword: includeTerms,
+      searchUseGm: hasGm || (!hasGm && !hasGn),
+      searchUseGn: hasGn || (!hasGm && !hasGn),
+      searchMinReplies: clampNum(minMatch?.[1], 0, 9999, DEFAULT_ADVANCED.searchMinReplies),
+      searchExcludeReplies: excludeReplies
+    }
+  }
+  const buildSearchQueryFromControls = (source) => {
+    const adv = source && typeof source === 'object' ? source : {}
+    const useGm = true
+    const useGn = true
+    const minReplies = clampNum(adv.searchMinReplies, 0, 9999, DEFAULT_ADVANCED.searchMinReplies)
+    const includeTerms = parseSearchTerms(adv.searchIncludeTerms || adv.searchKeyword)
+    const excludeTerms = parseSearchTerms(adv.searchExcludeTerms)
+    const tokenTerms = []
+    if (useGm) tokenTerms.push('gm')
+    if (useGn) tokenTerms.push('gn')
+    const baseTerms = []
+    if (includeTerms.length === 1) {
+      const only = formatSearchTermForQuery(includeTerms[0])
+      if (only) baseTerms.push(only)
+    } else if (includeTerms.length > 1) {
+      const formatted = includeTerms.map((term) => formatSearchTermForQuery(term)).filter(Boolean)
+      if (formatted.length) baseTerms.push(`(${formatted.join(' OR ')})`)
+    }
+    if (tokenTerms.length === 1) baseTerms.push(tokenTerms[0])
+    else baseTerms.push(`(${tokenTerms.join(' OR ')})`)
+    excludeTerms.forEach((term) => {
+      const formatted = formatSearchTermForQuery(term)
+      if (formatted) baseTerms.push(`-${formatted}`)
+    })
+    baseTerms.push(`min_replies:${minReplies}`)
+    if (b(adv.searchExcludeReplies, DEFAULT_ADVANCED.searchExcludeReplies)) baseTerms.push('-filter:replies')
+    return baseTerms.join(' ')
+  }
+  const normalizeAdvanced = (raw) => {
+    const source = raw && typeof raw === 'object' ? raw : {}
+    const parsedSearch = deriveSearchControlsFromQuery(source.searchQuery)
+    const searchIncludeTerms = normalizeSearchTermInput(source.searchIncludeTerms || source.searchKeyword || parsedSearch.searchIncludeTerms || parsedSearch.searchKeyword || '')
+    const searchExcludeTerms = normalizeSearchTermInput(source.searchExcludeTerms || parsedSearch.searchExcludeTerms || '')
+    const searchKeyword = searchIncludeTerms
+    const searchUseGm = true
+    const searchUseGn = true
+    const searchMinReplies = clampNum(source.searchMinReplies, 0, 9999, parsedSearch.searchMinReplies)
+    const searchExcludeReplies = b(source.searchExcludeReplies, parsedSearch.searchExcludeReplies)
+    return {
+      autoLike: b(source.autoLike, DEFAULT_ADVANCED.autoLike),
+      autoRetweet: b(source.autoRetweet, DEFAULT_ADVANCED.autoRetweet),
+      autoFollow: b(source.autoFollow, DEFAULT_ADVANCED.autoFollow),
+      scrollStep: clampNum(source.scrollStep, 300, 2000, DEFAULT_ADVANCED.scrollStep),
+      scrollDelayMs: clampNum(source.scrollDelayMs, 400, 10000, DEFAULT_ADVANCED.scrollDelayMs),
+      replyDelayMinMs: clampNum(source.replyDelayMinMs, 500, 30000, DEFAULT_ADVANCED.replyDelayMinMs),
+      replyDelayMaxMs: clampNum(source.replyDelayMaxMs, 500, 60000, DEFAULT_ADVANCED.replyDelayMaxMs),
+      actionDelayMs: clampNum(source.actionDelayMs, 100, 5000, DEFAULT_ADVANCED.actionDelayMs),
+      maxIdleLoops: clampNum(source.maxIdleLoops, 1, 50, DEFAULT_ADVANCED.maxIdleLoops),
+      minTweetChars: clampNum(source.minTweetChars, 0, 1000, DEFAULT_ADVANCED.minTweetChars),
+      skipIfContainsLinks: b(source.skipIfContainsLinks, DEFAULT_ADVANCED.skipIfContainsLinks),
+      skipIfContainsImages: b(source.skipIfContainsImages, DEFAULT_ADVANCED.skipIfContainsImages),
+      searchIncludeTerms,
+      searchExcludeTerms,
+      searchKeyword,
+      searchUseGm,
+      searchUseGn,
+      searchMinReplies,
+      searchExcludeReplies,
+      searchQuery: buildSearchQueryFromControls({
+        searchIncludeTerms,
+        searchExcludeTerms,
+        searchKeyword,
+        searchUseGm,
+        searchUseGn,
+        searchMinReplies,
+        searchExcludeReplies
+      }),
+      debugPrompt: String(source.debugPrompt || ''),
+      debugOutput: String(source.debugOutput || '')
+    }
+  }
   const esc = (v) => String(v ?? '').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#39;')
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+  const debounceTimers = Object.create(null)
+  const debounceRun = (key, job, delayMs = 320) => {
+    const safeKey = String(key || 'default')
+    if (debounceTimers[safeKey]) clearTimeout(debounceTimers[safeKey])
+    debounceTimers[safeKey] = setTimeout(() => {
+      Promise.resolve()
+        .then(() => job())
+        .catch(() => {})
+    }, Math.max(120, Number(delayMs) || 320))
+  }
   const cap = (value, max = 1200) => {
     const text = String(value || '').trim()
     if (!text) return ''
@@ -190,15 +497,15 @@
   }
 
   function formatUserError(errorMessage) {
-    const text = s(errorMessage, 'Unknown error')
+    const text = s(errorMessage, t('unknownError'))
     if (/Spark settings missing required fields|Spark settings incomplete/i.test(text)) {
       const match = text.match(/(?:missing required fields:\s*|Missing:\s*)([a-z_,\s]+)/i)
       const fields = match?.[1] ? match[1].split(',').map((x) => x.trim()).filter(Boolean) : []
       const missing = fields.length ? fields.join(', ') : 'url, app_id, api_key, api_secret'
       if (S.lang === 'zh') {
-        return `星火配置缺失: ${missing}。请打开扩展弹窗 -> Spark Settings 保存后重试。`
+        return `AI 配置缺失: ${missing}。请打开扩展弹窗 -> AI Settings 保存后重试。`
       }
-      return `Spark settings missing: ${missing}. Open extension popup -> Spark Settings, save, then retry.`
+      return `AI settings missing: ${missing}. Open extension popup -> AI Settings, save, then retry.`
     }
     return text
   }
@@ -432,13 +739,20 @@
     } else {
       S.lang = normLang(navigator.language)
     }
-    const local = await g([K.autoPost, K.profileMeta]).catch(() => ({}))
+    const local = await g([K.autoPost, K.profileMeta, K.advanced]).catch(() => ({}))
     S.autoPost = b(local[K.autoPost], false)
     S.profileMeta = local[K.profileMeta] && typeof local[K.profileMeta] === 'object' ? local[K.profileMeta] : {}
+    S.advanced = normalizeAdvanced(local[K.advanced])
   }
 
   async function saveProfileState() {
     await send('xac:set-profile-state', { profileState: S.profile })
+  }
+
+  async function saveAdvanced(silent = true) {
+    S.advanced = normalizeAdvanced(S.advanced)
+    await set({ [K.advanced]: S.advanced }).catch(() => {})
+    if (!silent) toast(t('savedAdvanced'), 'ok')
   }
 
   function styles() {
@@ -452,26 +766,48 @@
 #xac-root .top .t1{font-size:15px;font-weight:800;line-height:1.1}
 #xac-root .top .t2{font-size:11px;color:#89bca1;line-height:1.2}
 #xac-root .quota{border:1px solid #2f6e48;border-radius:999px;padding:2px 8px;font-size:11px;color:#8df4be;background:#0d2219;white-space:nowrap}
-#xac-root .body{border-top:1px solid #1f4933;display:grid;gap:8px;padding:10px 12px}
+#xac-root .body{border-top:1px solid #1f4933;display:grid;gap:8px;padding:10px 12px;max-height:76vh;overflow:auto}
 #xac-root.collapsed .body{display:none}
 #xac-root .sec{font-size:11px;color:#76b396;padding-left:2px}
+#xac-root .sec.flash{color:#bafdd6;text-shadow:0 0 8px rgba(96,246,161,.5)}
+#xac-root .group{border:1px solid #24543a;background:linear-gradient(180deg,#10231b,#0b1913);border-radius:10px;padding:9px;display:grid;gap:8px}
+#xac-root .group-h{font-size:12px;color:#c7f8df;font-weight:800;letter-spacing:.2px}
+#xac-root .step{display:grid;gap:3px;padding-bottom:7px;margin-bottom:1px;border-bottom:1px solid #1f4b35}
+#xac-root .step-title{font-size:15px;color:#dcffed;font-weight:900;line-height:1.15;letter-spacing:.25px}
+#xac-root .step-desc{font-size:11px;color:#8ec4a7;line-height:1.35}
+#xac-root .guide-banner{border:1px solid #2d6649;border-left:3px solid #56df93;background:linear-gradient(180deg,#123126,#0d2119);border-radius:10px;padding:8px 9px;display:grid;gap:4px}
+#xac-root .guide-banner .meta{font-size:11px;color:#b8ebd0;line-height:1.4}
+#xac-root .mini-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+#xac-root .mini-btn{padding:6px 4px;font-size:11px;line-height:1.1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#xac-root .hlabel{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#xac-root .hlabel label,#xac-root .hlabel .mini{font-size:11px;color:#93c9ad}
+#xac-root .subh{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:6px;margin-top:2px;border-top:1px dashed #25533b;font-size:11px;color:#84bea0}
+#xac-root .subh.first{border-top:0;padding-top:0}
 #xac-root .card{border:1px solid #24543a;background:#0d1b15;border-radius:10px;padding:8px 9px;display:grid;gap:3px}
 #xac-root .meta{font-size:11px;color:#9cd8b8}
 #xac-root .r2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 #xac-root .r3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+#xac-root .or-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center}
+#xac-root .or-tag{display:inline-flex;align-items:center;justify-content:center;border:1px solid #2f6e48;border-radius:999px;padding:4px 10px;min-height:28px;font-size:11px;color:#9dddb8;background:#10241b;white-space:nowrap}
+#xac-root .profile-row{grid-template-columns:minmax(0,1.7fr) minmax(88px,1fr) minmax(88px,1fr)}
 #xac-root label{font-size:11px;color:#8ebca4}
 #xac-root select,#xac-root input,#xac-root textarea,#xac-root button{border-radius:8px}
 #xac-root select,#xac-root input,#xac-root textarea{width:100%;box-sizing:border-box;border:1px solid #265a3c;background:#0a1a14;color:#d9ffe9;padding:7px 9px;font-size:12px;outline:none}
 #xac-root textarea{min-height:52px;resize:vertical}
+#xac-root #xac-debug-output{min-height:72px}
 #xac-root button{border:1px solid #2b6543;background:#10251d;color:#d9ffe9;font-size:12px;padding:8px 10px;cursor:pointer}
+#xac-root .profile-act{font-size:13px;font-weight:700;color:#e8fff2}
 #xac-root button:disabled{opacity:.58;cursor:not-allowed;filter:saturate(.65)}
 #xac-root button.p{border-color:#2fb065;background:linear-gradient(120deg,#2ea860,#49d581);color:#04140d;font-weight:700}
+#xac-root button.hint{width:19px;min-width:19px;height:19px;padding:0;border-radius:999px;border:1px solid #3b7658;background:#10291f;color:#9fe4be;font-size:11px;font-weight:800;line-height:1;text-align:center}
+#xac-root button.hint:hover{border-color:#57bf85;color:#d7ffe9}
 #xac-root .chip-group{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 #xac-root .chip-group.mode{grid-template-columns:repeat(3,minmax(0,1fr))}
 #xac-root .chip{border:1px solid #365f4a;background:#101c16;color:#c9f4de;font-size:12px;padding:8px 6px;text-align:center}
 #xac-root .chip.active{border-color:#36cf79;background:#153527;color:#8ef1bd;font-weight:700}
 #xac-root .status{font-size:11px;color:#9ad6b5}
-#xac-root .switch{display:flex;align-items:center;justify-content:space-between;border:1px solid #244d37;border-radius:9px;padding:6px 8px;background:#0f1d17}
+#xac-root .switch{display:flex;align-items:center;justify-content:space-between;border:1px solid #2f6e48;border-radius:9px;padding:8px 10px;background:#0f1d17;min-height:40px}
+#xac-root .switch span{color:#d8ffe8 !important;font-weight:650;font-size:13px;letter-spacing:.1px}
 #xac-root .switch input{width:34px;height:18px;appearance:none;background:#274536;border-radius:999px;position:relative;outline:none;border:1px solid #355a47;cursor:pointer;padding:0}
 #xac-root .switch input::after{content:'';position:absolute;left:2px;top:1px;width:13px;height:13px;border-radius:50%;background:#c9f4de;transition:all .15s ease}
 #xac-root .switch input:checked{background:#2fb065}
@@ -481,11 +817,12 @@
 #xac-root .modal-h{display:flex;justify-content:space-between;align-items:center;color:#d8ffe8;font-size:15px;font-weight:800}
 #xac-root .modal-h button{width:auto;padding:5px 9px}
 #xac-root .label-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.xac-inline-btn{border:1px solid #296449;background:linear-gradient(120deg,#1d3a2d,#12291f);color:#d8ffe8;border-radius:8px;font-size:12px;font-weight:700;padding:6px 10px;cursor:pointer;transition:all .15s ease}
+.xac-inline-host{margin-top:8px;width:100%}
+.xac-inline-btn{display:block;width:100%;border:1px solid #7ea729;background:linear-gradient(120deg,#b8e62f,#b0e238);color:#10210e;border-radius:8px;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;transition:all .15s ease;text-align:left}
 .xac-inline-btn.w{border-color:#3ea7ff;background:#13273a;color:#a8ddff}
 .xac-inline-btn.o{border-color:#56d689;background:#193329;color:#9ff3c2}
 .xac-inline-btn.f{border-color:#b85b5b;background:#311f1f;color:#ffb0b0}
-.xac-toast{position:fixed;left:50%;bottom:16px;transform:translate(-50%,8px);background:#0f2018;border:1px solid #2f6e48;color:#d9ffe9;font-size:12px;border-radius:8px;padding:8px 12px;z-index:2147483647;opacity:0;transition:all .2s ease;pointer-events:none}
+.xac-toast{position:fixed;left:50%;bottom:16px;transform:translate(-50%,8px);background:#0f2018;border:1px solid #2f6e48;color:#d9ffe9;font-size:12px;border-radius:8px;padding:8px 12px;z-index:2147483647;opacity:0;transition:all .2s ease;pointer-events:none;max-width:min(92vw,520px);line-height:1.4;white-space:normal}
 .xac-toast.warn{border-color:#b88e53;color:#ffd6a8}.xac-toast.ok{border-color:#4bbf78;color:#b9ffd6}
 #xac-ind{position:fixed;left:14px;top:14px;z-index:2147483646;background:#0e1f18;border:1px solid #2f6e48;color:#d9ffe9;border-radius:10px;padding:7px 10px;display:none;align-items:center;gap:8px;font-size:12px;box-shadow:0 10px 28px rgba(0,0,0,.38)}
 #xac-ind.show{display:inline-flex}#xac-ind .d{width:8px;height:8px;border-radius:50%;background:#4bd98b;box-shadow:0 0 8px rgba(75,217,139,.9)}
@@ -581,6 +918,120 @@
     return bs.find((b) => b instanceof HTMLButtonElement && !b.disabled && b.offsetParent !== null) || null
   }
 
+  function normalizeSearchQuery(rawQuery) {
+    const text = s(rawQuery, '').trim()
+    if (!text) return DEFAULT_X_SEARCH_QUERY
+    const hasXSyntax = /(?:min_[a-z_]+:|filter:|since:|until:|lang:|from:|to:|\(|\)|\bOR\b|\bAND\b)/i.test(text)
+    if (hasXSyntax) return text
+    return `(${text}) min_replies:1 -filter:replies`
+  }
+
+  function syncSearchQueryFromControls(updatePreview = true) {
+    const query = buildSearchQueryFromControls(S.advanced)
+    S.advanced.searchQuery = query
+    if (updatePreview) {
+      const preview = document.getElementById('xac-search-preview')
+      if (preview) preview.value = query
+    }
+    return query
+  }
+
+  function buildSearchUrl(rawQuery) {
+    const q = normalizeSearchQuery(rawQuery)
+    return `https://x.com/search?q=${encodeURIComponent(q)}&src=typed_query&f=live`
+  }
+
+  function clickLike(article) {
+    const btn = article?.querySelector('button[data-testid="like"], div[data-testid="like"]')
+    if (!btn) return false
+    btn.click()
+    return true
+  }
+
+  async function clickRetweet(article) {
+    const btn = article?.querySelector('button[data-testid="retweet"], div[data-testid="retweet"]')
+    if (!btn) return false
+    btn.click()
+    await sleep(220)
+    const confirm = document.querySelector('div[role="menuitem"][data-testid="retweetConfirm"]')
+    if (confirm) {
+      confirm.click()
+      return true
+    }
+    return false
+  }
+
+  function clickFollow(article) {
+    const direct = article?.querySelector('button[data-testid$="-follow"]')
+    if (direct) {
+      direct.click()
+      return true
+    }
+    const fallback = Array.from(article?.querySelectorAll('button') || []).find((btn) => {
+      const text = String(btn?.innerText || '').trim().toLowerCase()
+      return text === 'follow'
+    })
+    if (!fallback) return false
+    fallback.click()
+    return true
+  }
+
+  async function runPostActions(article) {
+    const cfg = normalizeAdvanced(S.advanced)
+    if (cfg.autoLike) {
+      clickLike(article)
+      await sleep(cfg.actionDelayMs)
+    }
+    if (cfg.autoRetweet) {
+      await clickRetweet(article)
+      await sleep(cfg.actionDelayMs)
+    }
+    if (cfg.autoFollow) {
+      clickFollow(article)
+    }
+  }
+
+  async function runDebugGeneration() {
+    const prompt = String(S.advanced?.debugPrompt || '').trim()
+    if (!prompt) {
+      toast(S.lang === 'zh' ? '请先输入调试提示词' : 'Please input debug prompt first', 'warn')
+      return
+    }
+    const result = await send('xac:spark-complete', {
+      prompt,
+      timeoutMs: 70000,
+      systemPrompt: S.lang === 'zh'
+        ? '你是评论调试助手。仅返回可直接发布的一条回复内容，不要解释。'
+        : 'You are a comment debugging assistant. Return only one post-ready reply and no explanation.'
+    })
+    if (!result.ok) {
+      toast(`${t('fail')}: ${formatUserError(s(result.error, t('unknownError')))}`, 'warn')
+      return
+    }
+    S.advanced.debugOutput = String(result.text || '').trim()
+    await saveAdvanced()
+    render()
+  }
+
+  function randomBetween(minValue, maxValue) {
+    const low = Math.max(0, Math.round(n(minValue, 0)))
+    const high = Math.max(low, Math.round(n(maxValue, low)))
+    if (high <= low) return low
+    return low + Math.floor(Math.random() * (high - low + 1))
+  }
+
+  function passesAdvancedFilter(article) {
+    const cfg = normalizeAdvanced(S.advanced)
+    if (!cfg.minTweetChars && !cfg.skipIfContainsLinks && !cfg.skipIfContainsImages) return true
+    const ctx = context(article)
+    const tweetText = String(ctx?.tweetText || '')
+    if (cfg.minTweetChars > 0 && tweetText.length < cfg.minTweetChars) return false
+    const combined = `${ctx?.tweetText || ''}\n${ctx?.quoteText || ''}\n${ctx?.threadText || ''}`
+    if (cfg.skipIfContainsLinks && /(?:https?:\/\/|www\.)\S+/i.test(combined)) return false
+    if (cfg.skipIfContainsImages && Array.isArray(ctx?.images) && ctx.images.length > 0) return false
+    return true
+  }
+
   function messages(ctx) {
     const p = promptSettings()
     const ctaRuleZh = p.includeCta ? '结尾添加简短行动号召（例如提问或邀请互动）。' : ''
@@ -613,7 +1064,7 @@
     if (ok) {
       toast(t('signInDone'), 'ok')
     } else {
-      toast(`${t('signInFail')}: ${s(r.error, 'Unknown error')}`, 'warn')
+      toast(`${t('signInFail')}: ${s(r.error, t('unknownError'))}`, 'warn')
     }
     return ok
   }
@@ -626,20 +1077,20 @@
       const ctx = context(article)
       if (!(ctx.tweetText || ctx.quoteText || ctx.threadText || ctx.images.length)) { btnState(btn, 'f', t('noc')); toast(t('noc'), 'warn'); return false }
       const ed = await openEditor(article)
-      if (!ed) { btnState(btn, 'f', 'No editor'); toast('No editor found', 'warn'); return false }
+      if (!ed) { btnState(btn, 'f', t('fail')); toast(t('editorMissing'), 'warn'); return false }
       const r = await send('xac:spark-complete', { messages: messages(ctx), timeoutMs: 70000 })
       if (!r.ok || !s(r.text, '')) {
-        const reason = formatUserError(s(r.error, 'Empty model output'))
+        const reason = formatUserError(s(r.error, t('emptyModelOutput')))
         btnState(btn, 'f', t('fail')); toast(`${t('fail')}: ${reason}`, 'warn')
         return false
       }
       const limited = trimToXLimit(s(r.text, ''), X_NON_PREMIUM_MAX_LENGTH)
       if (!limited.text) {
-        btnState(btn, 'f', t('fail')); toast(`${t('fail')}: Empty model output`, 'warn')
+        btnState(btn, 'f', t('fail')); toast(`${t('fail')}: ${t('emptyModelOutput')}`, 'warn')
         return false
       }
       if (!putText(ed, limited.text)) {
-        btnState(btn, 'f', t('fail')); toast('Failed to insert text into editor', 'warn')
+        btnState(btn, 'f', t('fail')); toast(t('insertFailed'), 'warn')
         return false
       }
       if (limited.truncated) {
@@ -651,11 +1102,12 @@
         btnState(btn, '', t('reply'))
       }, fromAuto ? 900 : 1600)
       if (S.autoPost) { const sb = sendButton(); if (sb) { await sleep(450); sb.click() } }
+      await runPostActions(article).catch(() => {})
       return true
     } catch (e) {
       console.error('[XAC] generate failed', e)
       btnState(btn, 'f', t('fail'))
-      toast(`${t('fail')}: ${formatUserError(s(e?.message, 'Unknown error'))}`, 'warn')
+      toast(`${t('fail')}: ${formatUserError(s(e?.message, t('unknownError')))}`, 'warn')
       return false
     }
     finally {
@@ -667,7 +1119,7 @@
   function makeBtn(article) {
     const g = article?.querySelector('div[role="group"]'); if (!g || isOwn(article)) return null
     const ex = g.parentElement?.querySelector('.xac-inline-btn'); if (ex) return ex
-    const host = document.createElement('div'); host.style.marginTop = '8px'
+    const host = document.createElement('div'); host.className = 'xac-inline-host'
     const b = document.createElement('button'); b.type = 'button'; b.className = 'xac-inline-btn'; b.textContent = t('reply')
     b.addEventListener('click', async () => { await generate(article, b, false) })
     host.appendChild(b); g.parentElement?.appendChild(host); return b
@@ -697,6 +1149,7 @@
       let b = a.parentElement?.querySelector('.xac-inline-btn'); if (!b) b = makeBtn(a)
       if (!b || b.dataset.autoDone === '1' || b.dataset.busy === '1') continue
       if (b.classList.contains('o')) { b.dataset.autoDone = '1'; continue }
+      if (!passesAdvancedFilter(a)) { b.dataset.autoFiltered = '1'; continue }
       return { article: a, btn: b }
     }
     return null
@@ -717,26 +1170,39 @@
     if (S.auto.active) return
     S.auto.active = true; S.auto.count = 0; S.auto.max = Math.max(0, Math.round(n(max, 0))); S.idle = 0
     setStatus(t('run')); ind(true)
+    const cfg = normalizeAdvanced(S.advanced)
 
     while (S.auto.active) {
       if (S.auto.max > 0 && S.auto.count >= S.auto.max) break
       const c = nextCandidate()
       if (!c) {
-        S.idle += 1; if (S.idle > 6) break
-        window.scrollBy({ top: 900, behavior: 'smooth' }); await sleep(1800); continue
+        S.idle += 1; if (S.idle > cfg.maxIdleLoops) break
+        window.scrollBy({ top: cfg.scrollStep, behavior: 'smooth' }); await sleep(cfg.scrollDelayMs); continue
       }
       S.idle = 0
       c.article.scrollIntoView({ behavior: 'smooth', block: 'center' }); await sleep(700)
       const ok = await generate(c.article, c.btn, true)
       c.btn.dataset.autoDone = '1'
       if (ok) { S.auto.count += 1; ind(true) }
-      await sleep(3500 + Math.floor(Math.random() * 4500))
+      await sleep(randomBetween(cfg.replyDelayMinMs, cfg.replyDelayMaxMs))
     }
 
     S.auto.active = false; ind(false); setStatus(t('stopped')); toast(`${t('done')}: ${S.auto.count}`, 'ok'); render()
   }
 
   function stopAuto() { S.auto.active = false; ind(false); setStatus(t('stopped')) }
+
+  function openPanelAndFocusAdvanced() {
+    S.open = true
+    render()
+    setTimeout(() => {
+      const anchor = document.getElementById('xac-advanced-anchor')
+      if (!anchor) return
+      anchor.classList.add('flash')
+      anchor.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setTimeout(() => anchor.classList.remove('flash'), 1300)
+    }, 120)
+  }
 
   function openProfileEditor(mode = 'new') {
     if (mode === 'edit') {
@@ -802,8 +1268,59 @@
     render()
   }
 
+  function snapshotPanelUiState() {
+    const root = document.getElementById('xac-root')
+    const body = root?.querySelector('.body')
+    const active = document.activeElement
+    const inPanel = !!(active instanceof HTMLElement && active.closest('#xac-root'))
+    const state = {
+      bodyScrollTop: body ? body.scrollTop : 0,
+      activeId: '',
+      selStart: null,
+      selEnd: null
+    }
+
+    if (!inPanel || !(active instanceof HTMLElement) || !active.id) {
+      return state
+    }
+
+    state.activeId = active.id
+    if (typeof active.selectionStart === 'number' && typeof active.selectionEnd === 'number') {
+      state.selStart = active.selectionStart
+      state.selEnd = active.selectionEnd
+    }
+    return state
+  }
+
+  function restorePanelUiState(state) {
+    if (!state || typeof state !== 'object') return
+    const root = document.getElementById('xac-root')
+    const body = root?.querySelector('.body')
+    if (body && Number.isFinite(state.bodyScrollTop)) {
+      body.scrollTop = Math.max(0, Number(state.bodyScrollTop) || 0)
+    }
+    if (!state.activeId) return
+
+    const active = document.getElementById(state.activeId)
+    if (!(active instanceof HTMLElement)) return
+    try {
+      active.focus({ preventScroll: true })
+    } catch {
+      try { active.focus() } catch {}
+    }
+
+    const canRestoreSelection =
+      typeof state.selStart === 'number' &&
+      typeof state.selEnd === 'number' &&
+      typeof active.setSelectionRange === 'function'
+    if (canRestoreSelection) {
+      try { active.setSelectionRange(state.selStart, state.selEnd) } catch {}
+    }
+  }
+
   function render() {
     const root = document.getElementById('xac-root'); if (!root) return
+    const uiState = snapshotPanelUiState()
     const p = activeProfile(), q = S.profile.quickSettings || DEFAULT_QUICK, ps = S.profile.profiles || []
     const isBusy = Boolean(S.pendingAction)
     const signInLabel = S.pendingAction === 'login' ? t('loggingIn') : (S.signedIn ? t('logout') : t('signIn'))
@@ -824,7 +1341,13 @@
       { id: 'long', label: S.lang === 'zh' ? '长' : 'Long' }
     ]
     const quotaNum = Math.max(0, 8 - (S.auto.count % 9))
+    const includeTerms = parseSearchTerms(S.advanced.searchIncludeTerms || S.advanced.searchKeyword)
+    const includeTermA = includeTerms[0] || ''
+    const includeTermB = includeTerms[1] || ''
     const d = S.editor?.draft || emptyProfileDraft()
+    const hintBtn = (key) => `<button class="hint" type="button" data-help="${esc(key)}">?</button>`
+    const hintLabel = (text, key) => `<div class="hlabel"><label>${esc(text)}</label>${key ? hintBtn(key) : ''}</div>`
+    const stepHead = (titleKey, descKey, anchorId = '') => `<div class="step"><div class="step-title"${anchorId ? ` id="${esc(anchorId)}"` : ''}>${esc(t(titleKey))}</div><div class="step-desc">${esc(t(descKey))}</div></div>`
     root.className = S.open ? '' : 'collapsed'
     root.innerHTML = `<div class="shell">
       <button class="top" id="xac-t">
@@ -832,45 +1355,108 @@
         <span class="quota">● ${S.lang === 'zh' ? `剩余${quotaNum}次` : `${quotaNum} left`}</span>
       </button>
       <div class="body">
-        <div class="card">
-          <div class="meta">${esc(t('planLine'))}</div>
-          <div class="meta">${esc(t('remainLine'))}</div>
+        <div class="guide-banner">
+          <div class="meta">• ${esc(t('guideLine1'))}</div>
+          <div class="meta">• ${esc(t('guideLine2'))}</div>
+          <div class="meta">• ${esc(t('guideLine3'))}</div>
         </div>
-        <div class="sec">— ${esc(t('accountSec'))}</div>
-        <div class="r2">
-          <button id="xac-login" ${isBusy ? 'disabled' : ''}>${esc(signInLabel)}</button>
-          <button class="pro" id="xac-upgrade">${esc(t('upgradePro'))}</button>
+
+        <div class="group">
+          ${stepHead('stepAccount', 'stepAccountDesc')}
+          <div class="card">
+            <div class="meta">${esc(t('planLine'))}</div>
+            <div class="meta">${esc(t('remainLine'))}</div>
+          </div>
+          <div class="mini-row">
+            <button class="mini-btn" id="xac-login" ${isBusy ? 'disabled' : ''}>${esc(signInLabel)}</button>
+            <button class="mini-btn pro" id="xac-upgrade">${esc(t('upgradePro'))}</button>
+            <button class="mini-btn chip ${S.lang === 'en' ? 'active' : ''}" id="xac-l-en" ${isBusy ? 'disabled' : ''}>EN</button>
+            <button class="mini-btn chip ${S.lang === 'zh' ? 'active' : ''}" id="xac-l-zh" ${isBusy ? 'disabled' : ''}>中文</button>
+          </div>
         </div>
-        <div class="r2">
-          <button class="chip ${S.lang === 'en' ? 'active' : ''}" id="xac-l-en" ${isBusy ? 'disabled' : ''}>EN</button>
-          <button class="chip ${S.lang === 'zh' ? 'active' : ''}" id="xac-l-zh" ${isBusy ? 'disabled' : ''}>中文</button>
+
+        <div class="group">
+          ${stepHead('stepProfile', 'stepProfileDesc')}
+          <div class="r3 profile-row">
+            <select id="xac-p" ${isBusy ? 'disabled' : ''}>${ps.map((x) => { const pz = localizePresetProfile(x, S.lang); return `<option value="${esc(x.id)}" ${x.id === S.profile.activeProfileId ? 'selected' : ''}>${esc(`${pz.emoji} ${pz.name}`)}</option>` }).join('')}</select>
+            <button class="profile-act" id="xac-p-e" ${isBusy ? 'disabled' : ''}>${esc(t('editP'))}</button>
+            <button class="profile-act" id="xac-p-n" ${isBusy ? 'disabled' : ''}>+ ${esc(t('newP'))}</button>
+          </div>
         </div>
-        <div class="sec">— ${esc(t('aiProfileSec'))}</div>
-        <div class="r3">
-          <select id="xac-p" ${isBusy ? 'disabled' : ''}>${ps.map((x) => { const pz = localizePresetProfile(x, S.lang); return `<option value="${esc(x.id)}" ${x.id === S.profile.activeProfileId ? 'selected' : ''}>${esc(`${pz.emoji} ${pz.name}`)}</option>` }).join('')}</select>
-          <button id="xac-p-e" ${isBusy ? 'disabled' : ''}>${esc(t('editP'))}</button>
-          <button id="xac-p-n" ${isBusy ? 'disabled' : ''}>+ ${esc(t('newP'))}</button>
+
+        <div class="group">
+          ${stepHead('stepStrategy', 'stepStrategyDesc')}
+          ${hintLabel(t('mode'), 'mode')}
+          <div class="chip-group mode">
+            ${modeOptions.map((item) => `<button class="chip ${q.engagementMode === item.id ? 'active' : ''}" data-mode="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
+          </div>
+          ${hintLabel(t('goal'), 'goal')}
+          <div class="chip-group">
+            ${goalOptions.map((item) => `<button class="chip ${q.goal === item.id ? 'active' : ''}" data-goal="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
+          </div>
+          ${hintLabel(t('len'), 'len')}
+          <div class="r3">
+            ${lengthOptions.map((item) => `<button class="chip ${q.length === item.id ? 'active' : ''}" data-len="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
+          </div>
         </div>
-        <div class="sec">— ${esc(t('interactionSec'))}</div>
-        <div class="chip-group mode">
-          ${modeOptions.map((item) => `<button class="chip ${q.engagementMode === item.id ? 'active' : ''}" data-mode="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
+
+        <div class="group">
+          ${stepHead('stepContent', 'stepContentDesc')}
+          ${hintLabel(t('ci'), 'ci')}
+          <textarea id="xac-ci">${esc(q.customInstructions || p.instructions || '')}</textarea>
+          ${hintLabel(t('persona'), 'persona')}
+          <textarea id="xac-pe">${esc(q.persona || p.persona || '')}</textarea>
         </div>
-        <div class="sec">— ${esc(t('quickSec'))}</div>
-        <label>${esc(t('goal'))}</label>
-        <div class="chip-group">
-          ${goalOptions.map((item) => `<button class="chip ${q.goal === item.id ? 'active' : ''}" data-goal="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
+
+        <div class="group">
+          ${stepHead('stepExecution', 'stepExecutionDesc')}
+          <div class="hlabel"><span class="mini">${esc(t('autoPost'))}</span>${hintBtn('autoPost')}</div>
+          <div class="switch"><span>${esc(t('autoPost'))}</span><input id="xac-ap" type="checkbox" ${S.autoPost ? 'checked' : ''}/></div>
+          ${hintLabel(t('max'), 'max')}
+          <input id="xac-max" type="number" min="0" max="200" value="${esc(String(S.auto.max || 0))}"/>
+          <div class="r2"><button class="p" id="xac-s" ${isBusy ? 'disabled' : ''}>${esc(t('start'))}</button><button id="xac-x">${esc(t('stop'))}</button></div>
+          <div class="status" id="xac-status">${esc(S.status || t('idle'))}</div>
         </div>
-        <label>${esc(t('len'))}</label>
-        <div class="r3">
-          ${lengthOptions.map((item) => `<button class="chip ${q.length === item.id ? 'active' : ''}" data-len="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
+
+        <div class="group">
+          ${stepHead('stepAdvanced', 'stepAdvancedDesc', 'xac-advanced-anchor')}
+          <div class="subh first"><span>${esc(t('sectionAutoActions'))}</span>${hintBtn('autoActions')}</div>
+          <div class="switch"><span>${esc(t('autoLike'))}</span><input id="xac-like" type="checkbox" ${S.advanced.autoLike ? 'checked' : ''}/></div>
+          <div class="switch"><span>${esc(t('autoRetweet'))}</span><input id="xac-retweet" type="checkbox" ${S.advanced.autoRetweet ? 'checked' : ''}/></div>
+          <div class="switch"><span>${esc(t('autoFollow'))}</span><input id="xac-follow" type="checkbox" ${S.advanced.autoFollow ? 'checked' : ''}/></div>
+
+          <div class="subh"><span>${esc(t('sectionFlow'))}</span>${hintBtn('flow')}</div>
+          <label>${esc(t('scrollStep'))}</label><input id="xac-scroll-step" type="number" min="300" max="2000" step="50" value="${esc(String(S.advanced.scrollStep))}"/>
+          <label>${esc(t('scrollDelayMs'))}</label><input id="xac-scroll-delay" type="number" min="400" max="10000" step="100" value="${esc(String(S.advanced.scrollDelayMs))}"/>
+          <label>${esc(t('replyDelayMinMs'))}</label><input id="xac-reply-delay-min" type="number" min="500" max="30000" step="100" value="${esc(String(S.advanced.replyDelayMinMs))}"/>
+          <label>${esc(t('replyDelayMaxMs'))}</label><input id="xac-reply-delay-max" type="number" min="500" max="60000" step="100" value="${esc(String(S.advanced.replyDelayMaxMs))}"/>
+          <label>${esc(t('actionDelayMs'))}</label><input id="xac-action-delay" type="number" min="100" max="5000" step="50" value="${esc(String(S.advanced.actionDelayMs))}"/>
+          <label>${esc(t('maxIdleLoops'))}</label><input id="xac-max-idle" type="number" min="1" max="50" step="1" value="${esc(String(S.advanced.maxIdleLoops))}"/>
+
+          <div class="subh"><span>${esc(t('sectionFilter'))}</span>${hintBtn('filter')}</div>
+          <label>${esc(t('minTweetChars'))}</label><input id="xac-min-chars" type="number" min="0" max="1000" step="10" value="${esc(String(S.advanced.minTweetChars))}"/>
+          <div class="switch"><span>${esc(t('skipIfContainsLinks'))}</span><input id="xac-skip-links" type="checkbox" ${S.advanced.skipIfContainsLinks ? 'checked' : ''}/></div>
+          <div class="switch"><span>${esc(t('skipIfContainsImages'))}</span><input id="xac-skip-images" type="checkbox" ${S.advanced.skipIfContainsImages ? 'checked' : ''}/></div>
+          <label>${esc(t('searchIncludeTerms'))}</label>
+          <div class="or-row">
+            <input id="xac-search-include-a" type="text" placeholder="${esc(t('searchIncludePlaceholderA'))}" value="${esc(includeTermA)}"/>
+            <span class="or-tag">${esc(t('searchOr'))}</span>
+            <input id="xac-search-include-b" type="text" placeholder="${esc(t('searchIncludePlaceholderB'))}" value="${esc(includeTermB)}"/>
+          </div>
+          <label>${esc(t('searchExcludeTerms'))}</label><input id="xac-search-exclude" type="text" placeholder="${esc(t('searchExcludePlaceholder'))}" value="${esc(S.advanced.searchExcludeTerms || '')}"/>
+          <label>${esc(t('searchMinReplies'))}</label><input id="xac-search-min-replies" type="number" min="0" max="9999" step="1" value="${esc(String(S.advanced.searchMinReplies))}"/>
+          <div class="switch"><span>${esc(t('searchExcludeReplies'))}</span><input id="xac-search-exclude-replies" type="checkbox" ${S.advanced.searchExcludeReplies ? 'checked' : ''}/></div>
+          <label>${esc(t('searchPreview'))}</label><input id="xac-search-preview" type="text" readonly value="${esc(S.advanced.searchQuery || DEFAULT_X_SEARCH_QUERY)}"/>
+          <button id="xac-open-search">${esc(t('openSearch'))}</button>
+
+          <div class="subh"><span>${esc(t('debugSec'))}</span>${hintBtn('debug')}</div>
+          <label>${esc(t('debugPrompt'))}</label><textarea id="xac-debug-prompt">${esc(S.advanced.debugPrompt || '')}</textarea>
+          <div class="r2">
+            <button id="xac-debug-g" ${isBusy ? 'disabled' : ''}>${esc(t('debugGenerate'))}</button>
+            <button id="xac-debug-c">${esc(t('debugCopy'))}</button>
+          </div>
+          <label>${esc(t('debugOutput'))}</label><textarea id="xac-debug-output" readonly>${esc(S.advanced.debugOutput || '')}</textarea>
         </div>
-        <label>${esc(t('ci'))}</label><textarea id="xac-ci">${esc(q.customInstructions || p.instructions || '')}</textarea>
-        <label>${esc(t('persona'))}</label><textarea id="xac-pe">${esc(q.persona || p.persona || '')}</textarea>
-        <div class="sec">— ${esc(t('settingsSec'))}</div>
-        <div class="switch"><span>${esc(t('autoPost'))}</span><input id="xac-ap" type="checkbox" ${S.autoPost ? 'checked' : ''}/></div>
-        <label>${esc(t('max'))}</label><input id="xac-max" type="number" min="0" max="200" value="${esc(String(S.auto.max || 0))}"/>
-        <div class="r2"><button class="p" id="xac-s" ${isBusy ? 'disabled' : ''}>${esc(t('start'))}</button><button id="xac-x">${esc(t('stop'))}</button></div>
-        <div class="status" id="xac-status">${esc(S.status || t('idle'))}</div>
       </div>
     </div>
     ${S.editor?.open ? `<div class="modal" id="xac-editor-modal">
@@ -939,8 +1525,116 @@
     document.querySelectorAll('#xac-root [data-len]').forEach((el) => {
       el.addEventListener('click', async () => { S.profile.quickSettings.length = s(el.getAttribute('data-len'), 'short'); await saveProfileState(); render() })
     })
-    document.getElementById('xac-ci')?.addEventListener('input', async (e) => { S.profile.quickSettings.customInstructions = e.target.value || ''; await saveProfileState() })
-    document.getElementById('xac-pe')?.addEventListener('input', async (e) => { S.profile.quickSettings.persona = e.target.value || ''; await saveProfileState() })
+    document.querySelectorAll('#xac-root [data-help]').forEach((el) => {
+      el.addEventListener('click', (event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        const key = s(el.getAttribute('data-help'), '')
+        const msgKey = HELP_KEY_TO_I18N[key]
+        if (!msgKey) return
+        toast(t(msgKey), 'info')
+      })
+    })
+    document.getElementById('xac-ci')?.addEventListener('input', (e) => {
+      S.profile.quickSettings.customInstructions = e.target.value || ''
+      debounceRun('profile-custom-instructions', () => saveProfileState())
+    })
+    document.getElementById('xac-pe')?.addEventListener('input', (e) => {
+      S.profile.quickSettings.persona = e.target.value || ''
+      debounceRun('profile-persona', () => saveProfileState())
+    })
+    document.getElementById('xac-like')?.addEventListener('change', async (e) => { S.advanced.autoLike = !!e.target.checked; await saveAdvanced(true) })
+    document.getElementById('xac-retweet')?.addEventListener('change', async (e) => { S.advanced.autoRetweet = !!e.target.checked; await saveAdvanced(true) })
+    document.getElementById('xac-follow')?.addEventListener('change', async (e) => { S.advanced.autoFollow = !!e.target.checked; await saveAdvanced(true) })
+    document.getElementById('xac-scroll-step')?.addEventListener('change', async (e) => { S.advanced.scrollStep = clampNum(e.target.value, 300, 2000, DEFAULT_ADVANCED.scrollStep); e.target.value = String(S.advanced.scrollStep); await saveAdvanced(true) })
+    document.getElementById('xac-scroll-delay')?.addEventListener('change', async (e) => { S.advanced.scrollDelayMs = clampNum(e.target.value, 400, 10000, DEFAULT_ADVANCED.scrollDelayMs); e.target.value = String(S.advanced.scrollDelayMs); await saveAdvanced(true) })
+    document.getElementById('xac-reply-delay-min')?.addEventListener('change', async (e) => {
+      S.advanced.replyDelayMinMs = clampNum(e.target.value, 500, 30000, DEFAULT_ADVANCED.replyDelayMinMs)
+      S.advanced.replyDelayMaxMs = Math.max(S.advanced.replyDelayMaxMs || 0, S.advanced.replyDelayMinMs)
+      e.target.value = String(S.advanced.replyDelayMinMs)
+      const maxInput = document.getElementById('xac-reply-delay-max')
+      if (maxInput) maxInput.value = String(S.advanced.replyDelayMaxMs)
+      await saveAdvanced(true)
+    })
+    document.getElementById('xac-reply-delay-max')?.addEventListener('change', async (e) => {
+      S.advanced.replyDelayMaxMs = clampNum(e.target.value, 500, 60000, DEFAULT_ADVANCED.replyDelayMaxMs)
+      S.advanced.replyDelayMinMs = Math.min(S.advanced.replyDelayMinMs || DEFAULT_ADVANCED.replyDelayMinMs, S.advanced.replyDelayMaxMs)
+      e.target.value = String(S.advanced.replyDelayMaxMs)
+      const minInput = document.getElementById('xac-reply-delay-min')
+      if (minInput) minInput.value = String(S.advanced.replyDelayMinMs)
+      await saveAdvanced(true)
+    })
+    document.getElementById('xac-action-delay')?.addEventListener('change', async (e) => {
+      S.advanced.actionDelayMs = clampNum(e.target.value, 100, 5000, DEFAULT_ADVANCED.actionDelayMs)
+      e.target.value = String(S.advanced.actionDelayMs)
+      await saveAdvanced(true)
+    })
+    document.getElementById('xac-max-idle')?.addEventListener('change', async (e) => {
+      S.advanced.maxIdleLoops = clampNum(e.target.value, 1, 50, DEFAULT_ADVANCED.maxIdleLoops)
+      e.target.value = String(S.advanced.maxIdleLoops)
+      await saveAdvanced(true)
+    })
+    document.getElementById('xac-min-chars')?.addEventListener('change', async (e) => {
+      S.advanced.minTweetChars = clampNum(e.target.value, 0, 1000, DEFAULT_ADVANCED.minTweetChars)
+      e.target.value = String(S.advanced.minTweetChars)
+      await saveAdvanced(true)
+    })
+    document.getElementById('xac-skip-links')?.addEventListener('change', async (e) => { S.advanced.skipIfContainsLinks = !!e.target.checked; await saveAdvanced(true) })
+    document.getElementById('xac-skip-images')?.addEventListener('change', async (e) => { S.advanced.skipIfContainsImages = !!e.target.checked; await saveAdvanced(true) })
+    const syncIncludeTermsFromInputs = () => {
+      const left = document.getElementById('xac-search-include-a')?.value || ''
+      const right = document.getElementById('xac-search-include-b')?.value || ''
+      S.advanced.searchIncludeTerms = normalizeSearchTermInput(`${left}, ${right}`)
+      S.advanced.searchKeyword = S.advanced.searchIncludeTerms
+    }
+    document.getElementById('xac-search-include-a')?.addEventListener('input', () => {
+      syncIncludeTermsFromInputs()
+      syncSearchQueryFromControls(true)
+      debounceRun('advanced-search-include', () => saveAdvanced(true))
+    })
+    document.getElementById('xac-search-include-b')?.addEventListener('input', () => {
+      syncIncludeTermsFromInputs()
+      syncSearchQueryFromControls(true)
+      debounceRun('advanced-search-include', () => saveAdvanced(true))
+    })
+    document.getElementById('xac-search-exclude')?.addEventListener('input', (e) => {
+      S.advanced.searchExcludeTerms = e.target.value || ''
+      syncSearchQueryFromControls(true)
+      debounceRun('advanced-search-exclude', () => saveAdvanced(true))
+    })
+    document.getElementById('xac-search-min-replies')?.addEventListener('change', async (e) => {
+      S.advanced.searchMinReplies = clampNum(e.target.value, 0, 9999, DEFAULT_ADVANCED.searchMinReplies)
+      e.target.value = String(S.advanced.searchMinReplies)
+      syncSearchQueryFromControls(true)
+      await saveAdvanced(true)
+    })
+    document.getElementById('xac-search-exclude-replies')?.addEventListener('change', async (e) => {
+      S.advanced.searchExcludeReplies = !!e.target.checked
+      syncSearchQueryFromControls(true)
+      await saveAdvanced(true)
+    })
+    document.getElementById('xac-open-search')?.addEventListener('click', async () => {
+      const query = syncSearchQueryFromControls(true)
+      await saveAdvanced(true)
+      window.location.href = buildSearchUrl(query)
+    })
+    document.getElementById('xac-debug-prompt')?.addEventListener('input', (e) => {
+      S.advanced.debugPrompt = e.target.value || ''
+      debounceRun('advanced-debug-prompt', () => saveAdvanced(true))
+    })
+    document.getElementById('xac-debug-g')?.addEventListener('click', async () => {
+      await runPendingAction('debug', t('gen'), async () => { await runDebugGeneration() }, false)
+    })
+    document.getElementById('xac-debug-c')?.addEventListener('click', async () => {
+      const text = String(S.advanced.debugOutput || '').trim()
+      if (!text) return
+      try {
+        await navigator.clipboard.writeText(text)
+        toast(S.lang === 'zh' ? '已复制' : 'Copied', 'ok')
+      } catch {
+        toast(t('fail'), 'warn')
+      }
+    })
     document.getElementById('xac-ap')?.addEventListener('change', async (e) => { S.autoPost = !!e.target.checked; await set({ [K.autoPost]: S.autoPost }) })
     document.getElementById('xac-max')?.addEventListener('change', (e) => { S.auto.max = Math.max(0, Math.round(n(e.target.value, 0))) })
     document.getElementById('xac-s')?.addEventListener('click', async () => { const m = Math.max(0, Math.round(n(document.getElementById('xac-max')?.value, 0))); await startAuto(m) })
@@ -979,6 +1673,8 @@
         await runPendingAction('save', t('saving'), async () => { await saveProfileEditorDraft() }, false)
       })
     }
+
+    restorePanelUiState(uiState)
   }
 
   function mount() {
@@ -994,18 +1690,43 @@
 
   async function init() {
     styles(); await loadState(); await syncPresetQuickSettingsByLanguage().catch(() => {}); mount(); setStatus(t('idle')); scanNow(); observe()
-    chrome.storage.onChanged.addListener((ch, area) => {
-      if (area !== 'local') return
-      if (ch[K.lang]) {
-        S.lang = normLang(ch[K.lang].newValue)
-        syncPresetQuickSettingsByLanguage().catch(() => {})
-        render()
-        schedule()
-      }
-      if (ch[K.autoPost]) { S.autoPost = b(ch[K.autoPost].newValue, false); render() }
-      if (ch[K.googleSession]) { S.signedIn = !!(ch[K.googleSession].newValue && ch[K.googleSession].newValue.accessToken); render() }
-      if (ch[K.profileMeta]) { S.profileMeta = ch[K.profileMeta].newValue || {}; render() }
-    })
+    const runtimeOnMessage = globalThis.chrome?.runtime?.onMessage
+    if (runtimeOnMessage && typeof runtimeOnMessage.addListener === 'function') {
+      runtimeOnMessage.addListener((message) => {
+        if (!message || !message.xacAction) return
+        if (message.xacAction === 'xac:content-open-advanced') {
+          openPanelAndFocusAdvanced()
+          return
+        }
+        if (message.xacAction === 'xac:content-open-search') {
+          window.location.href = buildSearchUrl(message.query || S.advanced?.searchQuery || '')
+        }
+      })
+    }
+    const storageOnChanged = globalThis.chrome?.storage?.onChanged
+    if (storageOnChanged && typeof storageOnChanged.addListener === 'function') {
+      storageOnChanged.addListener((ch, area) => {
+        if (area !== 'local') return
+        if (ch[K.lang]) {
+          S.lang = normLang(ch[K.lang].newValue)
+          syncPresetQuickSettingsByLanguage().catch(() => {})
+          render()
+          schedule()
+        }
+        if (ch[K.autoPost]) { S.autoPost = b(ch[K.autoPost].newValue, false); render() }
+        if (ch[K.googleSession]) { S.signedIn = !!(ch[K.googleSession].newValue && ch[K.googleSession].newValue.accessToken); render() }
+        if (ch[K.profileMeta]) { S.profileMeta = ch[K.profileMeta].newValue || {}; render() }
+        if (ch[K.advanced]) {
+          S.advanced = normalizeAdvanced(ch[K.advanced].newValue)
+          const ae = document.activeElement
+          const editingInPanel =
+            ae instanceof HTMLElement &&
+            !!ae.closest('#xac-root') &&
+            (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.getAttribute('contenteditable') === 'true')
+          if (!editingInPanel) render()
+        }
+      })
+    }
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true })

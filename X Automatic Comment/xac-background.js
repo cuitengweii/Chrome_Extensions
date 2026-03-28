@@ -1035,6 +1035,183 @@ function failure(error) {
   return { ok: false, error: safeErrorMessage(error) }
 }
 
+function queryTabs(queryInfo) {
+  return new Promise((resolve) => {
+    chrome.tabs.query(queryInfo, (items) => {
+      resolve(Array.isArray(items) ? items : [])
+    })
+  })
+}
+
+function createTab(createProperties) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.create(createProperties, (tab) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message))
+        return
+      }
+      resolve(tab)
+    })
+  })
+}
+
+function updateTab(tabId, updateProperties) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.update(tabId, updateProperties, (tab) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message))
+        return
+      }
+      resolve(tab)
+    })
+  })
+}
+
+function focusWindow(windowId) {
+  if (typeof windowId !== "number") return Promise.resolve()
+  return new Promise((resolve) => {
+    chrome.windows.update(windowId, { focused: true }, () => resolve())
+  })
+}
+
+function sendMessageToTab(tabId, payload) {
+  return new Promise((resolve) => {
+    chrome.tabs.sendMessage(tabId, payload, (response) => {
+      if (chrome.runtime.lastError) {
+        resolve({ ok: false, error: chrome.runtime.lastError.message })
+        return
+      }
+      resolve({ ok: true, response })
+    })
+  })
+}
+
+function isRecoverableTabMessageError(error) {
+  return /Receiving end does not exist|Could not establish connection|Extension context invalidated/i.test(String(error || ""))
+}
+
+function waitForTabComplete(tabId, timeoutMs = 12000) {
+  return new Promise((resolve) => {
+    if (typeof tabId !== "number") {
+      resolve(false)
+      return
+    }
+
+    let done = false
+    let timer = null
+
+    const finish = (ok) => {
+      if (done) return
+      done = true
+      if (timer) {
+        clearTimeout(timer)
+        timer = null
+      }
+      chrome.tabs.onUpdated.removeListener(onUpdated)
+      resolve(Boolean(ok))
+    }
+
+    const onUpdated = (changedTabId, changeInfo) => {
+      if (changedTabId !== tabId) return
+      if (changeInfo?.status === "complete") finish(true)
+    }
+
+    chrome.tabs.onUpdated.addListener(onUpdated)
+    timer = setTimeout(() => finish(false), Math.max(2000, timeoutMs))
+
+    chrome.tabs.get(tabId, (tab) => {
+      if (chrome.runtime.lastError) {
+        finish(false)
+        return
+      }
+      if (tab?.status === "complete") {
+        finish(true)
+      }
+    })
+  })
+}
+
+async function sendOpenAdvancedWithRetry(tabId) {
+  const delays = [0, 260, 800]
+  let lastError = ""
+  for (const delayMs of delays) {
+    if (delayMs > 0) await sleep(delayMs)
+    const result = await sendMessageToTab(tabId, { xacAction: "xac:content-open-advanced" })
+    if (result.ok) return { ok: true }
+    lastError = String(result.error || "")
+    if (!isRecoverableTabMessageError(lastError)) {
+      return { ok: false, recoverable: false, error: lastError }
+    }
+  }
+  return { ok: false, recoverable: true, error: lastError || "Failed to reach content script." }
+}
+
+function buildXSearchUrl(rawQuery) {
+  const query = toStringValue(rawQuery, "(gm OR gn) min_replies:1 -filter:replies")
+  return `https://x.com/search?q=${encodeURIComponent(query)}&src=typed_query&f=live`
+}
+
+async function getPreferredXTab() {
+  const patterns = ["*://*.x.com/*", "*://*.twitter.com/*"]
+  const [activeCurrentWindow, allXTabs] = await Promise.all([
+    queryTabs({ url: patterns, active: true, currentWindow: true }),
+    queryTabs({ url: patterns })
+  ])
+  if (activeCurrentWindow[0]) return activeCurrentWindow[0]
+  return allXTabs[0] || null
+}
+
+async function openXSearchTab(rawQuery) {
+  const url = buildXSearchUrl(rawQuery)
+  const tab = await createTab({ url, active: true })
+  await focusWindow(tab?.windowId)
+  return { tabId: tab?.id || null, url }
+}
+
+async function openXAdvancedPanel(rawQuery) {
+  const queryText = toStringValue(rawQuery, "")
+  let tab = await getPreferredXTab()
+  const fallbackUrl = buildXSearchUrl(queryText)
+  let created = false
+
+  if (!tab) {
+    tab = await createTab({ url: fallbackUrl, active: true })
+    created = true
+  } else {
+    await updateTab(tab.id, { active: true })
+  }
+
+  await focusWindow(tab?.windowId)
+  if (created) {
+    await waitForTabComplete(tab.id, 14000)
+  }
+
+  const firstAttempt = await sendOpenAdvancedWithRetry(tab.id)
+  if (firstAttempt.ok) {
+    return { tabId: tab.id, opened: true, created }
+  }
+
+  if (firstAttempt.recoverable) {
+    await updateTab(tab.id, { url: fallbackUrl, active: true })
+    await focusWindow(tab?.windowId)
+    await waitForTabComplete(tab.id, 14000)
+
+    const secondAttempt = await sendOpenAdvancedWithRetry(tab.id)
+    if (secondAttempt.ok) {
+      return { tabId: tab.id, opened: true, created: true, reopenedOnSearch: true }
+    }
+
+    return {
+      tabId: tab.id,
+      opened: false,
+      needsRefresh: true,
+      hint: "X tab was focused. If panel is missing, refresh once and retry."
+    }
+  }
+
+  throw new Error(firstAttempt.error || "Failed to open advanced panel in X tab")
+}
+
 async function handleXacMessage(message) {
   switch (message.xacAction) {
     case "xac:get-state": {
@@ -1099,6 +1276,14 @@ async function handleXacMessage(message) {
         timeoutMs: message.timeoutMs
       })
       return success({ text })
+    }
+    case "xac:open-x-search": {
+      const result = await openXSearchTab(message.query)
+      return success(result)
+    }
+    case "xac:open-advanced-panel": {
+      const result = await openXAdvancedPanel(message.query)
+      return success(result)
     }
     default:
       return failure(`Unsupported xacAction: ${message.xacAction}`)

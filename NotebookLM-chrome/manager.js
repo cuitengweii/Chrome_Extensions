@@ -97,7 +97,13 @@ const el = {
   loadFromRssButton: document.getElementById("loadFromRss"),
   csvFileInput: document.getElementById("csvFileInput"),
   loadFromCsvButton: document.getElementById("loadFromCsv"),
-  crawlerUpgradeButton: document.getElementById("crawlerUpgrade"),
+  crawlerStartUrlInput: document.getElementById("crawlerStartUrlInput"),
+  crawlerKeywordsInput: document.getElementById("crawlerKeywordsInput"),
+  crawlerLanguageSelect: document.getElementById("crawlerLanguageSelect"),
+  crawlerMaxPagesInput: document.getElementById("crawlerMaxPagesInput"),
+  crawlerMaxDepthInput: document.getElementById("crawlerMaxDepthInput"),
+  crawlerIncludeSubdomainsInput: document.getElementById("crawlerIncludeSubdomains"),
+  loadFromCrawlerButton: document.getElementById("loadFromCrawler"),
   clearImportUrlsButton: document.getElementById("clearImportUrls"),
   batchImportToNotebookButton: document.getElementById("batchImportToNotebook"),
 
@@ -578,14 +584,37 @@ function switchBulkMethod(methodName) {
   });
 }
 
-async function withButtonLoading(button, loadingText, task) {
+async function withButtonLoading(button, loadingText, task, options = {}) {
   const originalText = button.textContent;
   const wasDisabled = button.disabled;
+  const useGlobalLoading = options.global !== false;
+  const globalDelayMs = Number.isFinite(Number(options.globalDelayMs))
+    ? Math.max(0, Number(options.globalDelayMs))
+    : 220;
+  const globalTitle = options.globalTitle || t(state.locale, "manager.globalLoadingTitle");
+  const globalHint = options.globalHint || t(state.locale, "manager.globalLoadingHint");
+  const canShowGlobal = useGlobalLoading && globalLoadingDepth === 0;
+  let globalTimer = null;
+  let globalShown = false;
   button.disabled = true;
   if (loadingText) button.textContent = loadingText;
+  if (canShowGlobal) {
+    globalTimer = setTimeout(() => {
+      if (globalLoadingDepth !== 0) return;
+      globalShown = true;
+      showGlobalLoading(globalTitle, globalHint);
+    }, globalDelayMs);
+  }
   try {
     return await task();
   } finally {
+    if (globalTimer) {
+      clearTimeout(globalTimer);
+      globalTimer = null;
+    }
+    if (globalShown) {
+      hideGlobalLoading();
+    }
     button.disabled = wasDisabled;
     button.textContent = originalText;
   }
@@ -1067,7 +1096,7 @@ function renderTable() {
     runNowBtn = createOpButton(
       t(state.locale, "manager.runNow"),
       t(state.locale, "manager.runNow"),
-      () => withButtonLoading(runNowBtn, "…", () => runNotebook(item.url)),
+      () => withButtonLoading(runNowBtn, "…", () => runNotebook(item.url)).catch(showActionError),
       "tiny"
     );
 
@@ -2241,7 +2270,9 @@ function renderFavorites() {
   `).join("");
 
   el.favoritesList.querySelectorAll("button[data-open]").forEach((btn) => btn.addEventListener("click", () => openNotebook(btn.dataset.open || "")));
-  el.favoritesList.querySelectorAll("button[data-run]").forEach((btn) => btn.addEventListener("click", () => runNotebook(btn.dataset.run || "")));
+  el.favoritesList.querySelectorAll("button[data-run]").forEach((btn) => btn.addEventListener("click", () => {
+    runNotebook(btn.dataset.run || "").catch(showActionError);
+  }));
   el.favoritesList.querySelectorAll("button[data-unfav]").forEach((btn) => btn.addEventListener("click", () => toggleFavorite(btn.dataset.unfav || "")));
   renderNavCounts();
 }
@@ -2318,6 +2349,9 @@ function bindCollectionAndTemplateActions() {
     return true;
   };
 
+  const runListAction = (button, task, loadingTextZh = "处理中...", loadingTextEn = "Working...") =>
+    withButtonLoading(button, isZh() ? loadingTextZh : loadingTextEn, task).catch(showActionError);
+
   el.collectionsList.querySelectorAll("button[data-select]").forEach((btn) => {
     btn.addEventListener("click", () => {
       const item = state.collections.find((collection) => collection.id === btn.dataset.select);
@@ -2331,108 +2365,142 @@ function bindCollectionAndTemplateActions() {
   });
 
   el.collectionsList.querySelectorAll("button[data-rename]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const item = state.collections.find((collection) => collection.id === btn.dataset.rename);
-      if (!item) return;
-      const input = await askTextDialog({
-        title: t(state.locale, "manager.renameCollection"),
-        message: t(state.locale, "manager.promptCollectionName"),
-        label: t(state.locale, "manager.promptCollectionName"),
-        defaultValue: item.name || ""
+    btn.addEventListener("click", () => {
+      runListAction(btn, async () => {
+        const item = state.collections.find((collection) => collection.id === btn.dataset.rename);
+        if (!item) return;
+        const input = await askTextDialog({
+          title: t(state.locale, "manager.renameCollection"),
+          message: t(state.locale, "manager.promptCollectionName"),
+          label: t(state.locale, "manager.promptCollectionName"),
+          defaultValue: item.name || ""
+        });
+        if (input === null) return;
+        const nextName = String(input || "").trim() || item.name;
+        if (!nextName || nextName === item.name) return;
+        const ok = await saveCollectionMembers(item, item.notebookUrls, nextName);
+        if (ok) setStatus(t(state.locale, "manager.statusCollectionRenamed", { name: nextName }));
       });
-      if (input === null) return;
-      const nextName = String(input || "").trim() || item.name;
-      if (!nextName || nextName === item.name) return;
-      const ok = await saveCollectionMembers(item, item.notebookUrls, nextName);
-      if (ok) setStatus(t(state.locale, "manager.statusCollectionRenamed", { name: nextName }));
     });
   });
 
   el.collectionsList.querySelectorAll("button[data-replace]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const item = state.collections.find((collection) => collection.id === btn.dataset.replace);
-      if (!item) return;
-      const urls = selectedNormalizedUrls();
-      if (!urls.length) return setStatus(t(state.locale, "manager.statusNoSelection"));
-      const ok = await saveCollectionMembers(item, urls, item.name);
-      if (ok) setStatus(t(state.locale, "manager.statusCollectionMembersUpdated", { name: item.name, count: urls.length }));
+    btn.addEventListener("click", () => {
+      runListAction(btn, async () => {
+        const item = state.collections.find((collection) => collection.id === btn.dataset.replace);
+        if (!item) return;
+        const urls = selectedNormalizedUrls();
+        if (!urls.length) return setStatus(t(state.locale, "manager.statusNoSelection"));
+        const ok = await saveCollectionMembers(item, urls, item.name);
+        if (ok) setStatus(t(state.locale, "manager.statusCollectionMembersUpdated", { name: item.name, count: urls.length }));
+      });
     });
   });
 
   el.collectionsList.querySelectorAll("button[data-append]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const item = state.collections.find((collection) => collection.id === btn.dataset.append);
-      if (!item) return;
-      const urls = selectedNormalizedUrls();
-      if (!urls.length) return setStatus(t(state.locale, "manager.statusNoSelection"));
-      const merged = dedupeUrls([...(item.notebookUrls || []), ...urls]);
-      const ok = await saveCollectionMembers(item, merged, item.name);
-      if (ok) setStatus(t(state.locale, "manager.statusCollectionMembersUpdated", { name: item.name, count: merged.length }));
+    btn.addEventListener("click", () => {
+      runListAction(btn, async () => {
+        const item = state.collections.find((collection) => collection.id === btn.dataset.append);
+        if (!item) return;
+        const urls = selectedNormalizedUrls();
+        if (!urls.length) return setStatus(t(state.locale, "manager.statusNoSelection"));
+        const merged = dedupeUrls([...(item.notebookUrls || []), ...urls]);
+        const ok = await saveCollectionMembers(item, merged, item.name);
+        if (ok) setStatus(t(state.locale, "manager.statusCollectionMembersUpdated", { name: item.name, count: merged.length }));
+      });
     });
   });
 
   el.collectionsList.querySelectorAll("button[data-remove]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const item = state.collections.find((collection) => collection.id === btn.dataset.remove);
-      if (!item) return;
-      const urls = selectedNormalizedUrls();
-      if (!urls.length) return setStatus(t(state.locale, "manager.statusNoSelection"));
-      const selectedSet = new Set(urls);
-      const nextMembers = (item.notebookUrls || []).filter((url) => !selectedSet.has(normalizeNotebookUrl(url, "")));
-      const removed = (item.notebookUrls || []).length - nextMembers.length;
-      if (removed <= 0) return setStatus(t(state.locale, "manager.statusCollectionNoChange"));
-      const ok = await saveCollectionMembers(item, nextMembers, item.name);
-      if (ok) setStatus(t(state.locale, "manager.statusCollectionMembersRemoved", { name: item.name, count: removed }));
+    btn.addEventListener("click", () => {
+      runListAction(btn, async () => {
+        const item = state.collections.find((collection) => collection.id === btn.dataset.remove);
+        if (!item) return;
+        const urls = selectedNormalizedUrls();
+        if (!urls.length) return setStatus(t(state.locale, "manager.statusNoSelection"));
+        const selectedSet = new Set(urls);
+        const nextMembers = (item.notebookUrls || []).filter((url) => !selectedSet.has(normalizeNotebookUrl(url, "")));
+        const removed = (item.notebookUrls || []).length - nextMembers.length;
+        if (removed <= 0) return setStatus(t(state.locale, "manager.statusCollectionNoChange"));
+        const ok = await saveCollectionMembers(item, nextMembers, item.name);
+        if (ok) setStatus(t(state.locale, "manager.statusCollectionMembersRemoved", { name: item.name, count: removed }));
+      });
     });
   });
 
   el.collectionsList.querySelectorAll("button[data-rules]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const item = state.collections.find((collection) => collection.id === btn.dataset.rules);
-      if (!item) return;
-      for (const url of item.notebookUrls) {
-        await addRule(url, notebookDisplayName(url));
-      }
-      setStatus(t(state.locale, "manager.statusCollectionRuleAdded", { name: item.name }));
+    btn.addEventListener("click", () => {
+      runListAction(btn, async () => {
+        const item = state.collections.find((collection) => collection.id === btn.dataset.rules);
+        if (!item) return;
+        for (const url of item.notebookUrls) {
+          await addRule(url, notebookDisplayName(url));
+        }
+        setStatus(t(state.locale, "manager.statusCollectionRuleAdded", { name: item.name }));
+      }, "执行中...", "Running...");
     });
   });
 
   el.collectionsList.querySelectorAll("button[data-run]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const item = state.collections.find((collection) => collection.id === btn.dataset.run);
-      if (!item) return;
-      for (const url of item.notebookUrls) {
-        await runNotebook(url);
-      }
-      setStatus(t(state.locale, "manager.statusCollectionRunTriggered", { name: item.name }));
+    btn.addEventListener("click", () => {
+      runListAction(btn, async () => {
+        const item = state.collections.find((collection) => collection.id === btn.dataset.run);
+        if (!item) return;
+        let success = 0;
+        let skipped = 0;
+        let failed = 0;
+        for (const url of item.notebookUrls) {
+          try {
+            await runNotebook(url, { silentStatus: true });
+            success += 1;
+          } catch (error) {
+            if (isNoRuleTargetError(error)) {
+              skipped += 1;
+            } else {
+              failed += 1;
+            }
+          }
+        }
+        if (!skipped && !failed) {
+          setStatus(t(state.locale, "manager.statusCollectionRunTriggered", { name: item.name }));
+          return;
+        }
+        setStatus(isZh()
+          ? `集合刷新完成：${item.name}（成功 ${success}，跳过 ${skipped}，失败 ${failed}）`
+          : `Collection refresh finished: ${item.name} (success ${success}, skipped ${skipped}, failed ${failed})`);
+      }, "执行中...", "Running...");
     });
   });
 
   el.collectionsList.querySelectorAll("button[data-delete]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const response = await sendMessage({ type: "DELETE_COLLECTION", id: btn.dataset.delete || "" });
-      state.collections = Array.isArray(response.collections) ? response.collections : [];
-      renderCollections();
-      bindCollectionAndTemplateActions();
-      renderStats();
-      setStatus(t(state.locale, "manager.statusCollectionDeleted"));
+    btn.addEventListener("click", () => {
+      runListAction(btn, async () => {
+        const response = await sendMessage({ type: "DELETE_COLLECTION", id: btn.dataset.delete || "" });
+        state.collections = Array.isArray(response.collections) ? response.collections : [];
+        renderCollections();
+        bindCollectionAndTemplateActions();
+        renderStats();
+        setStatus(t(state.locale, "manager.statusCollectionDeleted"));
+      }, "删除中...", "Deleting...");
     });
   });
 
   el.templatesList.querySelectorAll("button[data-apply]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const urls = [...state.selected].map((url) => normalizeNotebookUrl(url, "")).filter(Boolean);
-      if (!urls.length) return setStatus(t(state.locale, "manager.statusNoSelection"));
-      const response = await sendMessage({
-        type: "APPLY_TEMPLATE_TO_NOTEBOOKS",
-        templateId: btn.dataset.apply || "",
-        notebookUrls: urls
+    btn.addEventListener("click", () => {
+      runListAction(btn, async () => {
+        const urls = [...state.selected].map((url) => normalizeNotebookUrl(url, "")).filter(Boolean);
+        if (!urls.length) return setStatus(t(state.locale, "manager.statusNoSelection"));
+        const response = await sendMessage({
+          type: "APPLY_TEMPLATE_TO_NOTEBOOKS",
+          templateId: btn.dataset.apply || "",
+          notebookUrls: urls
+        });
+        state.snapshot = response.snapshot;
+        renderTable();
+        renderAutomation(state.snapshot);
+        renderStats();
+        setStatus(t(state.locale, "manager.statusTemplateApplied", { count: response.added || 0 }));
       });
-      state.snapshot = response.snapshot;
-      renderTable();
-      renderAutomation(state.snapshot);
-      renderStats();
-      setStatus(t(state.locale, "manager.statusTemplateApplied", { count: response.added || 0 }));
     });
   });
 
@@ -2450,16 +2518,18 @@ function bindCollectionAndTemplateActions() {
   });
 
   el.templatesList.querySelectorAll("button[data-delete]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      if (state.editingTemplateId && state.editingTemplateId === (btn.dataset.delete || "")) {
-        resetTemplateEditor();
-      }
-      const response = await sendMessage({ type: "DELETE_TEMPLATE", id: btn.dataset.delete || "" });
-      state.templates = Array.isArray(response.templates) ? response.templates : [];
-      renderTemplates();
-      bindCollectionAndTemplateActions();
-      renderStats();
-      setStatus(t(state.locale, "manager.statusTemplateDeleted"));
+    btn.addEventListener("click", () => {
+      runListAction(btn, async () => {
+        if (state.editingTemplateId && state.editingTemplateId === (btn.dataset.delete || "")) {
+          resetTemplateEditor();
+        }
+        const response = await sendMessage({ type: "DELETE_TEMPLATE", id: btn.dataset.delete || "" });
+        state.templates = Array.isArray(response.templates) ? response.templates : [];
+        renderTemplates();
+        bindCollectionAndTemplateActions();
+        renderStats();
+        setStatus(t(state.locale, "manager.statusTemplateDeleted"));
+      }, "删除中...", "Deleting...");
     });
   });
 }
@@ -2693,9 +2763,16 @@ async function openNotebook(url) {
   setStatus(t(state.locale, "manager.statusNotebookOpened"));
 }
 
+function isNoRuleTargetError(error) {
+  return String(error?.message || "").includes("no_rule_target_for_notebook");
+}
+
 async function runNotebook(url, options = {}) {
   const useGlobalLoading = options.globalLoading !== false;
-  const execute = () => sendMessage({ type: "RUN_NOTEBOOK_NOW", url });
+  const silentStatus = options.silentStatus === true;
+  const normalizedUrl = normalizeNotebookUrl(url, "");
+  if (!normalizedUrl) throw new Error("invalid_notebook_url");
+  const execute = () => sendMessage({ type: "RUN_NOTEBOOK_NOW", url: normalizedUrl });
   const response = useGlobalLoading
     ? await withGlobalLoading(
       t(state.locale, "manager.globalLoadingTitle"),
@@ -2707,7 +2784,12 @@ async function runNotebook(url, options = {}) {
   renderTable();
   renderAutomation(state.snapshot);
   renderStats();
-  setStatus(t(state.locale, "manager.statusRunTriggered"));
+  if (!silentStatus) {
+    setStatus(isZh()
+      ? `已触发刷新：${notebookDisplayName(normalizedUrl)}`
+      : `Refresh started: ${notebookDisplayName(normalizedUrl)}`);
+  }
+  return response;
 }
 
 async function toggleFavorite(url) {
@@ -2931,16 +3013,43 @@ async function batchAddSource() {
 async function batchRunNow() {
   const urls = selectedUrls();
   if (!urls.length) return setStatus(t(state.locale, "manager.statusNoSelection"));
+  const summary = {
+    success: 0,
+    skipped: 0,
+    failed: 0
+  };
+  const failedSamples = [];
   await withGlobalLoading(
     t(state.locale, "manager.globalLoadingTitle"),
     isZh() ? "正在批量执行刷新..." : "Running batch refresh...",
     async () => {
       for (const url of urls) {
-        await runNotebook(url, { globalLoading: false });
+        try {
+          await runNotebook(url, { globalLoading: false, silentStatus: true });
+          summary.success += 1;
+        } catch (error) {
+          if (isNoRuleTargetError(error)) {
+            summary.skipped += 1;
+          } else {
+            summary.failed += 1;
+            if (failedSamples.length < 3) {
+              failedSamples.push(`${notebookDisplayName(url)}: ${error?.message || "unknown_error"}`);
+            }
+          }
+        }
       }
     }
   );
-  setStatus(t(state.locale, "manager.statusBatchRun", { count: urls.length }));
+  if (!summary.skipped && !summary.failed) {
+    setStatus(t(state.locale, "manager.statusBatchRun", { count: urls.length }));
+    return;
+  }
+  const failedPart = failedSamples.length
+    ? (isZh() ? `；失败示例：${failedSamples.join(" | ")}` : `; failed samples: ${failedSamples.join(" | ")}`)
+    : "";
+  setStatus(isZh()
+    ? `批量刷新完成：成功 ${summary.success}，跳过 ${summary.skipped}，失败 ${summary.failed}${failedPart}`
+    : `Batch refresh finished: ${summary.success} success, ${summary.skipped} skipped, ${summary.failed} failed${failedPart}`);
 }
 
 async function batchCreateCollection() {
@@ -3009,6 +3118,44 @@ async function importFromRss() {
   const response = await sendMessage({ type: "PARSE_RSS_FEED", url });
   appendImportUrls(response.urls || []);
   setStatus(t(state.locale, "manager.statusRssLoaded", { count: response.urls?.length || 0 }));
+}
+
+async function importFromCrawler() {
+  const startUrl = String(el.crawlerStartUrlInput?.value || "").trim();
+  if (!/^https?:\/\//i.test(startUrl)) {
+    setStatus(t(state.locale, "manager.statusCrawlerInvalidUrl"));
+    return;
+  }
+  const maxPagesRaw = parseIntSafe(el.crawlerMaxPagesInput?.value, 40);
+  const maxDepthRaw = parseIntSafe(el.crawlerMaxDepthInput?.value, 1);
+  const maxPages = Math.max(5, Math.min(200, maxPagesRaw));
+  const maxDepth = Math.max(0, Math.min(4, maxDepthRaw));
+  if (el.crawlerMaxPagesInput) el.crawlerMaxPagesInput.value = String(maxPages);
+  if (el.crawlerMaxDepthInput) el.crawlerMaxDepthInput.value = String(maxDepth);
+
+  const response = await withGlobalLoading(
+    t(state.locale, "manager.globalLoadingTitle"),
+    isZh() ? "正在抓取站点链接..." : "Crawling website links...",
+    () => sendMessage({
+      type: "CRAWL_WEBSITE",
+      data: {
+        startUrl,
+        keywords: String(el.crawlerKeywordsInput?.value || ""),
+        language: String(el.crawlerLanguageSelect?.value || "auto"),
+        maxPages,
+        maxDepth,
+        includeSubdomains: Boolean(el.crawlerIncludeSubdomainsInput?.checked),
+        locale: state.locale
+      }
+    }, 240000)
+  );
+  const urls = Array.isArray(response?.urls) ? response.urls : [];
+  appendImportUrls(urls);
+  setStatus(t(state.locale, "manager.statusCrawlerLoaded", {
+    count: urls.length,
+    visited: Number(response?.visited || 0),
+    queued: Number(response?.queued || 0)
+  }));
 }
 
 async function batchImportToNotebook() {
@@ -3146,7 +3293,9 @@ function refreshStaticText() {
 }
 
 function showActionError(error) {
-  const message = error?.message || "unknown_error";
+  const message = isNoRuleTargetError(error)
+    ? (isZh() ? "该 Notebook 尚未配置来源规则，请先点击“加入规则”或“新增来源”。" : "No source rule configured for this notebook. Click Add Rule or Add Source first.")
+    : (error?.message || "unknown_error");
   setStatus(t(state.locale, "common.actionFailed", { message }));
 }
 
@@ -3557,8 +3706,9 @@ function registerEventListeners() {
       .catch(showActionError);
   });
 
-  el.crawlerUpgradeButton.addEventListener("click", () => {
-    setStatus(t(state.locale, "manager.statusCrawlerUpgrade"));
+  el.loadFromCrawlerButton.addEventListener("click", () => {
+    withButtonLoading(el.loadFromCrawlerButton, isZh() ? "抓取中..." : "Crawling...", importFromCrawler)
+      .catch(showActionError);
   });
 
   el.bulkMethodButtons.forEach((button) => {

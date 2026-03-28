@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "X Automatic Comment",
   "version": "11.1.0",
-  "description": "Automatic comment assistant for X/Twitter with bilingual UI, Google login, and Spark AI support.",
+  "description": "Automatic comment assistant for X/Twitter with bilingual UI, Google login, and AI support.",
   "author": "GasGx + Xtensions Clone",
   "action": {
     "default_popup": "popup.html",

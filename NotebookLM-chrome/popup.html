@@ -1,4 +1,4 @@
-<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8">
@@ -23,7 +23,8 @@
 
         <div class="header-main-actions">
           <label class="locale-wrap locale-wrap-top">
-            <select id="localeSelect" aria-label="Language"></select>
+            <select id="localeSelect" class="native-select-hidden" aria-label="Language"></select>
+            <div id="localeSelectUi" class="themed-select"></div>
           </label>
           <div class="settings-menu">
             <button id="settingsToggleBtn" class="icon-button" type="button" aria-label="Settings">&#9881;</button>
@@ -105,7 +106,8 @@
       <p id="currentPageUrl" class="panel-subtle"></p>
       <label class="field-block">
         <span id="targetNotebookLabel" class="field-label"></span>
-        <select id="popupNotebookSelect"></select>
+        <select id="popupNotebookSelect" class="native-select-hidden" aria-hidden="true" tabindex="-1"></select>
+        <div id="popupNotebookSelectUi" class="themed-select"></div>
       </label>
       <div class="quick-actions">
         <button id="importCurrentPage" class="primary-button small-button" type="button"></button>
@@ -123,7 +125,8 @@
       </div>
       <div class="prompt-toolbar">
         <input id="promptSearchInput" type="text">
-        <select id="promptFolderFilter"></select>
+        <select id="promptFolderFilter" class="native-select-hidden"></select>
+        <div id="promptFolderFilterUi" class="themed-select"></div>
       </div>
       <div id="promptList" class="prompt-list"></div>
     </section>
@@ -214,3 +217,4 @@
   <script type="module" src="popup.js"></script>
 </body>
 </html>
+

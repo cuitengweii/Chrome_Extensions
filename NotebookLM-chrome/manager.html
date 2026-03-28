@@ -481,11 +481,41 @@
           </div>
 
           <div class="method-panel" data-method-panel="crawler">
-            <div class="pro-card">
-              <h3 data-i18n="manager.crawlerProTitle"></h3>
-              <p class="helper" data-i18n="manager.crawlerProDesc"></p>
-              <button id="crawlerUpgrade" class="primary" type="button" data-i18n="manager.crawlerUpgrade"></button>
+            <div class="import-grid crawler-grid">
+              <label>
+                <span data-i18n="manager.crawlerStartUrl"></span>
+                <input id="crawlerStartUrlInput" type="url" placeholder="https://example.com">
+              </label>
+              <label>
+                <span data-i18n="manager.crawlerKeywords"></span>
+                <input id="crawlerKeywordsInput" type="text" data-i18n-placeholder="manager.crawlerKeywordsPlaceholder">
+              </label>
+              <label>
+                <span data-i18n="manager.crawlerLanguage"></span>
+                <select id="crawlerLanguageSelect">
+                  <option value="auto" data-i18n="manager.crawlerLangAuto"></option>
+                  <option value="zh" data-i18n="manager.crawlerLangZh"></option>
+                  <option value="en" data-i18n="manager.crawlerLangEn"></option>
+                  <option value="all" data-i18n="manager.crawlerLangAll"></option>
+                </select>
+              </label>
+              <label>
+                <span data-i18n="manager.crawlerMaxPages"></span>
+                <input id="crawlerMaxPagesInput" type="number" min="5" max="200" step="1" value="40">
+              </label>
+              <label>
+                <span data-i18n="manager.crawlerMaxDepth"></span>
+                <input id="crawlerMaxDepthInput" type="number" min="0" max="4" step="1" value="1">
+              </label>
+              <label class="checkbox-inline">
+                <input id="crawlerIncludeSubdomains" type="checkbox">
+                <span data-i18n="manager.crawlerIncludeSubdomains"></span>
+              </label>
             </div>
+            <div class="import-actions">
+              <button id="loadFromCrawler" class="primary" type="button" data-i18n="manager.loadFromCrawler"></button>
+            </div>
+            <p class="helper" data-i18n="manager.crawlerHint"></p>
           </div>
 
           <div class="import-actions">

@@ -1,4 +1,4 @@
-import {
+﻿import {
   RULES_KEY,
   LEGACY_RULE_KEY,
   RUNTIME_KEY,
@@ -301,7 +301,7 @@ async function notifyFailure(errorKey, result, message) {
     await chrome.notifications.create("", {
       type: "basic",
       iconUrl: chrome.runtime.getURL(NOTIFICATION_ICON),
-      title: `${t(locale, "common.appName")} 路 ${localizeResult(locale, result)}`,
+      title: `${t(locale, "common.appName")} - ${localizeResult(locale, result)}`,
       message: String(message || (locale.startsWith("zh") ? "请打开扩展查看详情。" : "Open the extension for details.")).slice(0, 240),
       priority: 1
     });
@@ -400,14 +400,13 @@ function notebookDomAutomation(payload) {
   const sourceNeedle = normalizeText(payload?.sourceLabel);
   const refreshNeedles = [
     payload?.refreshLabel,
-    "点击即可与 Google 云端硬盘同步",
-    "与 google 云端硬盘同步",
-    "google 云端硬盘同步",
-    "云端硬盘同步",
+    "\u70b9\u51fb\u5373\u53ef\u4e0e google \u4e91\u7aef\u786c\u76d8\u540c\u6b65",
+    "\u4e0e google \u4e91\u7aef\u786c\u76d8\u540c\u6b65",
+    "\u4e91\u7aef\u786c\u76d8\u540c\u6b65",
+    "\u540c\u6b65",
     "sync with google drive",
     "sync to google drive",
     "google drive sync",
-    "google drive",
     "drive sync",
     "sync"
   ]
@@ -417,7 +416,11 @@ function notebookDomAutomation(payload) {
 
   const ACCESS_TOKENS = [
     "sign in", "choose an account", "request access", "you need access", "you need permission", "login",
-    "登录", "选择账号", "请求访问", "需要访问权限", "没有权限", "需要权限"
+    "\u767b\u5f55",
+    "\u9009\u62e9\u8d26\u53f7",
+    "\u8bf7\u6c42\u8bbf\u95ee",
+    "\u6ca1\u6709\u6743\u9650",
+    "\u9700\u8981\u6743\u9650"
   ].map((item) => normalizeText(item));
 
   function isVisible(element) {
@@ -444,106 +447,16 @@ function notebookDomAutomation(payload) {
 
   function findClickableAncestor(node) {
     let current = node instanceof Element ? node : node?.parentElement || null;
-    while (current) {
+    while (current && current !== document.body) {
       const tag = current.tagName?.toLowerCase();
       const role = current.getAttribute?.("role");
       const ariaDisabled = current.getAttribute?.("aria-disabled");
       const hasTabIndex = current.hasAttribute?.("tabindex");
-      const cursor = normalizeText(window.getComputedStyle(current).cursor);
-      const isClickable = (
-        tag === "button"
-        || tag === "a"
-        || role === "button"
-        || role === "menuitem"
-        || role === "option"
-        || role === "tab"
-        || typeof current.onclick === "function"
-        || hasTabIndex
-        || cursor === "pointer"
-      );
+      const isClickable = tag === "button" || tag === "a" || role === "button" || typeof current.onclick === "function" || hasTabIndex;
       if (isClickable && ariaDisabled !== "true" && isVisible(current)) return current;
-      const root = current.getRootNode?.();
-      current = current.parentElement || (root instanceof ShadowRoot ? root.host : null);
+      current = current.parentElement;
     }
     return null;
-  }
-
-  function getDeepElements(scope = document.body) {
-    const start = scope || document.body;
-    const stack = [start];
-    const seen = new Set();
-    const out = [];
-
-    while (stack.length) {
-      const current = stack.pop();
-      if (!current || seen.has(current)) continue;
-      seen.add(current);
-
-      if (current instanceof Element) out.push(current);
-
-      if (current instanceof Element && current.shadowRoot) {
-        stack.push(current.shadowRoot);
-      }
-
-      const children = Array.from(current.children || []);
-      for (let index = children.length - 1; index >= 0; index -= 1) {
-        stack.push(children[index]);
-      }
-    }
-
-    return out;
-  }
-
-  function getTextFingerprint(value) {
-    return normalizeText(value).replace(/[\s\-_/|]+/g, "");
-  }
-
-  function sourceTokens(needle) {
-    return normalizeText(needle).split(" ").filter(Boolean);
-  }
-
-  function scoreSourceMatch(candidate, needle) {
-    const text = normalizeText(candidate);
-    if (!text || !needle) return 0;
-
-    const compactText = getTextFingerprint(text);
-    const compactNeedle = getTextFingerprint(needle);
-    if (compactText && compactText === compactNeedle) return 10;
-    if (text === needle) return 9;
-    if (text.startsWith(`${needle} `) || text.endsWith(` ${needle}`)) return 8;
-    if (text.includes(needle)) return text.length <= needle.length + 32 ? 7 : 5;
-
-    const tokens = sourceTokens(needle);
-    if (!tokens.length) return 0;
-    const matched = tokens.filter((token) => text.includes(token));
-    if (!matched.length) return 0;
-    if (matched.length === tokens.length) {
-      return text.length <= needle.length + 40 ? 6 : 4;
-    }
-    return 1 + matched.length;
-  }
-
-  function getPreferredSourceContainer(element) {
-    let current = element instanceof Element ? element : null;
-    let best = null;
-
-    for (let depth = 0; depth < 6 && current; depth += 1) {
-      if (isVisible(current)) {
-        const rect = current.getBoundingClientRect();
-        if (
-          rect.width >= 140
-          && rect.height >= 20
-          && rect.height <= 180
-          && rect.left < (window.innerWidth * 0.68)
-        ) {
-          best = current;
-        }
-      }
-      const root = current.getRootNode?.();
-      current = current.parentElement || (root instanceof ShadowRoot ? root.host : null);
-    }
-
-    return best || element;
   }
 
   function scoreMatch(candidate, needle) {
@@ -562,27 +475,18 @@ function notebookDomAutomation(payload) {
     return best;
   }
 
-  function containsAny(text, needles) {
-    return (needles || []).some((needle) => needle && String(text || "").includes(needle));
-  }
-
-  function makeCandidate(element, strategy, matchedText, baseScore, context = {}) {
+  function makeCandidate(element, strategy, matchedText, baseScore) {
     const clickable = findClickableAncestor(element) || (isVisible(element) ? element : null);
     if (!clickable) return null;
     const rect = clickable.getBoundingClientRect();
     const centerX = rect.left + (rect.width / 2);
     const leftPaneBonus = centerX < (window.innerWidth * 0.45) ? 0.75 : 0;
-    const anchorRect = context.anchorRect || null;
-    const proximityBonus = anchorRect
-      ? Math.max(0, 1.4 - ((Math.abs(rect.top - anchorRect.top) + Math.abs(rect.left - anchorRect.left)) / 500))
-      : 0;
-    const scopeBonus = context.inPreferredScope ? 1.5 : 0;
     return {
       element: clickable,
       strategy,
       matchedText: matchedText.slice(0, 140),
       tagName: clickable.tagName?.toLowerCase() || "",
-      score: baseScore + leftPaneBonus + proximityBonus + scopeBonus
+      score: baseScore + leftPaneBonus
     };
   }
 
@@ -598,192 +502,88 @@ function notebookDomAutomation(payload) {
 
   function findBestSourceCandidate(needle) {
     const rawCandidates = [];
-    const elements = getDeepElements(document.body);
-
-    for (const element of elements) {
+    const selector = ["button", "[role='button']", "[aria-label]", "a", "div", "span", "p"].join(", ");
+    for (const element of document.querySelectorAll(selector)) {
       if (!isVisible(element)) continue;
-
-      const rect = element.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0 || rect.left > (window.innerWidth * 0.8)) continue;
-
       const ariaLabel = normalizeText(element.getAttribute?.("aria-label"));
-      const ariaScore = scoreSourceMatch(ariaLabel, needle);
+      const ariaScore = scoreMatch(ariaLabel, needle);
       if (ariaScore > 0) {
-        const container = getPreferredSourceContainer(element);
-        const c = makeCandidate(container, ariaScore >= 8 ? "aria-exact" : "aria-match", ariaLabel, ariaScore + 3);
+        const c = makeCandidate(element, ariaScore >= 5 ? "aria-exact" : "aria-contains", ariaLabel, ariaScore + 2);
         if (c) rawCandidates.push(c);
       }
-
       const title = normalizeText(element.getAttribute?.("title"));
-      const titleScore = scoreSourceMatch(title, needle);
+      const titleScore = scoreMatch(title, needle);
       if (titleScore > 0) {
-        const container = getPreferredSourceContainer(element);
-        const c = makeCandidate(container, titleScore >= 8 ? "title-exact" : "title-match", title, titleScore + 2);
+        const c = makeCandidate(element, titleScore >= 5 ? "title-exact" : "title-contains", title, titleScore + 1);
         if (c) rawCandidates.push(c);
       }
-
       const text = normalizeText(element.textContent);
-      const textScore = scoreSourceMatch(text, needle);
+      const textScore = scoreMatch(text, needle);
       if (textScore > 0) {
-        const container = getPreferredSourceContainer(element);
-        const shortTextBonus = text.length <= needle.length + 48 ? 1.5 : 0;
-        const c = makeCandidate(
-          container,
-          textScore >= 8 ? "text-exact" : "text-match",
-          text,
-          textScore + shortTextBonus
-        );
+        const c = makeCandidate(element, textScore >= 5 ? "text-exact" : "text-contains", text, textScore);
         if (c) rawCandidates.push(c);
       }
     }
-
     return dedupeCandidates(rawCandidates)[0] || null;
-  }
-
-  function collectSourceDiagnostics(needle) {
-    const rows = [];
-    const seen = new Set();
-
-    for (const element of getDeepElements(document.body)) {
-      if (!isVisible(element)) continue;
-      const rect = element.getBoundingClientRect();
-      if (
-        rect.left > (window.innerWidth * 0.72)
-        || rect.width < 120
-        || rect.height < 18
-        || rect.height > 180
-      ) {
-        continue;
-      }
-
-      const text = normalizeText(element.textContent);
-      if (!text || text.length > 140) continue;
-      const score = scoreSourceMatch(text, needle);
-      if (score <= 0 && rows.length >= 4) continue;
-      if (seen.has(text)) continue;
-      seen.add(text);
-      rows.push(text.slice(0, 120));
-      if (rows.length >= 8) break;
-    }
-
-    return rows;
   }
 
   function hasRefreshHint(element) {
     if (!(element instanceof Element)) return false;
-    const text = normalizeText(element.textContent);
     const classText = normalizeText(element.className);
     const ariaLabel = normalizeText(element.getAttribute?.("aria-label"));
     const title = normalizeText(element.getAttribute?.("title"));
     const datasetText = normalizeText(JSON.stringify(element.dataset || {}));
-    const combined = [text, classText, ariaLabel, title, datasetText].join(" ");
+    const combined = `${classText} ${ariaLabel} ${title} ${datasetText}`;
     return (
       combined.includes("refresh")
       || combined.includes("source-refresh")
       || combined.includes("cloud")
       || combined.includes("drive")
       || combined.includes("google")
-      || combined.includes("同步")
-      || combined.includes("云端硬盘")
-      || containsAny(combined, refreshNeedles)
+      || combined.includes("\u540c\u6b65")
+      || combined.includes("\u4e91\u7aef\u786c\u76d8")
+      || refreshNeedles.some((needle) => needle && combined.includes(needle))
     );
   }
 
-  function findSourceScope(candidate) {
-    const start = candidate?.element;
-    if (!(start instanceof Element)) return null;
-    let current = start;
-    while (current) {
-      const text = normalizeText(current.textContent);
-      if (text.includes(sourceNeedle) && current.getBoundingClientRect().width > 160) {
-        return current;
-      }
-      const root = current.getRootNode?.();
-      current = current.parentElement || (root instanceof ShadowRoot ? root.host : null);
-    }
-    return start.parentElement || start;
-  }
-
-  function findRefreshActionCandidate(sourceCandidate) {
+  function findRefreshActionCandidate() {
     const rawCandidates = [];
-    const preferredScope = findSourceScope(sourceCandidate);
-    const anchorRect = sourceCandidate?.element?.getBoundingClientRect?.() || null;
-    const preferredScopeRoot = preferredScope?.getRootNode?.();
-    const parentScope = preferredScope?.parentElement || (preferredScopeRoot instanceof ShadowRoot ? preferredScopeRoot.host : null);
-    const scopes = [preferredScope, parentScope, document.body].filter(Boolean);
-    const seenScopes = new Set();
+    const textNodes = document.querySelectorAll("span,div,p,button,[role='button'],[role='menuitem'],a");
+    for (const node of textNodes) {
+      if (!isVisible(node)) continue;
+      const nodeText = normalizeText(node.textContent);
+      const ariaLabel = normalizeText(node.getAttribute?.("aria-label"));
+      const title = normalizeText(node.getAttribute?.("title"));
+      const matchedScore = Math.max(scoreNeedles(nodeText, refreshNeedles), scoreNeedles(ariaLabel, refreshNeedles), scoreNeedles(title, refreshNeedles));
+      if (matchedScore <= 0 && !hasRefreshHint(node)) continue;
 
-    for (const scope of scopes) {
-      if (!(scope instanceof Element) && scope !== document.body) continue;
-      if (seenScopes.has(scope)) continue;
-      seenScopes.add(scope);
-      const textNodes = getDeepElements(scope);
-      for (const node of textNodes) {
-        if (!isVisible(node)) continue;
-        const nodeText = normalizeText(node.textContent);
-        const ariaLabel = normalizeText(node.getAttribute?.("aria-label"));
-        const title = normalizeText(node.getAttribute?.("title"));
-        const textScore = scoreNeedles(nodeText, refreshNeedles);
-        const ariaScore = scoreNeedles(ariaLabel, refreshNeedles);
-        const titleScore = scoreNeedles(title, refreshNeedles);
-        const matchedScore = Math.max(textScore, ariaScore, titleScore);
-        if (matchedScore <= 0 && !hasRefreshHint(node)) continue;
-
-        let current = node;
-        for (let depth = 0; depth < 8 && current && current !== document.body; depth += 1) {
-          if (hasRefreshHint(current) && isVisible(current)) {
-            const c = makeCandidate(
-              current,
-              matchedScore > 0 ? "refresh-hint-text" : "refresh-hint-only",
-              nodeText || ariaLabel || title,
-              Math.max(7, matchedScore + 4 - depth),
-              { anchorRect, inPreferredScope: scope === preferredScope }
-            );
-            if (c) rawCandidates.push(c);
-          }
-          const root = current.getRootNode?.();
-          current = current.parentElement || (root instanceof ShadowRoot ? root.host : null);
+      let current = node;
+      for (let depth = 0; depth < 8 && current && current !== document.body; depth += 1) {
+        if (hasRefreshHint(current) && isVisible(current)) {
+          const c = makeCandidate(current, matchedScore > 0 ? "refresh-hint" : "refresh-hint-only", nodeText || ariaLabel || title, Math.max(7, matchedScore + 3 - depth));
+          if (c) rawCandidates.push(c);
         }
-
-        if (matchedScore > 0) {
-          const fallback = makeCandidate(
-            node,
-            "refresh-text",
-            nodeText || ariaLabel || title,
-            matchedScore + 4,
-            { anchorRect, inPreferredScope: scope === preferredScope }
-          );
-          if (fallback) rawCandidates.push(fallback);
-        }
+        current = current.parentElement;
+      }
+      if (matchedScore > 0) {
+        const fallback = makeCandidate(node, "refresh-text", nodeText || ariaLabel || title, matchedScore + 4);
+        if (fallback) rawCandidates.push(fallback);
       }
     }
     return dedupeCandidates(rawCandidates)[0] || null;
   }
 
-  function collectRefreshDiagnostics(sourceCandidate) {
-    const preferredScope = findSourceScope(sourceCandidate) || document.body;
-    const rows = [];
-    const nodes = getDeepElements(preferredScope);
-    for (const node of nodes) {
-      if (!isVisible(node)) continue;
-      const text = normalizeText(node.textContent);
-      const aria = normalizeText(node.getAttribute?.("aria-label"));
-      const title = normalizeText(node.getAttribute?.("title"));
-      const combined = [text, aria, title].filter(Boolean).join(" | ");
-      if (!combined) continue;
-      if (
-        combined.includes("google")
-        || combined.includes("drive")
-        || combined.includes("sync")
-        || combined.includes("同步")
-        || combined.includes("云端硬盘")
-        || hasRefreshHint(node)
-      ) {
-        rows.push(combined.slice(0, 120));
-      }
-      if (rows.length >= 8) break;
+  function dispatchClickSequence(target) {
+    if (!(target instanceof Element)) return;
+    const eventTypes = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];
+    for (const type of eventTypes) {
+      target.dispatchEvent(new MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        view: window
+      }));
     }
-    return rows;
+    if (typeof target.click === "function") target.click();
   }
 
   function clickElement(candidate) {
@@ -791,26 +591,16 @@ function notebookDomAutomation(payload) {
     if (!(element instanceof Element)) return false;
     element.scrollIntoView({ behavior: "instant", block: "center", inline: "center" });
     if (typeof element.focus === "function") element.focus({ preventScroll: true });
-    const eventTypes = ["pointerdown", "mousedown", "pointerup", "mouseup", "click"];
-    for (const type of eventTypes) {
-      element.dispatchEvent(new MouseEvent(type, {
-        bubbles: true,
-        cancelable: true,
-        view: window
-      }));
-    }
-    if (typeof element.click === "function") element.click();
+    dispatchClickSequence(element);
     return true;
   }
 
-  async function waitForCandidate(needle, timeoutMs, missResult, stage, sourceCandidate = null) {
+  async function waitForCandidate(needle, timeoutMs, missResult, stage) {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
       const accessIssue = detectAccessIssue();
       if (accessIssue) return accessIssue;
-      const candidate = stage === "locate_refresh"
-        ? findRefreshActionCandidate(sourceCandidate)
-        : findBestSourceCandidate(needle);
+      const candidate = stage === "locate_refresh" ? findRefreshActionCandidate() : findBestSourceCandidate(needle);
       if (candidate) return { ok: true, candidate };
       await delay(300);
     }
@@ -820,11 +610,7 @@ function notebookDomAutomation(payload) {
       stage,
       message: stage === "locate_source"
         ? `source not found in 15s: ${payload?.sourceLabel || ""}`
-        : `refresh entry not found in 7s: ${payload?.refreshLabel || refreshNeedles[0] || ""}`
-      ,
-      diagnostics: stage === "locate_refresh"
-        ? collectRefreshDiagnostics(sourceCandidate)
-        : collectSourceDiagnostics(needle)
+        : `refresh entry not found in 7s: ${(payload?.refreshLabel || refreshNeedles[0] || "")}`
     };
   }
 
@@ -835,15 +621,14 @@ function notebookDomAutomation(payload) {
 
     const sourceMatch = await waitForCandidate(sourceNeedle, 15000, "source_not_found", "locate_source");
     if (!sourceMatch.ok) return sourceMatch;
-
     clickElement(sourceMatch.candidate);
-    await delay(700);
+    await delay(400);
 
-    let refreshMatch = await waitForCandidate("", 1200, "refresh_not_found", "locate_refresh", sourceMatch.candidate);
+    let refreshMatch = await waitForCandidate("", 5000, "refresh_not_found", "locate_refresh");
     if (!refreshMatch.ok) {
       clickElement(sourceMatch.candidate);
-      await delay(900);
-      refreshMatch = await waitForCandidate("", 7000, "refresh_not_found", "locate_refresh", sourceMatch.candidate);
+      await delay(450);
+      refreshMatch = await waitForCandidate("", 7000, "refresh_not_found", "locate_refresh");
     }
     if (!refreshMatch.ok) return refreshMatch;
     clickElement(refreshMatch.candidate);
@@ -862,8 +647,7 @@ function notebookDomAutomation(payload) {
         strategy: refreshMatch.candidate.strategy,
         text: refreshMatch.candidate.matchedText,
         tagName: refreshMatch.candidate.tagName
-      },
-      diagnostics: collectRefreshDiagnostics(sourceMatch.candidate)
+      }
     };
   })();
 }
@@ -902,7 +686,7 @@ function extractNotebookListDom() {
       const reg = new RegExp(`\\b${token}\\b`, "gi");
       text = text.replace(reg, " ");
     }
-    text = text.replace(/\b\d+\s*娑擃亝娼靛┃鎬絙/gi, " ");
+    text = text.replace(/\b\d+\s*濞戞搩浜濆闈涒攦閹禉/gi, " ");
     text = text.replace(/\b\d+\s*sources?\b/gi, " ");
     text = text.replace(/\s+/g, " ").trim();
     return text;
@@ -995,11 +779,110 @@ function sortedTargets(rule) {
   return output;
 }
 
+function normalizeLabelForMatch(value) {
+  return String(value || "")
+    .toLowerCase()
+    .replace(/[\s\-_./|()[\]{}:;,'"!?]+/g, " ")
+    .trim();
+}
+
+function compactLabel(value) {
+  return normalizeLabelForMatch(value).replace(/\s+/g, "");
+}
+
+function computeLabelMatchScore(sourceName, targetLabel) {
+  const source = normalizeLabelForMatch(sourceName);
+  const target = normalizeLabelForMatch(targetLabel);
+  if (!source || !target) return 0;
+
+  if (source === target) return 10;
+  const sourceCompact = compactLabel(source);
+  const targetCompact = compactLabel(target);
+  if (sourceCompact && targetCompact && sourceCompact === targetCompact) return 9;
+  if (source.includes(target) || target.includes(source)) return 8;
+
+  const sourceTokens = new Set(source.split(" ").filter(Boolean));
+  const targetTokens = new Set(target.split(" ").filter(Boolean));
+  if (!sourceTokens.size || !targetTokens.size) return 0;
+
+  let overlap = 0;
+  targetTokens.forEach((token) => {
+    if (sourceTokens.has(token)) overlap += 1;
+  });
+  if (!overlap) return 0;
+  const ratio = overlap / targetTokens.size;
+  if (ratio >= 1) return 7;
+  if (ratio >= 0.66) return 5;
+  if (ratio >= 0.5) return 4;
+  return 2;
+}
+
+function pickBestSourceForSync(sources = [], sourceLabel = "") {
+  const rows = Array.isArray(sources) ? sources : [];
+  if (!rows.length) return null;
+
+  const target = String(sourceLabel || "").trim();
+  if (!target) {
+    return rows.find((item) => item?.isGDoc) || null;
+  }
+
+  const scored = rows
+    .map((item) => ({
+      source: item,
+      score: computeLabelMatchScore(item?.name || "", target)
+    }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (!scored.length) return null;
+  return scored.find((item) => item.source?.isGDoc)?.source || scored[0].source || null;
+}
+
+async function syncTargetByRpc(notebookUrl, sourceLabel) {
+  const resolved = await resolveNotebookByInput({ notebookUrl, force: false });
+  const notebookId = String(resolved?.notebookId || "").trim();
+  if (!notebookId) throw new Error("rpc_notebook_id_missing");
+
+  const payload = await fetchNotebookSources({ notebookId, notebookUrl, force: true });
+  const bestSource = pickBestSourceForSync(payload?.sources || [], sourceLabel);
+  if (!bestSource) {
+    const sample = (payload?.sources || []).slice(0, 5).map((item) => String(item?.name || "").trim()).filter(Boolean);
+    throw new Error(`rpc_source_not_found:${sourceLabel}|samples=${sample.join(",")}`);
+  }
+  if (!bestSource.isGDoc) {
+    throw new Error(`rpc_source_not_gdoc:${bestSource.name || bestSource.id || "unknown"}`);
+  }
+
+  await runWithAuthUsers(async (client) => {
+    await client.syncGdocSource(notebookId, bestSource.id);
+    return true;
+  });
+  notebookSourcesCache.delete(notebookId);
+  return {
+    notebookId,
+    sourceId: String(bestSource.id || ""),
+    sourceName: String(bestSource.name || "")
+  };
+}
+
 async function runForTarget(rule, runtime, target) {
   const normalizedUrl = normalizeNotebookUrl(target?.notebookUrl, "");
   const sourceLabel = String(target?.sourceLabel || "").trim();
   if (!normalizedUrl) {
     return { ok: false, result: "page_error", message: "Invalid notebook URL in rule.", targetUrl: "" };
+  }
+
+  try {
+    const rpc = await syncTargetByRpc(normalizedUrl, sourceLabel || "work ai news");
+    return {
+      ok: true,
+      targetUrl: normalizedUrl,
+      result: "success",
+      message: `RPC sync success | source=${rpc.sourceName || rpc.sourceId}`
+    };
+  } catch (rpcError) {
+    // Fallback to DOM automation when RPC sync is not available for this source/notebook.
+    console.warn(`${LOG_PREFIX} rpc sync fallback`, rpcError);
   }
 
   const dedicatedTab = await getDedicatedNotebookTab(normalizedUrl, runtime);
@@ -1061,7 +944,9 @@ async function performRun(mode = "manual", targetUrlFilter = "") {
     const targetUrl = target.notebookUrl;
     try {
       const result = await runForTarget(rule, runtime, target);
-      runtime.lastRunAtByUrl[targetUrl] = nowIso();
+      if (result.ok) {
+        runtime.lastRunAtByUrl[targetUrl] = nowIso();
+      }
       runtime = appendRunLog(runtime, {
         at: nowIso(),
         mode,
@@ -1076,7 +961,6 @@ async function performRun(mode = "manual", targetUrlFilter = "") {
         result: "page_error",
         message: error?.message || "NotebookLM refresh execution failed."
       });
-      runtime.lastRunAtByUrl[targetUrl] = nowIso();
       runtime = appendRunLog(runtime, {
         at: nowIso(),
         mode,
@@ -1114,6 +998,9 @@ function enqueueRun(mode = "manual", targetUrlFilter = "") {
 async function runNotebookNow(url = "") {
   const normalizedUrl = normalizeNotebookUrl(url, "");
   if (!normalizedUrl) throw new Error("invalid_notebook_url");
+  const state = await readState();
+  const hasRuleTarget = sortedTargets(state.rule).some((target) => compareNotebookUrls(target?.notebookUrl || "", normalizedUrl));
+  if (!hasRuleTarget) throw new Error("no_rule_target_for_notebook");
   return enqueueRun("manual", normalizedUrl);
 }
 
@@ -2693,7 +2580,7 @@ async function rebuildContextMenus() {
   chrome.contextMenus.create({
     id: CONTEXT_MENU_OPEN_MANAGER_ID,
     parentId: CONTEXT_MENU_ROOT_ID,
-    title: zh ? "管理常用笔记本..." : "Manage Favorite Notebooks...",
+    title: zh ? "绠＄悊甯哥敤绗旇鏈?.." : "Manage Favorite Notebooks...",
     contexts: CONTEXT_MENU_CONTEXTS,
     documentUrlPatterns: CONTEXT_MENU_TARGET_PATTERNS
   });
@@ -2703,7 +2590,7 @@ async function rebuildContextMenus() {
     chrome.contextMenus.create({
       id: CONTEXT_MENU_EMPTY_ID,
       parentId: CONTEXT_MENU_ROOT_ID,
-      title: zh ? "暂无常用笔记本（去管理台设置）" : "No favorites yet (set in Manager)",
+      title: zh ? "暂无右键常用（去管理台设置）" : "No favorites yet (set in Manager)",
       enabled: false,
       contexts: CONTEXT_MENU_CONTEXTS,
       documentUrlPatterns: CONTEXT_MENU_TARGET_PATTERNS
@@ -2730,7 +2617,7 @@ async function rebuildContextMenus() {
       id: CONTEXT_MENU_MORE_ID,
       parentId: CONTEXT_MENU_ROOT_ID,
       title: zh
-        ? `仅显示前 ${CONTEXT_MENU_MAX_FAVORITES} 个常用笔记本`
+        ? `浠呮樉绀哄墠 ${CONTEXT_MENU_MAX_FAVORITES} 涓父鐢ㄧ瑪璁版湰`
         : `Showing first ${CONTEXT_MENU_MAX_FAVORITES} favorites only`,
       enabled: false,
       contexts: CONTEXT_MENU_CONTEXTS,
@@ -3333,6 +3220,233 @@ async function parseRssFeed(rssUrl) {
     if (/^https?:\/\//i.test(link)) links.push(link);
   }
   return dedupeUrls(links);
+}
+
+function parseCrawlerKeywords(raw) {
+  const parts = String(raw || "")
+    .split(/[\n,;|]+/g)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+  return [...new Set(parts)].slice(0, 20);
+}
+
+function normalizeCrawlerLanguage(language, locale = "") {
+  const value = String(language || "auto").trim().toLowerCase();
+  if (value === "zh" || value === "en" || value === "all") return value;
+  if (String(locale || "").toLowerCase().startsWith("zh")) return "zh";
+  return "en";
+}
+
+function decodeHtmlEntityMinimal(text) {
+  return String(text || "")
+    .replace(/&amp;/gi, "&")
+    .replace(/&quot;/gi, "\"")
+    .replace(/&#39;|&apos;/gi, "'")
+    .replace(/&lt;/gi, "<")
+    .replace(/&gt;/gi, ">");
+}
+
+function extractHtmlTitle(html) {
+  const match = String(html || "").match(/<title[^>]*>([\s\S]*?)<\/title>/i);
+  return decodeHtmlEntityMinimal(match?.[1] || "").replace(/\s+/g, " ").trim();
+}
+
+function extractHtmlTextSnippet(html) {
+  const noScript = String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, " ")
+    .replace(/<style[\s\S]*?<\/style>/gi, " ")
+    .replace(/<noscript[\s\S]*?<\/noscript>/gi, " ");
+  return decodeHtmlEntityMinimal(
+    noScript
+      .replace(/<[^>]+>/g, " ")
+      .replace(/\s+/g, " ")
+      .trim()
+  ).slice(0, 2400);
+}
+
+function detectLanguageFromHtml(html, pageUrl = "") {
+  const raw = String(html || "");
+  const langAttr = raw.match(/<html[^>]*\blang\s*=\s*["']?([a-zA-Z-]+)/i)?.[1] || "";
+  const ogLocale = raw.match(/<meta[^>]*\bproperty\s*=\s*["']og:locale["'][^>]*\bcontent\s*=\s*["']([^"']+)/i)?.[1] || "";
+  const candidate = `${langAttr} ${ogLocale}`.toLowerCase();
+  if (/(^|[-_])(zh|cn)\b/.test(candidate)) return "zh";
+  if (/(^|[-_])en\b/.test(candidate)) return "en";
+
+  const url = String(pageUrl || "").toLowerCase();
+  if (/(\/|[?&])(zh|cn)(\/|$|=|&)/.test(url) || /[\.\-](zh|cn)\./.test(url)) return "zh";
+  if (/(\/|[?&])en(\/|$|=|&)/.test(url) || /[\.\-]en\./.test(url)) return "en";
+
+  const text = extractHtmlTextSnippet(raw);
+  const zhCount = (text.match(/[\u3400-\u9fff]/g) || []).length;
+  const enCount = (text.match(/[A-Za-z]/g) || []).length;
+  if (zhCount >= 12 && zhCount * 2 >= enCount) return "zh";
+  if (enCount >= 80 && enCount >= zhCount * 2) return "en";
+  return "unknown";
+}
+
+function extractAnchorLinksFromHtml(html, baseUrl) {
+  const links = [];
+  const seen = new Set();
+  const re = /<a\b[^>]*?\bhref\s*=\s*(?:"([^"]+)"|'([^']+)'|([^\s"'<>`]+))/gi;
+  let match;
+  while ((match = re.exec(String(html || ""))) !== null) {
+    const hrefRaw = decodeHtmlEntityMinimal(match[1] || match[2] || match[3] || "").trim();
+    if (!hrefRaw) continue;
+    if (/^(javascript:|mailto:|tel:|#)/i.test(hrefRaw)) continue;
+    try {
+      const url = new URL(hrefRaw, baseUrl);
+      if (!/^https?:$/i.test(url.protocol)) continue;
+      url.hash = "";
+      const normalized = url.toString();
+      if (seen.has(normalized)) continue;
+      seen.add(normalized);
+      links.push(normalized);
+    } catch (_) {
+      // ignore malformed URL
+    }
+  }
+  return links;
+}
+
+function isLikelyPageUrl(url) {
+  const pathname = String(new URL(url).pathname || "").toLowerCase();
+  if (!pathname || pathname.endsWith("/")) return true;
+  const ext = pathname.split(".").pop() || "";
+  if (!ext || ext.length > 5) return true;
+  const blocked = new Set([
+    "pdf", "zip", "rar", "7z", "exe", "dmg", "apk",
+    "png", "jpg", "jpeg", "gif", "webp", "svg", "ico",
+    "mp3", "wav", "ogg", "mp4", "mov", "avi", "webm",
+    "doc", "docx", "xls", "xlsx", "ppt", "pptx"
+  ]);
+  return !blocked.has(ext);
+}
+
+function isInCrawlScope(url, seed, includeSubdomains) {
+  const parsed = new URL(url);
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return false;
+  if (includeSubdomains) {
+    return parsed.hostname === seed.hostname || parsed.hostname.endsWith(`.${seed.hostname}`);
+  }
+  return parsed.hostname === seed.hostname;
+}
+
+function scoreCrawledPage({ pageUrl, title, snippet, language }, options) {
+  const text = `${pageUrl} ${title} ${snippet}`.toLowerCase();
+  let score = 0;
+
+  if (options.keywords.length) {
+    for (const keyword of options.keywords) {
+      if (!keyword) continue;
+      if (text.includes(keyword)) score += 3;
+      else if (keyword.length >= 3 && text.includes(keyword.replace(/\s+/g, ""))) score += 1;
+    }
+  } else {
+    score += 1;
+  }
+
+  const targetLanguage = options.language;
+  if (targetLanguage !== "all") {
+    if (language === targetLanguage) score += 3;
+    else if (language !== "unknown") score -= 2;
+  }
+
+  if (/\/(article|blog|news|post|docs|guide|research|insight)\b/i.test(pageUrl)) score += 1;
+  if (/\/(login|signin|signup|account|privacy|terms|about|contact)\b/i.test(pageUrl)) score -= 3;
+  return score;
+}
+
+async function fetchTextWithTimeout(url, timeoutMs = 15000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(url, {
+      method: "GET",
+      credentials: "omit",
+      redirect: "follow",
+      signal: controller.signal,
+      headers: {
+        accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8"
+      }
+    });
+    if (!response.ok) throw new Error(`http_${response.status}`);
+    const contentType = String(response.headers.get("content-type") || "").toLowerCase();
+    if (!contentType.includes("text/html") && !contentType.includes("application/xhtml+xml")) {
+      throw new Error("non_html_content");
+    }
+    const html = await response.text();
+    return { html, finalUrl: response.url || url };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function crawlWebsiteLinks(payload = {}) {
+  const startRaw = String(payload?.startUrl || "").trim();
+  if (!/^https?:\/\//i.test(startRaw)) throw new Error("invalid_crawler_start_url");
+  const seed = new URL(startRaw);
+  const options = {
+    maxPages: Math.max(5, Math.min(200, Number.parseInt(String(payload?.maxPages || "40"), 10) || 40)),
+    maxDepth: Math.max(0, Math.min(4, Number.parseInt(String(payload?.maxDepth || "1"), 10) || 1)),
+    includeSubdomains: Boolean(payload?.includeSubdomains),
+    language: normalizeCrawlerLanguage(payload?.language, payload?.locale),
+    keywords: parseCrawlerKeywords(payload?.keywords || "")
+  };
+
+  const queue = [{ url: seed.toString(), depth: 0 }];
+  const enqueued = new Set([seed.toString()]);
+  const visited = new Set();
+  const failures = [];
+  const scored = [];
+
+  while (queue.length && visited.size < options.maxPages) {
+    const current = queue.shift();
+    if (!current?.url || visited.has(current.url)) continue;
+    visited.add(current.url);
+    try {
+      const fetched = await fetchTextWithTimeout(current.url, 18000);
+      const pageUrl = String(fetched.finalUrl || current.url);
+      if (!isInCrawlScope(pageUrl, seed, options.includeSubdomains)) continue;
+      if (!isLikelyPageUrl(pageUrl)) continue;
+
+      const html = fetched.html;
+      const title = extractHtmlTitle(html);
+      const snippet = extractHtmlTextSnippet(html);
+      const language = detectLanguageFromHtml(html, pageUrl);
+      const score = scoreCrawledPage({ pageUrl, title, snippet, language }, options);
+      if (score >= 0) {
+        scored.push({ url: pageUrl, score });
+      }
+
+      if (current.depth >= options.maxDepth) continue;
+      const links = extractAnchorLinksFromHtml(html, pageUrl);
+      for (const nextUrl of links) {
+        if (enqueued.size >= options.maxPages * 20) break;
+        if (!isLikelyPageUrl(nextUrl)) continue;
+        if (!isInCrawlScope(nextUrl, seed, options.includeSubdomains)) continue;
+        if (visited.has(nextUrl) || enqueued.has(nextUrl)) continue;
+        enqueued.add(nextUrl);
+        queue.push({ url: nextUrl, depth: current.depth + 1 });
+      }
+    } catch (error) {
+      if (failures.length < 12) {
+        failures.push(`${current.url}::${error?.message || "crawl_failed"}`);
+      }
+    }
+  }
+
+  const urls = dedupeUrls(
+    scored
+      .sort((a, b) => b.score - a.score)
+      .map((item) => item.url)
+  ).slice(0, options.maxPages * 5);
+
+  return {
+    urls,
+    visited: visited.size,
+    queued: enqueued.size,
+    failures
+  };
 }
 
 function importSourcesDom(payload) {
@@ -4049,6 +4163,22 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
+  if (message?.type === "CRAWL_WEBSITE") {
+    const data = message?.data || message || {};
+    withTimeout(crawlWebsiteLinks({
+      startUrl: data?.startUrl || data?.url || "",
+      keywords: data?.keywords || "",
+      language: data?.language || "auto",
+      locale: data?.locale || "en",
+      maxPages: data?.maxPages,
+      maxDepth: data?.maxDepth,
+      includeSubdomains: Boolean(data?.includeSubdomains)
+    }), 300000, "crawl_website_timeout")
+      .then((payload) => sendResponse({ ok: true, ...payload }))
+      .catch((error) => sendResponse({ ok: false, error: error?.message || "crawl_website_failed" }));
+    return true;
+  }
+
   if (message?.type === "PARSE_YOUTUBE_PLAYLIST") {
     parseYouTubePlaylist(message?.url || "")
       .then((urls) => sendResponse({ ok: true, urls }))
@@ -4288,6 +4418,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 
   return false;
 });
+
 
 
 

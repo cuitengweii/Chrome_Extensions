@@ -116,6 +116,7 @@ body.xac-theme-dark ::-webkit-scrollbar-thumb:hover {
   bottom: 12px;
   z-index: 2147483646;
   width: min(92vw, 360px);
+  max-width: min(92vw, 360px);
   font-family: "Segoe UI", "Microsoft YaHei", sans-serif;
   color: var(--xac-text);
   box-sizing: border-box;
@@ -128,6 +129,7 @@ body.xac-theme-dark ::-webkit-scrollbar-thumb:hover {
   box-shadow: var(--xac-shadow);
   overflow: hidden;
   box-sizing: border-box;
+  max-width: 100%;
 }
 
 #xac-widget .xac-toggle {
@@ -155,6 +157,7 @@ body.xac-theme-dark ::-webkit-scrollbar-thumb:hover {
   gap: 10px;
   box-sizing: border-box;
   min-width: 0;
+  overflow-x: hidden;
 }
 
 #xac-widget.xac-collapsed .xac-panel {
@@ -166,12 +169,15 @@ body.xac-theme-dark ::-webkit-scrollbar-thumb:hover {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  flex-wrap: nowrap;
 }
 
 #xac-widget .xac-label,
 #xac-widget .xac-meta {
   font-size: 12px;
   color: var(--xac-text-soft);
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 #xac-widget .xac-meta strong {
@@ -251,17 +257,76 @@ body.xac-theme-dark ::-webkit-scrollbar-thumb:hover {
   color: #ffb0b0;
 }
 
+#xac-widget .xac-account-card {
+  border: 1px solid var(--xac-border-soft);
+  border-radius: 10px;
+  padding: 8px;
+  background: rgba(0, 0, 0, 0.16);
+  display: grid;
+  gap: 8px;
+}
+
+#xac-widget .xac-account-top {
+  align-items: center;
+}
+
+#xac-widget .xac-status-pill {
+  border: 1px solid var(--xac-border-soft);
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  line-height: 1.2;
+  background: #10241b;
+}
+
+#xac-widget .xac-account-row {
+  align-items: center;
+  gap: 8px;
+}
+
+#xac-widget .xac-account-email {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#xac-widget .xac-button.xac-mini-btn {
+  width: auto;
+  min-width: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
 #xac-widget details {
   border: 1px solid var(--xac-border-soft);
   border-radius: 10px;
   padding: 8px;
   background: rgba(0, 0, 0, 0.14);
+  min-width: 0;
+  overflow: hidden;
 }
 
 #xac-widget summary {
+  display: block;
   cursor: pointer;
   font-weight: 600;
   color: var(--xac-accent-strong);
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+#xac-widget .xac-subpanel {
+  display: grid;
+  gap: 8px;
+  padding-top: 10px;
+  min-width: 0;
+  overflow-x: hidden;
 }
 
 #xac-widget .xac-grid-2 {
@@ -325,22 +390,31 @@ body.xac-theme-dark ::-webkit-scrollbar-thumb:hover {
 
 body.xac-popup-mode {
   margin: 0;
-  min-width: 360px;
+  min-width: 340px;
   min-height: 560px;
+  width: 100%;
+  overflow-x: hidden;
 }
 
 body.xac-popup-mode #xac-widget {
   position: static;
   right: auto;
   bottom: auto;
-  width: 100%;
+  width: clamp(340px, 96vw, 360px);
+  max-width: clamp(340px, 96vw, 360px);
   padding: 10px;
   box-sizing: border-box;
   overflow-x: hidden;
+  margin: 0 auto;
 }
 
 body.xac-popup-mode {
   overflow-x: hidden;
+}
+
+body.xac-popup-mode #xac-widget .xac-grid-2,
+body.xac-popup-mode #xac-widget .xac-actions {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 @media (max-width: 420px) {

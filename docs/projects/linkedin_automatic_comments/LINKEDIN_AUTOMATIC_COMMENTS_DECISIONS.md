@@ -123,3 +123,13 @@
 
 ### Stable Defaults
 - For long narrative tooltip strings, support exact-map translation plus regex fallback for punctuation variants.
+
+## 2026-03-29 | Popup Branding Override
+
+### Decision
+- Use runtime DOM normalization in popup context to enforce product title text as `LinkedIn Automatic Comments`.
+- Hide decorative bottom-right fixed logo (`/assets/logo.png`) without changing existing layout structure.
+
+### Stable Defaults
+- Branding replacement is limited to header text nodes only.
+- Bottom-right logo suppression is limited to fixed-position container carrying the logo image.

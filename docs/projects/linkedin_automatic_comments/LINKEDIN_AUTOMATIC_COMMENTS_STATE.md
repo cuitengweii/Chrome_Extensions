@@ -111,3 +111,14 @@
 - Tooltip extraction check from `popup.bce84c5a.js`:
   - total tooltip strings: `12`
   - missing in runtime maps: `0`
+
+## 2026-03-29 | Branding & Corner Logo Cleanup
+
+### Status
+- Popup header brand text now force-normalized at runtime:
+  - `CommenTRON` / `CommenTron` -> `LinkedIn Automatic Comments`
+- Removed bottom-right fixed logo entry by hiding the fixed container that hosts `/assets/logo.png`.
+
+### Validation
+- `node --check D:\code\Chrome_Extensions\LinkedIn automatic comments\runtime.patch.js` passed.
+- Runtime patch now executes brand/title normalization and logo cleanup in `applyRuntimeLayers()`.

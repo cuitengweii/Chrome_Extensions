@@ -4,6 +4,7 @@
   const ACCOUNT_KEY = "account";
   const MODE_KEY = "commentron_theme_mode";
   const LANG_KEY = "commentron_language";
+  const BRAND_TITLE = "LinkedIn Automatic Comments";
   const THEMES = ["dark", "light"];
   const LANGUAGES = ["en", "zh-CN"];
   const JSON_PARSE_PATCH_FLAG = "__ceJsonParsePatched";
@@ -589,9 +590,54 @@
     }
   }
 
+  function enforceBrandTitle() {
+    if (!document.body) return;
+
+    if (/commen\s*tron/i.test(document.title || "")) {
+      document.title = BRAND_TITLE;
+    }
+
+    const header = document.querySelector(".header");
+    if (!header) return;
+
+    const walker = document.createTreeWalker(
+      header,
+      NodeFilter.SHOW_TEXT,
+      {
+        acceptNode(node) {
+          const value = (node.nodeValue || "").trim();
+          if (!value) return NodeFilter.FILTER_REJECT;
+          return /CommenTRON|CommenTron/.test(value)
+            ? NodeFilter.FILTER_ACCEPT
+            : NodeFilter.FILTER_REJECT;
+        }
+      }
+    );
+
+    const nodes = [];
+    while (walker.nextNode()) nodes.push(walker.currentNode);
+    for (const node of nodes) {
+      node.nodeValue = (node.nodeValue || "").replace(/CommenTRON|CommenTron/g, BRAND_TITLE);
+    }
+  }
+
+  function hideBottomRightLogo() {
+    if (!document.body) return;
+
+    const logoImgs = document.querySelectorAll("img[src*='/assets/logo.png'], img.logo");
+    for (const img of logoImgs) {
+      const fixedParent = img.closest("[style*='position: fixed'][style*='right'][style*='bottom']");
+      if (fixedParent) {
+        fixedParent.style.display = "none";
+      }
+    }
+  }
+
   function applyRuntimeLayers() {
     applyLanguageToDom();
     unlockDisabledControls();
+    enforceBrandTitle();
+    hideBottomRightLogo();
   }
 
   function queueApplyRuntime() {

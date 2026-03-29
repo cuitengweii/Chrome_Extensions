@@ -92,3 +92,14 @@
 
 ### Avoid Next Time
 - Include tooltip-literal coverage check in zh-CN regression before handoff.
+
+## 2026-03-29 | Header Branding and Decorative Icon Are Separate Paths
+
+### Pitfall
+- Popup title string and decorative logo are rendered through different components, so changing one does not affect the other.
+
+### What Worked
+- Added dedicated runtime handlers: one for header branding text, one for bottom-right fixed logo removal.
+
+### Avoid Next Time
+- For popup visual cleanup requests, inspect both textual nodes and fixed-position decorative assets.

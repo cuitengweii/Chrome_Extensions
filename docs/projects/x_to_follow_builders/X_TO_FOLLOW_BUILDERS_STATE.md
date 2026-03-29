@@ -67,3 +67,9 @@
 - 本线程修复了 `X-to-follow-builders/manifest.json` 的跨终端编码可读性问题。
 - `name` / `description` / `action.default_title` 统一改为 Unicode 转义写法（`\uXXXX`），避免在非 UTF-8 读取场景下出现误判为损坏 JSON。
 - 功能层无行为变更；仅做编码层稳定性修正。
+
+## 2026-03-29 线程归档执行（Archive Sync）
+- 触发方式：用户明确输入“执行归档”，并指定项目 `D:\code\Chrome_Extensions\X-to-follow-builders`。
+- 扫描结论：`X-to-follow-builders/` 与 `docs/projects/x_to_follow_builders/` 本轮无新增业务代码改动，仅执行状态归档同步。
+- 边界说明：当前仓库存在其他子项目（LinkedIn automatic comments）的未提交改动，本次归档未并入该子项目内容。
+- 本线程性质：`discussion-only / no code landed`（仅项目状态同步，不含该项目源码落地变更）。

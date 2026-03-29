@@ -114,3 +114,12 @@
 - Keep reverse mapping for language switching back: `OPTION_ZH_TO_EN`.
 - Route all option-like text through `translateOptionLabel` before fallback dictionary matching.
 - Coverage scope includes length/tone/industry/post-age/cooldown/plan/voice values used by popup UI.
+
+## 2026-03-29 | Tooltip Translation Robustness
+
+### Decision
+- Keep tooltip translation coverage validated against extracted popup tooltip literals.
+- Add punctuation-tolerant fallback match for critical long tooltip text to reduce locale/encoding drift risk.
+
+### Stable Defaults
+- For long narrative tooltip strings, support exact-map translation plus regex fallback for punctuation variants.

@@ -98,3 +98,16 @@
 
 ### Notes
 - `runtime.patch.js` BOM was removed to keep patch script loading predictable across environments.
+
+## 2026-03-29 | Tooltip Gap Closure (Ack If My Post)
+
+### Status
+- Filled remaining zh-CN tooltip translation gap for:
+  - `On my own posts ¡ª do not get involved too much...`
+- Added robust fallback matching for punctuation variants (`¡ª` / `-` / `?`) to prevent encoding-related misses.
+- Added HTML tooltip translation entry for the forgot-password rich tooltip string.
+
+### Validation
+- Tooltip extraction check from `popup.bce84c5a.js`:
+  - total tooltip strings: `12`
+  - missing in runtime maps: `0`

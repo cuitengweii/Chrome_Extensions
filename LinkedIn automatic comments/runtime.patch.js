@@ -210,7 +210,11 @@
     ["Sign up to CommenTron.", "注册 CommenTron。"],
     ["Sign in to CommenTron.", "登录 CommenTron。"],
     ["Same email you used to register with RocketPod.", "请输入你注册 RocketPod 时使用的邮箱。"],
-    ["Same password you used to register with RocketPod. Forgot password?", "请输入你注册 RocketPod 时使用的密码。忘记密码？"]
+    ["Same password you used to register with RocketPod. Forgot password?", "请输入你注册 RocketPod 时使用的密码。忘记密码？"],
+    ["<span>Same password you used to register with RocketPod. <br /> <a style='color: white' href='https://rocket-pod.ai/my-account/lost-password' target='_blank'>Forgot password?</a></span>", "<span>请输入你注册 RocketPod 时使用的密码。<br /> <a style='color: white' href='https://rocket-pod.ai/my-account/lost-password' target='_blank'>忘记密码？</a></span>"],
+    ["On my own posts — do not get involved too much in the context and just acknowledge by showing appreciation for the comment.", "在我的帖子下，不要过多介入上下文，仅通过感谢进行确认回复。"],
+    ["On my own posts - do not get involved too much in the context and just acknowledge by showing appreciation for the comment.", "在我的帖子下，不要过多介入上下文，仅通过感谢进行确认回复。"],
+    ["On my own posts ? do not get involved too much in the context and just acknowledge by showing appreciation for the comment.", "在我的帖子下，不要过多介入上下文，仅通过感谢进行确认回复。"]
   ];
 
   const enToZh = new Map(DICT);
@@ -253,7 +257,11 @@
     ["Version:", "\u7248\u672c\uff1a"],
     ["Seat:", "\u5e2d\u4f4d\uff1a"],
     ["Comment", "\u8bc4\u8bba"],
-    ["Reply", "\u56de\u590d"]
+    ["Reply", "\u56de\u590d"],
+    ["<span>Same password you used to register with RocketPod. <br /> <a style='color: white' href='https://rocket-pod.ai/my-account/lost-password' target='_blank'>Forgot password?</a></span>", "<span>\u8bf7\u8f93\u5165\u4f60\u6ce8\u518c RocketPod \u65f6\u4f7f\u7528\u7684\u5bc6\u7801\u3002<br /> <a style='color: white' href='https://rocket-pod.ai/my-account/lost-password' target='_blank'>\u5fd8\u8bb0\u5bc6\u7801\uff1f</a></span>"],
+    ["On my own posts \u2014 do not get involved too much in the context and just acknowledge by showing appreciation for the comment.", "\u5728\u6211\u7684\u5e16\u5b50\u4e0b\uff0c\u4e0d\u8981\u8fc7\u591a\u4ecb\u5165\u4e0a\u4e0b\u6587\uff0c\u4ec5\u901a\u8fc7\u611f\u8c22\u8fdb\u884c\u786e\u8ba4\u56de\u590d\u3002"],
+    ["On my own posts - do not get involved too much in the context and just acknowledge by showing appreciation for the comment.", "\u5728\u6211\u7684\u5e16\u5b50\u4e0b\uff0c\u4e0d\u8981\u8fc7\u591a\u4ecb\u5165\u4e0a\u4e0b\u6587\uff0c\u4ec5\u901a\u8fc7\u611f\u8c22\u8fdb\u884c\u786e\u8ba4\u56de\u590d\u3002"],
+    ["On my own posts ? do not get involved too much in the context and just acknowledge by showing appreciation for the comment.", "\u5728\u6211\u7684\u5e16\u5b50\u4e0b\uff0c\u4e0d\u8981\u8fc7\u591a\u4ecb\u5165\u4e0a\u4e0b\u6587\uff0c\u4ec5\u901a\u8fc7\u611f\u8c22\u8fdb\u884c\u786e\u8ba4\u56de\u590d\u3002"]
   ]);
   const FIXED_ZH_TO_EN = new Map(Array.from(FIXED_EN_TO_ZH.entries(), ([en, zh]) => [zh, en]));
   const OPTION_EN_TO_ZH = new Map([
@@ -459,6 +467,9 @@
     if (fallbackMap.has(text)) return fallbackMap.get(text);
 
     if (lang === "zh-CN") {
+      const ackTip = text.match(/^On my own posts\s*[\u2014\-\?]\s*do not get involved too much in the context and just acknowledge by showing appreciation for the comment\.$/i);
+      if (ackTip) return "在我的帖子下，不要过多介入上下文，仅通过感谢进行确认回复。";
+
       const m1 = text.match(/^Free trial ended, upgrade to '(.+)' plan to access this feature$/);
       if (m1) return `免费试用已结束，请升级到“${translateOptionLabel(m1[1], "zh-CN")}”套餐后使用该功能`;
 
@@ -474,6 +485,10 @@
       const m5 = text.match(/^Tone:\s*'?(.*?)'?$/);
       if (m5) return `语气：${translateOptionLabel(m5[1].trim(), "zh-CN")}`;
     } else {
+      if (/^\u5728\u6211\u7684\u5e16\u5b50\u4e0b\uff0c\u4e0d\u8981\u8fc7\u591a\u4ecb\u5165\u4e0a\u4e0b\u6587\uff0c\u4ec5\u901a\u8fc7\u611f\u8c22\u8fdb\u884c\u786e\u8ba4\u56de\u590d\u3002$/u.test(text)) {
+        return "On my own posts — do not get involved too much in the context and just acknowledge by showing appreciation for the comment.";
+      }
+
       const m1 = text.match(/^\u514d\u8d39\u8bd5\u7528\u5df2\u7ed3\u675f\uff0c\u8bf7\u5347\u7ea7\u5230\u201c(.+)\u201d\u5957\u9910\u540e\u4f7f\u7528\u8be5\u529f\u80fd$/u);
       if (m1) return `Free trial ended, upgrade to '${translateOptionLabel(m1[1], "en")}' plan to access this feature`;
 

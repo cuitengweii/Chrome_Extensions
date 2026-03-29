@@ -81,3 +81,14 @@
 ### Avoid Next Time
 - After any popup bundle update, re-run option coverage verification before handoff.
 - Keep the runtime option dictionary aligned with enum output values, not only static UI labels.
+
+## 2026-03-29 | Long Tooltip Strings Need Literal Coverage Checks
+
+### Pitfall
+- Long tooltip sentences can bypass translation if punctuation or rich-text form differs from dictionary keys.
+
+### What Worked
+- Extracting all popup `tooltip:"..."` literals and comparing against runtime dictionaries immediately exposes gaps.
+
+### Avoid Next Time
+- Include tooltip-literal coverage check in zh-CN regression before handoff.

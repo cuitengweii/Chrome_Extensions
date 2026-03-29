@@ -48,6 +48,16 @@
   - Paid features: runtime unlock patch (page + background)
   - No layout restructuring
 
+## 2026-03-29 Browser Recorder Loadability Fix
+- Fixed unpacked extension load blockers in:
+  - `D:\code\Chrome_Extensions\Browser Recorder\manifest.json`
+- Added missing manifest-referenced resources:
+  - `D:\code\Chrome_Extensions\Browser Recorder\content.styles.css`
+  - `D:\code\Chrome_Extensions\Browser Recorder\blank.mp4`
+  - `D:\code\Chrome_Extensions\Browser Recorder\worker.js`
+  - `D:\code\Chrome_Extensions\Browser Recorder\wrapper.html`
+- Verified `_metadata` reserved directory is not present in Browser Recorder root.
+
 ## 2026-03-29 LinkedIn Automatic Comments Route Sync
 - New stable project route added: `D:\code\Chrome_Extensions\LinkedIn automatic comments`
 - Upgraded from repo-level default routing to project-level docs routing:

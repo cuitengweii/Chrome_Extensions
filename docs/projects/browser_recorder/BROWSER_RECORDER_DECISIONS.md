@@ -20,3 +20,22 @@
 
 ### Trade-off
 - 由于不是源码级改造，个别深层逻辑若使用强校验或服务端二次鉴权，仍可能需要后续做更细粒度补丁。
+
+## 2026-03-29 | Unpacked Load Compatibility Baseline
+
+### Decision
+- 对本地开发/测试环境，`manifest.json` 采用“可加载优先”的兼容基线：
+  - 移除 `key`
+  - 移除 `update_url`
+- 对 `manifest` 中声明的根目录资源执行“声明即落地”：
+  - 若存在声明缺失，补齐对应文件，不保留悬空声明。
+
+### Why
+- 当前任务要求直接在本地 Chrome 通过“加载已解压扩展”可用。
+- unpacked 扩展对目录结构和资源声明完整性更敏感，悬空资源和保留目录命名会导致加载失败。
+
+### Stable Rule
+- 每次改动后都执行：
+  1. `manifest` JSON 解析检查
+  2. `manifest` 引用文件存在性检查
+  3. `_metadata` 保留目录检查（必须不存在）

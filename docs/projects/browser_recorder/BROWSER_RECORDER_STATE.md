@@ -33,7 +33,21 @@
 - `runtime.patch.js` 语法检查通过（`node --check`）。
 - 16/16 HTML 入口确认注入 `runtime.patch.js` 与 `theme-overrides.css`。
 - `background.bundle.js` 头部补丁已写入。
+- `manifest.json` 解析通过（`ConvertFrom-Json`）。
+- 所有 `manifest` 引用资源存在性检查通过（`all manifest-referenced files exist`）。
+- `_metadata` 目录确认不存在（避免 unpacked 扩展加载被拒绝）。
+
+## 2026-03-29 Loadability Fix
+- 触发问题：Chrome 无法加载 unpacked 扩展。
+- 已修复项：
+  - 清理 unpacked 环境兼容字段：移除 `manifest.json` 中 `key` 与 `update_url`。
+  - 补齐 `manifest` 声明但缺失的根目录资源：
+    - `D:\code\Chrome_Extensions\Browser Recorder\content.styles.css`
+    - `D:\code\Chrome_Extensions\Browser Recorder\blank.mp4`
+    - `D:\code\Chrome_Extensions\Browser Recorder\worker.js`
+    - `D:\code\Chrome_Extensions\Browser Recorder\wrapper.html`
+  - 确认 `_metadata` 目录不存在，避免 Chrome 因保留目录命名拒绝加载。
 
 ## Next Step
-- 在真实浏览器中完成一次端到端手工回归（录制、编辑、下载、上传、设置页），确认主题覆盖与解锁行为未引入功能回归。
+- 在真实浏览器中完成一次端到端手工回归（录制、编辑、下载、上传、设置页），确认主题覆盖、语言切换、付费解锁与本次加载修复未引入功能回归。
 - 若后续继续迭代 Browser Recorder，建议补齐项目级 ARCHITECTURE 文档。

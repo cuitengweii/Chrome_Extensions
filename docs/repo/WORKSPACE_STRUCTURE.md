@@ -35,3 +35,15 @@
 ## 其他说明
 - 仓库归档与路径路由统一以 `D:\code\Chrome_Extensions` 为准。
 - 历史旧路径不再作为当前仓库事实写入目标。
+
+## 2026-03-29 Browser Recorder Route Sync
+- New sub-project detected: `D:\code\Chrome_Extensions\Browser Recorder`
+- Upgraded from repo-level default routing to project-level docs routing:
+  - `D:\code\Chrome_Extensions\docs\projects\browser_recorder\BROWSER_RECORDER_STATE.md`
+  - `D:\code\Chrome_Extensions\docs\projects\browser_recorder\BROWSER_RECORDER_DECISIONS.md`
+  - `D:\code\Chrome_Extensions\docs\projects\browser_recorder\BROWSER_RECORDER_LESSONS.md`
+- Current scope archived for this thread:
+  - Theme style: tech-green + dark/light mode support
+  - Language: `zh-CN / en` switch
+  - Paid features: runtime unlock patch (page + background)
+  - No layout restructuring

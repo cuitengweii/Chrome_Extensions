@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "空来Ai-X日报账号采集器",
+  "name": "\u7a7a\u6765Ai-X\u65e5\u62a5\u8d26\u53f7\u91c7\u96c6\u5668",
   "version": "0.5.1",
-  "description": "采集 X/YouTube 账号并在 Supabase 中管理集合与账号池。",
+  "description": "\u91c7\u96c6 X/YouTube \u8d26\u53f7\u5e76\u5728 Supabase \u4e2d\u7ba1\u7406\u96c6\u5408\u4e0e\u8d26\u53f7\u6c60\u3002",
   "permissions": [
     "contextMenus",
     "storage",
@@ -44,7 +44,7 @@
       "16": "icons/icon16.png",
       "32": "icons/icon32.png"
     },
-    "default_title": "空来Ai-X日报账号采集器"
+    "default_title": "\u7a7a\u6765Ai-X\u65e5\u62a5\u8d26\u53f7\u91c7\u96c6\u5668"
   },
   "options_ui": {
     "page": "options.html",

@@ -62,3 +62,8 @@
    - X 页面复制链接捕获
 3. 抽离 Supabase 配置，避免 owner / table / key 只能写死在源码里。
 4. 明确候选状态流转规则，补一份使用/审核口径文档。
+
+## 2026-03-29 补充（Manifest 编码与解析）
+- 本线程修复了 `X-to-follow-builders/manifest.json` 的跨终端编码可读性问题。
+- `name` / `description` / `action.default_title` 统一改为 Unicode 转义写法（`\uXXXX`），避免在非 UTF-8 读取场景下出现误判为损坏 JSON。
+- 功能层无行为变更；仅做编码层稳定性修正。

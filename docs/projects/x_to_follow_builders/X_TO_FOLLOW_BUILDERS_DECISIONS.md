@@ -49,3 +49,9 @@
 - 最近一次数据库写入结果
 - 池子变更信号
 - 这样可以让 popup、options、background 之间做轻量状态同步
+
+9. manifest 展示字段采用 Unicode 转义写法
+- 文件：`D:\code\Chrome_Extensions\X-to-follow-builders\manifest.json`
+- 字段：`name`、`description`、`action.default_title`
+- 目的：降低不同终端默认编码导致的 JSON 读取误判风险，保证跨环境可解析性
+- 说明：仅编码表达方式变更，不改变扩展运行时功能

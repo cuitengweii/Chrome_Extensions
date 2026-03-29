@@ -7,10 +7,89 @@
   const THEMES = ["dark", "light"];
   const LANGUAGES = ["en", "zh-CN"];
 
+  function parseStoredAccount(raw) {
+    if (!raw) return {};
+    if (typeof raw === "string") {
+      try {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === "object" && !Array.isArray(obj)) return obj;
+      } catch (_err) {
+        return {};
+      }
+      return {};
+    }
+    if (typeof raw === "object" && !Array.isArray(raw)) return raw;
+    return {};
+  }
+
+  function stringifyStoredAccount(account) {
+    try {
+      return JSON.stringify(account ?? {});
+    } catch (_err) {
+      return "{}";
+    }
+  }
+
+  function normalizeAccountStorageShape(result, area) {
+    if (!result || typeof result !== "object") return result;
+    if (!Object.prototype.hasOwnProperty.call(result, ACCOUNT_KEY)) return result;
+
+    const parsed = parseStoredAccount(result[ACCOUNT_KEY]);
+    const normalized = stringifyStoredAccount(parsed);
+
+    if (result[ACCOUNT_KEY] !== normalized) {
+      const patched = { ...result, [ACCOUNT_KEY]: normalized };
+      try {
+        area?.set?.({ [ACCOUNT_KEY]: normalized }, () => {});
+      } catch (_err) {
+        // Ignore storage write-back failures.
+      }
+      return patched;
+    }
+
+    return result;
+  }
+
+  function patchStorageAreaGet(area) {
+    if (!area || area.__ceGetPatched) return;
+    if (typeof area.get !== "function") return;
+
+    const originalGet = area.get.bind(area);
+
+    try {
+      area.get = function patchedGet(keys, callback) {
+        if (typeof callback === "function") {
+          return originalGet(keys, (res) => {
+            callback(normalizeAccountStorageShape(res || {}, area));
+          });
+        }
+
+        const ret = originalGet(keys);
+        if (ret && typeof ret.then === "function") {
+          return ret.then((res) => normalizeAccountStorageShape(res || {}, area));
+        }
+        return ret;
+      };
+
+      Object.defineProperty(area, "__ceGetPatched", {
+        value: true,
+        configurable: true
+      });
+    } catch (_err) {
+      // Ignore when storage APIs are not patchable in current context.
+    }
+  }
+
   const STORAGE_AREAS = [];
   if (typeof chrome !== "undefined" && chrome.storage) {
-    if (chrome.storage.local) STORAGE_AREAS.push(chrome.storage.local);
-    if (chrome.storage.sync) STORAGE_AREAS.push(chrome.storage.sync);
+    if (chrome.storage.local) {
+      patchStorageAreaGet(chrome.storage.local);
+      STORAGE_AREAS.push(chrome.storage.local);
+    }
+    if (chrome.storage.sync) {
+      patchStorageAreaGet(chrome.storage.sync);
+      STORAGE_AREAS.push(chrome.storage.sync);
+    }
   }
 
   const DEFAULT_ACCOUNT = {
@@ -135,7 +214,7 @@
 
     for (const area of STORAGE_AREAS) {
       const obj = await getStorageValue(area, ACCOUNT_KEY);
-      const existing = typeof obj[ACCOUNT_KEY] === "object" && obj[ACCOUNT_KEY] !== null ? obj[ACCOUNT_KEY] : {};
+      const existing = parseStoredAccount(obj[ACCOUNT_KEY]);
 
       const merged = {
         ...DEFAULT_ACCOUNT,
@@ -144,7 +223,7 @@
         isTrialEligible: true
       };
 
-      await setStorageValue(area, { [ACCOUNT_KEY]: merged });
+      await setStorageValue(area, { [ACCOUNT_KEY]: stringifyStoredAccount(merged) });
     }
   }
 

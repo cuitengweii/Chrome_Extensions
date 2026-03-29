@@ -36,3 +36,30 @@
 - Load target remains unpacked extension at:
   - `D:\code\Chrome_Extensions\LinkedIn automatic comments`
 - Manifest keeps only fields required for local unpacked execution.
+
+## 2026-03-29 | Naming Unification
+
+### Decision
+- Set extension display name to exactly `LinkedIn automatic comments`.
+- Keep popup title synchronized with the same name.
+
+### Why
+- Avoid mixed branding from legacy `CommenTron` naming and reduce confusion when loading/debugging in Chrome extensions page.
+
+### Stable Defaults
+- `manifest.json > name`: `LinkedIn automatic comments`
+- `popup.html > title`: `LinkedIn automatic comments`
+
+## 2026-03-29 | Storage Serialization Compatibility
+
+### Decision
+- Persist patched `account` payload in `chrome.storage` as JSON string, not raw object.
+- Add runtime `storage.get` normalization hook to convert legacy object-shaped account values to JSON string on read path.
+
+### Why
+- Extension storage layer (`@rocket/storage`) calls `JSON.parse` for objects loaded with `getObject`.
+- Raw object writes from runtime patch caused popup boot failure with `SyntaxError: "[object Object]" is not valid JSON`.
+
+### Stable Defaults
+- `account` storage value shape remains stringified JSON across popup/content contexts.
+- Runtime self-heals historical bad values without requiring manual storage clear.

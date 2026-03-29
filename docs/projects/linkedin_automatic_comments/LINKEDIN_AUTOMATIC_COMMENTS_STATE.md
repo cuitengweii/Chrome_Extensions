@@ -9,6 +9,8 @@
 - Popup now supports `zh-CN / en` switch at runtime.
 - Local paid-gate unlock patch is active via storage-level account override + UI control unlock.
 - Unpacked loading compatibility was hardened for Chrome (clean manifest + complete runtime files included).
+- Extension display name is now unified as `LinkedIn automatic comments`.
+- Popup startup crash (`"[object Object] is not valid JSON"`) was fixed in runtime patch.
 
 ## Landed Output
 - Added runtime patch script:
@@ -19,6 +21,9 @@
   - `D:\code\Chrome_Extensions\LinkedIn automatic comments\popup.html`
 - Updated content script registration to preload patch:
   - `D:\code\Chrome_Extensions\LinkedIn automatic comments\manifest.json`
+- Updated UI metadata naming:
+  - manifest `name` changed to `LinkedIn automatic comments`
+  - popup `<title>` changed to `LinkedIn automatic comments`
 - Manifest hardened for unpacked loading:
   - removed webstore-only `key` and `update_url`
   - fixed display name encoding to plain ASCII form
@@ -44,6 +49,9 @@
 - Patched files existence check passed.
 - Core bundled scripts (`popup`, `content`, `background`) passed `node --check`.
 - Chrome `--pack-extension` reached packaging stage (manifest/structure accepted).
+- Storage compatibility fix applied:
+  - account value now writes as JSON string (compatible with `@rocket/storage` `getObject` parser)
+  - runtime hook normalizes legacy object-shaped account values during `chrome.storage.*.get`
 
 ## Next Step
 - Validate end-to-end behavior in real Chrome extension runtime:

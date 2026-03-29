@@ -82,3 +82,18 @@
 ### Stable Defaults
 - Parser fallback is limited to malformed legacy payload handling and does not change normal JSON serialization flow.
 - Existing storage contract still prefers stringified JSON object payloads.
+
+## 2026-03-29 | LinkedIn Multi-Language Trigger Registration
+
+### Decision
+- Update content trigger discovery to register both English and Chinese action buttons:
+  - comment: `Comment` + `评论`
+  - reply: `Reply` + `回复`
+
+### Why
+- Original bundle only scanned `Comment/Reply` text, which fails on Chinese LinkedIn UI and causes “clicking comment does nothing”.
+- Keeping text-based dual-language match is the smallest safe fix for packaged-output project without source rebuild.
+
+### Stable Defaults
+- Existing filtering guards remain unchanged (`comment-post` and `comment-reply-post` submit buttons are still excluded).
+- Trigger behavior remains identical after registration; only candidate button discovery scope is expanded.

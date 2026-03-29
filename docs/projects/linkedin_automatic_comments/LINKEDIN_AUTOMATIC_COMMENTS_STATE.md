@@ -12,6 +12,7 @@
 - Extension display name is now unified as `LinkedIn automatic comments`.
 - Popup startup crash (`"[object Object] is not valid JSON"`) was fixed in runtime patch.
 - Popup bundle parser now has in-bundle fallback for legacy object/string payloads to prevent repeat crash.
+- LinkedIn 中文界面评论流程可触发性已修复（评论/回复按钮注册支持中英文）。
 
 ## Landed Output
 - Added runtime patch script:
@@ -28,6 +29,9 @@
 - Added bundled popup parser guard:
   - `D:\code\Chrome_Extensions\LinkedIn automatic comments\popup.bce84c5a.js`
   - `parseValue` now tolerates raw object values and `"[object Object]"` legacy string payloads
+- Updated content trigger selector coverage:
+  - `D:\code\Chrome_Extensions\LinkedIn automatic comments\contents.f6a134c0.js`
+  - comment/reply button discovery now covers both English and Chinese button texts
 - Manifest hardened for unpacked loading:
   - removed webstore-only `key` and `update_url`
   - fixed display name encoding to plain ASCII form
@@ -60,9 +64,13 @@
 - Popup bundled parser guard verification:
   - patched `parseValue` branch is present in `popup.bce84c5a.js`
   - `popup.bce84c5a.js` passed `node --check`
+- Comment flow trigger compatibility:
+  - content bundle passed `node --check`
+  - verified selector injection includes both `Comment/Reply` and `评论/回复`
 
 ## Next Step
 - Validate end-to-end behavior in real Chrome extension runtime:
   - popup mode/lang toggle behavior
   - premium controls unlocked while signed-in and signed-out states
   - LinkedIn page generation flow under patched account state
+  - confirm Chinese LinkedIn UI can trigger auto-comment and auto-reply by clicking `评论/回复`

@@ -45,3 +45,15 @@
 - For packaged-output extensions, guard both layers:
   - storage write/read normalization in runtime patch
   - bundle-side deserialization fallback in popup boot path
+
+## 2026-03-29 | Comment Trigger Not Firing on Chinese LinkedIn UI
+
+### Pitfall
+- Content trigger discovery was text-bound to English (`Comment/Reply`) and missed Chinese UI labels (`评论/回复`), so buttons looked normal but no generation handler was attached.
+
+### What Worked
+- Expanding selector text coverage in bundled content script to include both English and Chinese labels restored click-to-generate behavior.
+
+### Avoid Next Time
+- For social-site automation features, avoid single-language text selectors.
+- Prefer multilingual fallback or attribute-based selectors when working with localized UIs.

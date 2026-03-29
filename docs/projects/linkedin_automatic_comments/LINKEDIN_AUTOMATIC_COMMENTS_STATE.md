@@ -77,3 +77,24 @@
   - premium controls unlocked while signed-in and signed-out states
   - LinkedIn page generation flow under patched account state
   - confirm Chinese LinkedIn UI can trigger auto-comment and auto-reply by clicking `评论/回复`
+
+## 2026-03-29 | zh-CN Label Coverage Expansion
+
+### Status
+- Runtime i18n now covers popup enum-driven option labels, not only static text nodes.
+- Added bidirectional (`en <-> zh-CN`) option translation coverage for:
+  - comment length values
+  - tone values (full set)
+  - industry values
+  - post age values
+  - re-engagement cooldown values
+  - plan/voice-related values used by popup state
+
+### Validation
+- `node --check D:\code\Chrome_Extensions\LinkedIn automatic comments\runtime.patch.js` passed.
+- Popup enum coverage script executed against `popup.bce84c5a.js`:
+  - checked option-like keys: `87`
+  - missing translation keys: `0`
+
+### Notes
+- `runtime.patch.js` BOM was removed to keep patch script loading predictable across environments.

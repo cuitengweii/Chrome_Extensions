@@ -68,3 +68,16 @@
 
 ### Avoid Next Time
 - In minified/bundled patch workflows, prefer ASCII-safe unicode escape literals for non-ASCII selector text.
+
+## 2026-03-29 | Enum Labels Stayed English Under zh-CN
+
+### Pitfall
+- Translating only static labels misses enum-generated dropdown values in popup UI, which leaves visible English strings under Chinese mode.
+
+### What Worked
+- Extracted enum/display strings from `popup.bce84c5a.js` and expanded runtime option mapping accordingly.
+- Added a small coverage check to compare popup option-like keys against runtime dictionaries.
+
+### Avoid Next Time
+- After any popup bundle update, re-run option coverage verification before handoff.
+- Keep the runtime option dictionary aligned with enum output values, not only static UI labels.

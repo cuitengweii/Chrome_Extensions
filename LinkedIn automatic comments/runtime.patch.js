@@ -215,6 +215,143 @@
 
   const enToZh = new Map(DICT);
   const zhToEn = new Map(DICT.map(([en, zh]) => [zh, en]));
+  const FIXED_EN_TO_ZH = new Map([
+    ["Account", "\u8d26\u53f7"],
+    ["Preferences", "\u504f\u597d"],
+    ["Automation", "\u81ea\u52a8\u5316"],
+    ["Have an account?", "\u5df2\u6709\u8d26\u53f7\uff1f"],
+    ["Sign in", "\u767b\u5f55"],
+    ["Sign out", "\u9000\u51fa\u767b\u5f55"],
+    ["Sign up", "\u6ce8\u518c"],
+    ["Length:", "\u957f\u5ea6\uff1a"],
+    ["Tone", "\u8bed\u6c14"],
+    ["Voice Gender", "\u8bed\u6c14\u6027\u522b"],
+    ["Not Specified", "\u672a\u6307\u5b9a"],
+    ["Male", "\u7537\u6027"],
+    ["Female", "\u5973\u6027"],
+    ["Open Ended", "\u5f00\u653e\u5f0f\u7ed3\u5c3e"],
+    ["Use Emojis", "\u4f7f\u7528\u8868\u60c5"],
+    ["Comment/Reply in English", "\u8bc4\u8bba/\u56de\u590d\u4f7f\u7528\u82f1\u6587"],
+    ["Keep Replies Short", "\u4fdd\u6301\u7b80\u77ed\u56de\u590d"],
+    ["On My Own Posts — Reply Only with Ack", "\u6211\u7684\u5e16\u5b50\u4ec5\u786e\u8ba4\u5f0f\u56de\u590d"],
+    ["On My Own Posts - Reply Only with Ack", "\u6211\u7684\u5e16\u5b50\u4ec5\u786e\u8ba4\u5f0f\u56de\u590d"],
+    ["Extension enabled", "\u6269\u5c55\u5df2\u542f\u7528"],
+    ["Extension disabled", "\u6269\u5c55\u5df2\u7981\u7528"],
+    ["Commenting in English", "\u5df2\u5207\u6362\u4e3a\u82f1\u6587\u8bc4\u8bba"],
+    ["Commenting in post language", "\u5df2\u6309\u5e16\u5b50\u8bed\u8a00\u8bc4\u8bba"],
+    ["Using emojis", "\u5df2\u542f\u7528\u8868\u60c5"],
+    ["Not using emojis", "\u5df2\u5173\u95ed\u8868\u60c5"],
+    ["Ending comments with a question", "\u8bc4\u8bba\u5c06\u4ee5\u95ee\u9898\u7ed3\u5c3e"],
+    ["Ending comments natively", "\u8bc4\u8bba\u7ed3\u5c3e\u6062\u590d\u9ed8\u8ba4"],
+    ["Replying with acknowledge", "\u56de\u590d\u5c06\u4ee5\u786e\u8ba4\u5f0f\u8868\u8fbe"],
+    ["Replying natively", "\u56de\u590d\u6062\u590d\u9ed8\u8ba4"],
+    ["Disabled on short comments", "\u77ed\u8bc4\u8bba\u6a21\u5f0f\u4e0b\u4e0d\u53ef\u7528"],
+    ["Reset CommenTron Seats", "\u91cd\u7f6e CommenTRON \u914d\u989d"],
+    ["Click here", "\u70b9\u51fb\u8fd9\u91cc"],
+    ["Email", "\u90ae\u7bb1"],
+    ["Password", "\u5bc6\u7801"],
+    ["Version:", "\u7248\u672c\uff1a"],
+    ["Seat:", "\u5e2d\u4f4d\uff1a"],
+    ["Comment", "\u8bc4\u8bba"],
+    ["Reply", "\u56de\u590d"]
+  ]);
+  const FIXED_ZH_TO_EN = new Map(Array.from(FIXED_EN_TO_ZH.entries(), ([en, zh]) => [zh, en]));
+  const OPTION_EN_TO_ZH = new Map([
+    ["Super Short", "\u8d85\u77ed"],
+    ["SuperShort", "\u8d85\u77ed"],
+    ["Brief", "\u7b80\u77ed"],
+    ["Concise", "\u7cbe\u70bc"],
+    ["In-Length", "\u9002\u4e2d"],
+    ["InLength", "\u9002\u4e2d"],
+    ["Multi-Paragraph", "\u591a\u6bb5"],
+    ["MultiParagraph", "\u591a\u6bb5"],
+    ["Detailed", "\u8be6\u7ec6"],
+    ["Excited", "\u5174\u594b"],
+    ["Surprised", "\u60ca\u559c"],
+    ["Happy", "\u5f00\u5fc3"],
+    ["Gracious", "\u4eb2\u5207"],
+    ["Friendly", "\u53cb\u597d"],
+    ["Supportive", "\u652f\u6301"],
+    ["Polite", "\u793c\u8c8c"],
+    ["Formal", "\u6b63\u5f0f"],
+    ["Professional", "\u4e13\u4e1a"],
+    ["Academic", "\u5b66\u672f"],
+    ["Witty", "\u673a\u667a"],
+    ["Comic", "\u5e7d\u9ed8"],
+    ["Sarcastic", "\u8bbd\u523a"],
+    ["Direct", "\u76f4\u63a5"],
+    ["Assertive", "\u575a\u5b9a"],
+    ["Respectfully Opposed", "\u793c\u8c8c\u53cd\u5bf9"],
+    ["RespectfullyOpposed", "\u793c\u8c8c\u53cd\u5bf9"],
+    ["Controversial", "\u6709\u4e89\u8bae"],
+    ["Disappointed", "\u5931\u671b"],
+    ["Frustrated", "\u6cae\u4e27"],
+    ["Sad", "\u96be\u8fc7"],
+    ["Angry", "\u6124\u6012"],
+    ["Basic", "\u57fa\u7840\u7248"],
+    ["Light", "\u8f7b\u91cf\u7248"],
+    ["Ultra", "\u8d85\u7ea7\u7248"],
+    ["Agency", "\u673a\u6784\u7248"],
+    ["NotSpecified", "\u672a\u6307\u5b9a"],
+    ["OneDay", "\u4e00\u5929"],
+    ["ThreeDays", "\u4e09\u5929"],
+    ["OneWeek", "\u4e00\u5468"],
+    ["OneMonth", "\u4e00\u4e2a\u6708"],
+    ["ThreeMonths", "\u4e09\u4e2a\u6708"],
+    ["Week", "\u4e00\u5468"],
+    ["Month", "\u4e00\u4e2a\u6708"],
+    ["Quarter", "\u4e00\u5b63\u5ea6"],
+    ["Year", "\u4e00\u5e74"],
+    ["Forever", "\u6c38\u4e45"],
+    ["Company", "\u516c\u53f8"],
+    ["Accounting", "\u4f1a\u8ba1"],
+    ["Animation & Video Production", "\u52a8\u753b\u4e0e\u89c6\u9891\u5236\u4f5c"],
+    ["Architecture", "\u5efa\u7b51"],
+    ["Arts & Design", "\u827a\u672f\u4e0e\u8bbe\u8ba1"],
+    ["Artificial Intelligence (AI)", "\u4eba\u5de5\u667a\u80fd\uff08AI\uff09"],
+    ["Automotive", "\u6c7d\u8f66"],
+    ["Banking & Finance", "\u94f6\u884c\u4e0e\u91d1\u878d"],
+    ["Consultation", "\u54a8\u8be2"],
+    ["Copywriting", "\u6587\u6848\u5199\u4f5c"],
+    ["Customer Support", "\u5ba2\u670d\u652f\u6301"],
+    ["Data Analytics", "\u6570\u636e\u5206\u6790"],
+    ["E-Commerce", "\u7535\u5b50\u5546\u52a1"],
+    ["Education", "\u6559\u80b2"],
+    ["Entertainment", "\u5a31\u4e50"],
+    ["Events", "\u6d3b\u52a8"],
+    ["Fitness & Wellness", "\u5065\u8eab\u4e0e\u5065\u5eb7"],
+    ["Graphic Design", "\u5e73\u9762\u8bbe\u8ba1"],
+    ["Healthcare", "\u533b\u7597\u5065\u5eb7"],
+    ["Hospitality & Tourism", "\u9152\u5e97\u4e0e\u65c5\u6e38"],
+    ["Human Resources", "\u4eba\u529b\u8d44\u6e90"],
+    ["Information Technology", "\u4fe1\u606f\u6280\u672f"],
+    ["Insurance & Actuaries", "\u4fdd\u9669\u4e0e\u7cbe\u7b97"],
+    ["Interior Design", "\u5ba4\u5185\u8bbe\u8ba1"],
+    ["Legal", "\u6cd5\u52a1"],
+    ["Logistics & Supply Chain", "\u7269\u6d41\u4e0e\u4f9b\u5e94\u94fe"],
+    ["Manufacturing", "\u5236\u9020\u4e1a"],
+    ["Marketing & Advertising", "\u5e02\u573a\u8425\u9500\u4e0e\u5e7f\u544a"],
+    ["Mental Health Care", "\u5fc3\u7406\u5065\u5eb7\u62a4\u7406"],
+    ["Non-Profit", "\u975e\u8425\u5229\u7ec4\u7ec7"],
+    ["Photography", "\u6444\u5f71"],
+    ["Public Relations", "\u516c\u5171\u5173\u7cfb"],
+    ["Real Estate", "\u623f\u5730\u4ea7"],
+    ["Research & Development", "\u7814\u53d1"],
+    ["Software Development", "\u8f6f\u4ef6\u5f00\u53d1"],
+    ["Venture Capital & Private Equity", "\u98ce\u9669\u6295\u8d44\u4e0e\u79c1\u52df\u80a1\u6743"],
+    ["one day", "\u4e00\u5929"],
+    ["three days", "\u4e09\u5929"],
+    ["one week", "\u4e00\u5468"],
+    ["one month", "\u4e00\u4e2a\u6708"],
+    ["three months", "\u4e09\u4e2a\u6708"],
+    ["Confident", "\u81ea\u4fe1"],
+    ["Empathetic", "\u5171\u60c5"],
+    ["Inspirational", "\u9f13\u821e"],
+    ["Advanced", "\u9ad8\u7ea7"],
+    ["Trial", "\u8bd5\u7528"],
+    ["Free", "\u514d\u8d39"]
+  ]);
+  const OPTION_ZH_TO_EN = new Map(Array.from(OPTION_EN_TO_ZH.entries(), ([en, zh]) => [zh, en]));
 
   let currentMode = normalizeTheme(localStorage.getItem(MODE_KEY));
   let currentLang = normalizeLang(localStorage.getItem(LANG_KEY));
@@ -290,48 +427,74 @@
     updateControls();
   }
 
+  function translateOptionLabel(text, lang) {
+    const map = lang === "zh-CN" ? OPTION_EN_TO_ZH : OPTION_ZH_TO_EN;
+    if (map.has(text)) return map.get(text);
+
+    for (const [from, to] of map.entries()) {
+      if (text.endsWith(` ${from}`)) {
+        return `${text.slice(0, -from.length)}${to}`;
+      }
+      if (text.endsWith(from) && text.length > from.length) {
+        const prefix = text.slice(0, -from.length);
+        if (/^[\s\p{P}\p{S}]+$/u.test(prefix)) {
+          return `${prefix}${to}`;
+        }
+      }
+    }
+
+    return text;
+  }
+
   function translateCore(text, lang) {
     if (!text) return text;
 
-    const map = lang === "zh-CN" ? enToZh : zhToEn;
-    if (map.has(text)) return map.get(text);
+    const fixedMap = lang === "zh-CN" ? FIXED_EN_TO_ZH : FIXED_ZH_TO_EN;
+    if (fixedMap.has(text)) return fixedMap.get(text);
+
+    const optionTranslated = translateOptionLabel(text, lang);
+    if (optionTranslated !== text) return optionTranslated;
+
+    const fallbackMap = lang === "zh-CN" ? enToZh : zhToEn;
+    if (fallbackMap.has(text)) return fallbackMap.get(text);
 
     if (lang === "zh-CN") {
       const m1 = text.match(/^Free trial ended, upgrade to '(.+)' plan to access this feature$/);
-      if (m1) return `免费试用已结束，升级到“${m1[1]}”套餐即可使用此功能`;
+      if (m1) return `免费试用已结束，请升级到“${translateOptionLabel(m1[1], "zh-CN")}”套餐后使用该功能`;
 
       const m2 = text.match(/^Upgrade to '(.+)' plan to access this feature$/);
-      if (m2) return `升级到“${m2[1]}”套餐即可使用此功能`;
+      if (m2) return `请升级到“${translateOptionLabel(m2[1], "zh-CN")}”套餐后使用该功能`;
 
       const m3 = text.match(/^Plan:\s*(.+)$/);
-      if (m3) return `套餐：${m3[1]}`;
+      if (m3) return `套餐：${translateOptionLabel(m3[1].trim(), "zh-CN")}`;
 
-      const m4 = text.match(/^Length:\s*'(.+)'$/);
-      if (m4) return `长度：'${m4[1]}'`;
+      const m4 = text.match(/^Length:\s*'?(.*?)'?$/);
+      if (m4) return `长度：${translateOptionLabel(m4[1].trim(), "zh-CN")}`;
 
-      const m5 = text.match(/^Tone:\s*'(.+)'$/);
-      if (m5) return `语气：'${m5[1]}'`;
+      const m5 = text.match(/^Tone:\s*'?(.*?)'?$/);
+      if (m5) return `语气：${translateOptionLabel(m5[1].trim(), "zh-CN")}`;
     } else {
-      const m1 = text.match(/^免费试用已结束，升级到“(.+)”套餐即可使用此功能$/);
-      if (m1) return `Free trial ended, upgrade to '${m1[1]}' plan to access this feature`;
+      const m1 = text.match(/^\u514d\u8d39\u8bd5\u7528\u5df2\u7ed3\u675f\uff0c\u8bf7\u5347\u7ea7\u5230\u201c(.+)\u201d\u5957\u9910\u540e\u4f7f\u7528\u8be5\u529f\u80fd$/u);
+      if (m1) return `Free trial ended, upgrade to '${translateOptionLabel(m1[1], "en")}' plan to access this feature`;
 
-      const m2 = text.match(/^升级到“(.+)”套餐即可使用此功能$/);
-      if (m2) return `Upgrade to '${m2[1]}' plan to access this feature`;
+      const m2 = text.match(/^\u8bf7\u5347\u7ea7\u5230\u201c(.+)\u201d\u5957\u9910\u540e\u4f7f\u7528\u8be5\u529f\u80fd$/u);
+      if (m2) return `Upgrade to '${translateOptionLabel(m2[1], "en")}' plan to access this feature`;
 
-      const m3 = text.match(/^套餐：\s*(.+)$/);
-      if (m3) return `Plan: ${m3[1]}`;
+      const m3 = text.match(/^\u5957\u9910\uff1a\s*(.+)$/u);
+      if (m3) return `Plan: ${translateOptionLabel(m3[1].trim(), "en")}`;
 
-      const m4 = text.match(/^长度：\s*'(.+)'$/);
-      if (m4) return `Length: '${m4[1]}'`;
+      const m4 = text.match(/^\u957f\u5ea6\uff1a\s*(.+)$/u);
+      if (m4) return `Length: '${translateOptionLabel(m4[1].trim(), "en")}'`;
 
-      const m5 = text.match(/^语气：\s*'(.+)'$/);
-      if (m5) return `Tone: '${m5[1]}'`;
+      const m5 = text.match(/^\u8bed\u6c14\uff1a\s*(.+)$/u);
+      if (m5) return `Tone: '${translateOptionLabel(m5[1].trim(), "en")}'`;
     }
 
     return text;
   }
 
   function translateTextValue(raw, lang) {
+
     if (!raw) return raw;
     const match = raw.match(/^(\s*)([\s\S]*?)(\s*)$/);
     if (!match) return raw;
@@ -430,16 +593,17 @@
     const langBtn = document.getElementById("ce-lang-toggle");
     if (!modeBtn || !langBtn) return;
 
-    modeBtn.textContent = currentMode === "dark" ? "☀" : "🌙";
+    modeBtn.textContent = currentMode === "dark" ? "L" : "D";
     modeBtn.title = currentLang === "zh-CN"
-      ? (currentMode === "dark" ? "切换到白天模式" : "切换到夜间模式")
+      ? (currentMode === "dark" ? "\u5207\u6362\u5230\u6d45\u8272\u6a21\u5f0f" : "\u5207\u6362\u5230\u6df1\u8272\u6a21\u5f0f")
       : (currentMode === "dark" ? "Switch to light mode" : "Switch to dark mode");
 
-    langBtn.textContent = currentLang === "zh-CN" ? "EN" : "中";
-    langBtn.title = currentLang === "zh-CN" ? "切换到英文" : "Switch to Chinese";
+    langBtn.textContent = currentLang === "zh-CN" ? "EN" : "\u4e2d";
+    langBtn.title = currentLang === "zh-CN" ? "\u5207\u6362\u5230\u82f1\u6587" : "Switch to Chinese";
   }
 
   function mountControls() {
+
     if (!document.body || document.getElementById("ce-runtime-controls")) return;
 
     const controls = document.createElement("div");

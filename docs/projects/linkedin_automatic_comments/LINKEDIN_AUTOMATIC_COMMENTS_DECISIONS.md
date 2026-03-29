@@ -99,3 +99,18 @@
 - Trigger behavior remains identical after registration; only candidate button discovery scope is expanded.
 - Chinese keyword literals in bundled patch are written as unicode escapes (`\u8bc4\u8bba`, `\u56de\u590d`) to avoid shell/codepage corruption.
 - Attribute-based fallback selectors (`aria-label`, `data-view-name`) are enabled to reduce dependency on visible text locale.
+
+## 2026-03-29 | Popup Enum i18n Strategy
+
+### Decision
+- Translate popup enum output values at runtime via dictionary mapping in `runtime.patch.js`, instead of rewriting string literals inside the minified popup bundle.
+
+### Why
+- Enum-driven dropdown labels are produced dynamically and were not fully covered by the previous static-label dictionary.
+- Bundle-level direct edits are brittle in packaged-output projects and increase regression risk.
+
+### Stable Defaults
+- Keep a dedicated option dictionary: `OPTION_EN_TO_ZH`.
+- Keep reverse mapping for language switching back: `OPTION_ZH_TO_EN`.
+- Route all option-like text through `translateOptionLabel` before fallback dictionary matching.
+- Coverage scope includes length/tone/industry/post-age/cooldown/plan/voice values used by popup UI.

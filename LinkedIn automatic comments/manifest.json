@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "CommenTron - AI Booster for LinkedIn",
+  "name": "LinkedIn automatic comments",
   "description": "Auto-Comment on LinkedIn Posts",
   "version": "1.3.8",
   "author": "RocketPod Technologies Inc.",

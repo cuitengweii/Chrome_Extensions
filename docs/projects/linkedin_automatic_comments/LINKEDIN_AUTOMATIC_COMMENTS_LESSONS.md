@@ -32,3 +32,16 @@
   - referenced file existence
   - syntax checks for popup/content/background scripts
   before handing over.
+
+## 2026-03-29 | Popup JSON Crash Reopen
+
+### Pitfall
+- Runtime-layer storage normalization alone may not fully absorb all legacy local state shapes in long-lived Chrome profiles.
+
+### What Worked
+- Adding a narrow fallback in bundled popup parser (`parseValue`) stopped repeated boot crash caused by legacy `"[object Object]"` payload.
+
+### Avoid Next Time
+- For packaged-output extensions, guard both layers:
+  - storage write/read normalization in runtime patch
+  - bundle-side deserialization fallback in popup boot path

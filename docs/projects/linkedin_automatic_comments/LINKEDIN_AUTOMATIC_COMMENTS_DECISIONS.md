@@ -66,3 +66,19 @@
 - Runtime applies two safety layers before app bootstrap:
   - normalize object-shaped values from `chrome.storage.*.get` into JSON strings
   - guard `JSON.parse` against legacy `"[object Object]"` input
+
+## 2026-03-29 | Popup Bundle Parser Fallback
+
+### Decision
+- Patch bundled popup storage parser (`parseValue`) with compatibility fallback:
+  - return raw value when storage value is already an object
+  - return empty object for `"[object Object]"` legacy string
+  - otherwise continue standard `JSON.parse` path
+
+### Why
+- Runtime patch + storage normalization can still miss edge cases from stale local extension state.
+- The crash stack is inside bundled popup parser path, so in-bundle guard is the strongest last-mile protection.
+
+### Stable Defaults
+- Parser fallback is limited to malformed legacy payload handling and does not change normal JSON serialization flow.
+- Existing storage contract still prefers stringified JSON object payloads.

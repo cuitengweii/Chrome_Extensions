@@ -11,6 +11,7 @@
 - Unpacked loading compatibility was hardened for Chrome (clean manifest + complete runtime files included).
 - Extension display name is now unified as `LinkedIn automatic comments`.
 - Popup startup crash (`"[object Object] is not valid JSON"`) was fixed in runtime patch.
+- Popup bundle parser now has in-bundle fallback for legacy object/string payloads to prevent repeat crash.
 
 ## Landed Output
 - Added runtime patch script:
@@ -24,6 +25,9 @@
 - Updated UI metadata naming:
   - manifest `name` changed to `LinkedIn automatic comments`
   - popup `<title>` changed to `LinkedIn automatic comments`
+- Added bundled popup parser guard:
+  - `D:\code\Chrome_Extensions\LinkedIn automatic comments\popup.bce84c5a.js`
+  - `parseValue` now tolerates raw object values and `"[object Object]"` legacy string payloads
 - Manifest hardened for unpacked loading:
   - removed webstore-only `key` and `update_url`
   - fixed display name encoding to plain ASCII form
@@ -53,6 +57,9 @@
   - account value now writes as JSON string (compatible with `@rocket/storage` `getObject` parser)
   - runtime hook normalizes legacy object-shaped account values during `chrome.storage.*.get`
   - global `JSON.parse` compatibility guard added to tolerate legacy `"[object Object]"` payload during popup boot
+- Popup bundled parser guard verification:
+  - patched `parseValue` branch is present in `popup.bce84c5a.js`
+  - `popup.bce84c5a.js` passed `node --check`
 
 ## Next Step
 - Validate end-to-end behavior in real Chrome extension runtime:

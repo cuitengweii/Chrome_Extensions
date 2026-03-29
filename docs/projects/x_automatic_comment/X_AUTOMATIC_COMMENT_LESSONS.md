@@ -23,3 +23,24 @@
 - 根因：把历史默认词（GM/GN）硬编码进查询构建逻辑，覆盖了用户真实意图。
 - 更早发现方式：在回归中加入“查询预览与最终 URL 完全一致”校验，并用真实中文关键词做样例。
 - 避免复发：搜索构造器只拼“用户显式选择项”，禁止注入隐藏默认关键词。
+## 2026-03-29 | Style Fix Alone Is Not Enough for Options UX
+
+### Pitfall
+- Fixing only width clipping solves the narrow-strip bug, but options UX still feels crowded if layout remains single-column.
+
+### What Worked
+- Separate options layout rules from popup rules, then widen options and add responsive two-column structure.
+
+### Avoid Next Time
+- For extension UIs that have both popup and options pages, define explicit per-view layout policies early.
+
+## 2026-03-29 | i18n Should Not Be Mixed With Inline Ternary Labels
+
+### Pitfall
+- Inline `S.lang === 'zh' ? ... : ...` labels scattered in templates drift over time and leave partial-English Chinese pages.
+
+### What Worked
+- Moved user-facing labels to centralized i18n keys and reused keys in toasts/errors.
+
+### Avoid Next Time
+- Keep new user-visible strings in i18n map first, then render from `t(...)` only.

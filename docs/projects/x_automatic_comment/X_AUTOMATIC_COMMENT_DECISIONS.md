@@ -54,3 +54,22 @@
 - 决策：移除与操作无关的 Supabase host 展示及冗余状态文案，保留“邮箱 + 小退出按钮 / 未登录登录按钮”。
 - 依据：账号区目标是“确认登录与切换登录”，不应夹杂环境细节。
 - 影响：`xac-ui.js` 账号模块改为紧凑卡片，入口区去除“打开 X 搜索”按钮。
+## 2026-03-29 | Options Page Uses Wide-First Layout
+
+### Decision
+- In `options.html` context, render the settings shell as a wide panel (up to 1180px) with responsive fallback.
+- Keep popup compact, but separate options layout from popup sizing to avoid long single-column congestion.
+
+### Impact
+- `xac-content.js` now applies options-specific width/grid rules.
+- Advanced configuration group is full-width in options mode for clearer scanning.
+
+## 2026-03-29 | Remove Hardcoded Mixed-Language Labels
+
+### Decision
+- Replace inline `S.lang === 'zh' ? ... : ...` labels for advanced sections with explicit i18n keys.
+- Keep user-facing copy centralized in `I18N.en/zh` to avoid partial-English Chinese UI.
+
+### Impact
+- Cloud backup/meta fields/reply-image/schedule/session controls now render from i18n keys.
+- Runtime toast and error messages for zh/en switched to key-based rendering.

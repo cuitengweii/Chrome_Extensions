@@ -170,7 +170,7 @@
       title: 'X Automatic Comment', sub: 'Profile + Context + Auto Reply', open: 'Open', close: 'Close', lang: 'Language',
       profile: 'Profile', newP: 'New', delP: 'Delete', mode: 'Mode', modeSafe: 'Safe', modeSpicy: 'Spicy', modeViral: 'Viral',
       goal: 'Goal', len: 'Length', ci: 'Custom instructions', persona: 'Persona', autoPost: 'Auto-post after generate',
-      max: 'Max auto replies (0 = unlimited)', start: 'Start Auto Reply', stop: 'Stop Auto Reply', reply: 'AI Reply',
+      max: 'Max auto replies (0 = unlimited)', start: 'Start Auto Reply', stop: 'Stop Auto Reply', reply: 'AI Reply', quotaLeft: '{count} left',
       gen: 'Generating', ok: 'Inserted', fail: 'Failed', login: 'Google login required', signIn: 'Sign in with Google',
       logout: 'Logout',
       working: 'Working...', saving: 'Saving settings...', loggingIn: 'Signing in with Google...',
@@ -372,13 +372,75 @@
       sparkSynced: 'AI settings synced from GasGx.',
       savedReplyRules: 'Reply trigger rules saved.',
       openAdvancedPanel: 'Open X Sidebar',
-      openDetailedOptions: 'Open Full Config'
+      openDetailedOptions: 'Open Full Config',
+      sectionSessionRisk: 'Session Risk Controls',
+      sessionInteractionsMin: 'Interactions/session min',
+      sessionInteractionsMax: 'Interactions/session max',
+      sessionMaxTotal: 'Max total sessions',
+      sessionWaitMin: 'Session wait min (min)',
+      sessionWaitMax: 'Session wait max (min)',
+      sessionBotSpeed: 'Bot speed (1-100)',
+      sessionRandomSkips: 'Random skips (%)',
+      sessionRefreshFeed: 'Refresh feed between sessions',
+      sessionRandomMouse: 'Random mouse movement',
+      sectionNameReplacements: 'Name Replacements',
+      nameReplacementStrategy: 'Replacement strategy',
+      nameReplacementNever: 'never (no replacement)',
+      nameReplacementSmart: 'smart (intelligent)',
+      nameReplacementAlways: 'always (force replace)',
+      nameReplacementDictionary: 'Replacement dictionary (comma separated)',
+      sectionFollowedEndGreetings: 'Followed End Greetings',
+      followedEndEnabled: 'Replace end greeting after follow',
+      followedEndTemplates: 'Followed end templates (--- split)',
+      postWithinMinutes: 'Post within minutes',
+      onlyBlueChecks: 'Only blue checks',
+      scheduleStartTime: 'Start time',
+      scheduleEndTime: 'End time',
+      scheduleProbability: 'Probability (%)',
+      sectionCloudBackup: 'Cloud Backup',
+      cloudSave: 'Save settings',
+      cloudLoad: 'Get saved settings',
+      cloudLastSynced: 'Last synced',
+      cloudLastPulled: 'Last pulled',
+      sectionMetaFields: 'Meta Fields',
+      templateName: 'Template name',
+      templateDefaultName: 'Default',
+      addGMButtonLabel: 'Add GM button',
+      showSideBarControlsLabel: 'Show sidebar controls',
+      ratedUsLabel: 'Rated us',
+      toolActivity: 'Activity',
+      toolFollowUs: 'Follow Us',
+      toolRateUs: 'Rate Us',
+      replyRuleImageFrequency: 'Image frequency (%)',
+      replyRuleImages: 'Images (URL or data:image)',
+      replyRuleImageAdd: 'Add image URL / Giphy URL',
+      replyRuleImagePlaceholder: 'Paste image URL',
+      replyRuleImageAddBtn: 'Add',
+      replyRuleImageUploadBtn: 'Upload local',
+      replyRuleImageGiphyBtn: 'Open Giphy',
+      profileNamePlaceholder: 'Growth Hacker',
+      profileTonePlaceholder: 'Example: bold and concise',
+      aiSettingsSaved: 'AI settings saved',
+      cloudSaving: 'Saving cloud backup...',
+      cloudSaved: 'Settings saved to cloud.',
+      cloudLoading: 'Loading cloud backup...',
+      cloudLoaded: 'Settings restored from cloud.',
+      localImageReadFail: 'Failed to read local image.',
+      sidebarOpened: 'X sidebar opened',
+      searchPageOpened: 'Search page opened',
+      copied: 'Copied',
+      debugPromptRequired: 'Please input debug prompt first',
+      profileNameRequired: 'Please input profile name',
+      noCloudBackup: 'No cloud backup found.',
+      stopBtn: 'STOP',
+      aiSettingsMissing: 'AI settings missing: {fields}. Open extension popup -> AI Settings, save, then retry.',
+      debugSystemPrompt: 'You are a comment debugging assistant. Return only one post-ready reply and no explanation.'
     },
     zh: {
       title: 'X Automatic Comment', sub: '人设 + 上下文 + 自动回复', open: '展开', close: '收起', lang: '语言',
       profile: '人设', newP: '新建', delP: '删除', mode: '模式', modeSafe: '稳健', modeSpicy: '激进', modeViral: '爆款',
       goal: '目标', len: '长度', ci: '自定义指令', persona: '人设记忆', autoPost: '生成后自动发送',
-      max: '自动回复上限(0=不限)', start: '开始自动回复', stop: '停止自动回复', reply: 'AI回复',
+      max: '自动回复上限(0=不限)', start: '开始自动回复', stop: '停止自动回复', reply: 'AI回复', quotaLeft: '剩余{count}次',
       gen: '生成中', ok: '已写入', fail: '失败', login: '需要先完成 Google 登录', signIn: 'Google 登录',
       logout: '登出',
       working: '处理中...', saving: '正在保存设置...', loggingIn: '正在登录 Google...',
@@ -563,13 +625,13 @@
       stepAi: '准备项 · AI 引擎',
       stepAiDesc: '在生成和自动化前，先确认 Spark 与 GasGx 同步配置。',
       sparkStatus: 'AI 引擎状态',
-      sparkUrl: 'Spark URL',
-      sparkAppId: 'App ID',
-      sparkApiKey: 'API Key',
+      sparkUrl: 'Spark 地址',
+      sparkAppId: '应用 ID',
+      sparkApiKey: 'API 密钥',
       sparkApiSecret: 'API Secret',
       sparkDomain: '领域',
       sparkTemp: '温度',
-      sparkTokens: '最大 Tokens',
+      sparkTokens: '最大令牌数',
       saveSpark: '保存 AI 配置',
       syncSpark: '从 GasGx 同步',
       sparkReady: 'AI 配置已就绪。',
@@ -580,7 +642,69 @@
       sparkSynced: '已从 GasGx 同步 AI 配置。',
       savedReplyRules: '回复触发规则已保存。',
       openAdvancedPanel: '打开 X 侧栏',
-      openDetailedOptions: '打开完整配置页'
+      openDetailedOptions: '打开完整配置页',
+      sectionSessionRisk: '会话风控',
+      sessionInteractionsMin: '每会话互动最小值',
+      sessionInteractionsMax: '每会话互动最大值',
+      sessionMaxTotal: '总会话上限',
+      sessionWaitMin: '会话等待最短（分钟）',
+      sessionWaitMax: '会话等待最长（分钟）',
+      sessionBotSpeed: 'Bot 速度 (1-100)',
+      sessionRandomSkips: '随机跳过比例 (%)',
+      sessionRefreshFeed: '会话间刷新 Feed',
+      sessionRandomMouse: '随机鼠标轨迹',
+      sectionNameReplacements: '名称替换系统',
+      nameReplacementStrategy: '名称替换策略',
+      nameReplacementNever: '从不（不替换）',
+      nameReplacementSmart: '智能（按语境替换）',
+      nameReplacementAlways: '总是（强制替换）',
+      nameReplacementDictionary: '替换词库（逗号分隔）',
+      sectionFollowedEndGreetings: '关注后尾句替换',
+      followedEndEnabled: '关注成功后替换结尾',
+      followedEndTemplates: '关注后尾句模板（--- 分隔）',
+      postWithinMinutes: '发布时间限制（分钟内）',
+      onlyBlueChecks: '仅蓝标账户',
+      scheduleStartTime: '开始时间',
+      scheduleEndTime: '结束时间',
+      scheduleProbability: '启动概率 (%)',
+      sectionCloudBackup: '设置云备份',
+      cloudSave: '保存到云端',
+      cloudLoad: '从云端读取',
+      cloudLastSynced: '最近同步',
+      cloudLastPulled: '最近拉取',
+      sectionMetaFields: '轻量元字段',
+      templateName: '模板名称',
+      templateDefaultName: '默认模板',
+      addGMButtonLabel: '添加 GM 按钮',
+      showSideBarControlsLabel: '显示侧栏工具入口',
+      ratedUsLabel: '已评分',
+      toolActivity: '活动',
+      toolFollowUs: '关注我们',
+      toolRateUs: '去评分',
+      replyRuleImageFrequency: '图片频率 (%)',
+      replyRuleImages: '图片列表（URL 或 data:image）',
+      replyRuleImageAdd: '新增图片 URL / Giphy URL',
+      replyRuleImagePlaceholder: '粘贴图片地址',
+      replyRuleImageAddBtn: '添加',
+      replyRuleImageUploadBtn: '本地上传',
+      replyRuleImageGiphyBtn: '打开 Giphy',
+      profileNamePlaceholder: '增长黑客',
+      profileTonePlaceholder: '例如：大胆简洁，或酷炫。',
+      aiSettingsSaved: 'AI 配置已保存',
+      cloudSaving: '正在保存云备份...',
+      cloudSaved: '设置已同步到云端。',
+      cloudLoading: '正在加载云备份...',
+      cloudLoaded: '已从云端恢复设置。',
+      localImageReadFail: '本地图片读取失败。',
+      sidebarOpened: '已打开 X 侧栏',
+      searchPageOpened: '已打开搜索页',
+      copied: '已复制',
+      debugPromptRequired: '请先输入调试提示词',
+      profileNameRequired: '请填写姓名',
+      noCloudBackup: '云端暂无备份。',
+      stopBtn: '停止',
+      aiSettingsMissing: 'AI 配置缺失: {fields}。请打开扩展弹窗 -> AI 配置，保存后重试。',
+      debugSystemPrompt: '你是评论调试助手。仅返回可直接发布的一条回复内容，不要解释。'
     }
   }
 
@@ -1182,10 +1306,7 @@
       const match = text.match(/(?:missing required fields:\s*|Missing:\s*)([a-z_,\s]+)/i)
       const fields = match?.[1] ? match[1].split(',').map((x) => x.trim()).filter(Boolean) : []
       const missing = fields.length ? fields.join(', ') : 'url, app_id, api_key, api_secret'
-      if (S.lang === 'zh') {
-        return `AI 配置缺失: ${missing}。请打开扩展弹窗 -> AI Settings 保存后重试。`
-      }
-      return `AI settings missing: ${missing}. Open extension popup -> AI Settings, save, then retry.`
+      return t('aiSettingsMissing').replace('{fields}', missing)
     }
     return text
   }
@@ -1548,7 +1669,7 @@
     const result = await send('xac:get-saved-settings', { applyToLocal: true })
     if (!result.ok) throw new Error(s(result.error, 'get-saved-settings failed'))
     if (!result.found) {
-      throw new Error(S.lang === 'zh' ? '云端暂无备份。' : 'No cloud backup found.')
+      throw new Error(t('noCloudBackup'))
     }
     const local = await g([K.autoPost, K.profileMeta, K.advanced, K.replyRules, K.scheduledStarts, K.scheduleRuntime]).catch(() => ({}))
     S.autoPost = b(local[K.autoPost], false)
@@ -1662,14 +1783,14 @@
     const st = document.createElement('style')
     st.id = 'xac-style'
     st.textContent = `
-${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.isPopup ? '340px' : '0'};background:radial-gradient(circle at top right,#173124,#09130f 45%);color:#d9ffe9;overflow-x:hidden}body{margin:0;display:flex;justify-content:center;align-items:flex-start}` : ''}
-#xac-root{position:${VIEW.isExtensionPage ? 'static' : 'fixed'};right:${VIEW.isExtensionPage ? 'auto' : '14px'};bottom:${VIEW.isExtensionPage ? 'auto' : '16px'};z-index:2147483645;width:${VIEW.isExtensionPage ? 'min(100%,360px)' : 'min(94vw,360px)'};max-width:${VIEW.isExtensionPage ? '360px' : 'none'};min-width:${VIEW.isExtensionPage ? 'min(340px,100%)' : '0'};margin:${VIEW.isExtensionPage ? '0 auto' : '0'};padding:${VIEW.isExtensionPage ? '10px' : '0'};box-sizing:border-box;font-family:Segoe UI,Microsoft YaHei,sans-serif}
+${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.isPopup ? '360px' : '0'};background:radial-gradient(circle at top right,#173124,#09130f 45%);color:#d9ffe9;overflow-x:hidden}body{margin:0;display:flex;justify-content:center;align-items:flex-start;padding:${VIEW.isOptions ? '16px 14px' : '0'}}` : ''}
+#xac-root{position:${VIEW.isExtensionPage ? 'static' : 'fixed'};right:${VIEW.isExtensionPage ? 'auto' : '14px'};bottom:${VIEW.isExtensionPage ? 'auto' : '16px'};z-index:2147483645;width:${VIEW.isOptions ? 'min(96vw,1180px)' : (VIEW.isExtensionPage ? 'min(100%,420px)' : 'min(94vw,360px)')};max-width:${VIEW.isOptions ? '1180px' : (VIEW.isExtensionPage ? '420px' : 'none')};min-width:${VIEW.isOptions ? 'min(900px,100%)' : (VIEW.isExtensionPage ? 'min(360px,100%)' : '0')};margin:${VIEW.isExtensionPage ? '0 auto' : '0'};padding:${VIEW.isExtensionPage ? '10px' : '0'};box-sizing:border-box;font-family:Segoe UI,Microsoft YaHei,sans-serif}
 #xac-root .shell{border:1px solid #2f6e48;border-radius:14px;background:linear-gradient(180deg,#132c21,#08140f);box-shadow:0 12px 32px rgba(0,0,0,.42);overflow:hidden;max-width:100%}
 #xac-root .top{width:100%;border:0;cursor:pointer;background:transparent;color:#d9ffe9;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
 #xac-root .top .t1{font-size:15px;font-weight:800;line-height:1.1}
 #xac-root .top .t2{font-size:11px;color:#89bca1;line-height:1.2}
 #xac-root .quota{border:1px solid #2f6e48;border-radius:999px;padding:2px 8px;font-size:11px;color:#8df4be;background:#0d2219;white-space:nowrap}
-#xac-root .body{border-top:1px solid #1f4933;display:grid;gap:8px;padding:10px 12px;max-height:${VIEW.isExtensionPage ? 'none' : '76vh'};overflow:${VIEW.isExtensionPage ? 'visible' : 'auto'}}
+#xac-root .body{border-top:1px solid #1f4933;display:grid;grid-template-columns:${VIEW.isOptions ? 'repeat(2,minmax(0,1fr))' : '1fr'};align-items:start;gap:8px;padding:10px 12px;max-height:${VIEW.isExtensionPage ? 'none' : '76vh'};overflow:${VIEW.isExtensionPage ? 'visible' : 'auto'}}
 #xac-root.collapsed .body{display:none}
 #xac-root .sec{font-size:11px;color:#76b396;padding-left:2px}
 #xac-root .sec.flash{color:#bafdd6;text-shadow:0 0 8px rgba(96,246,161,.5)}
@@ -1679,7 +1800,8 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
 #xac-root .step-title{font-size:15px;color:#dcffed;font-weight:900;line-height:1.15;letter-spacing:.25px}
 #xac-root .step-desc{font-size:11px;color:#8ec4a7;line-height:1.35}
 #xac-root .flash{box-shadow:0 0 0 2px rgba(96,246,161,.35),0 0 14px rgba(96,246,161,.25)}
-#xac-root .guide-banner{border:1px solid #2d6649;border-left:3px solid #56df93;background:linear-gradient(180deg,#123126,#0d2119);border-radius:10px;padding:8px 9px;display:grid;gap:4px}
+#xac-root .guide-banner{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'};border:1px solid #2d6649;border-left:3px solid #56df93;background:linear-gradient(180deg,#123126,#0d2119);border-radius:10px;padding:8px 9px;display:grid;gap:4px}
+#xac-root .group-advanced{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'}}
 #xac-root .guide-banner .meta{font-size:11px;color:#b8ebd0;line-height:1.4}
 #xac-root .mini-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 #xac-root .mini-btn{padding:6px 4px;font-size:11px;line-height:1.1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1736,6 +1858,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
 #xac-ind.show{display:inline-flex}#xac-ind .d{width:8px;height:8px;border-radius:50%;background:#4bd98b;box-shadow:0 0 8px rgba(75,217,139,.9)}
 #xac-ind .s{border:1px solid #a86060;background:#352020;color:#ffbcbc;border-radius:6px;font-size:10px;padding:3px 7px;cursor:pointer}
 #xac-root .pro{border-color:#7a7a2a;background:#232314;color:#f0f0a7}
+@media (max-width:900px){#xac-root .body{grid-template-columns:1fr}#xac-root .guide-banner,#xac-root .group-advanced{grid-column:auto}}
 @media (max-width:520px){#xac-root{right:${VIEW.isExtensionPage ? 'auto' : '8px'};bottom:${VIEW.isExtensionPage ? 'auto' : '10px'};width:calc(100vw - 16px);max-width:calc(100vw - 16px);min-width:0}}`
     document.documentElement.appendChild(st)
   }
@@ -2118,15 +2241,13 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
   async function runDebugGeneration() {
     const prompt = String(S.advanced?.debugPrompt || '').trim()
     if (!prompt) {
-      toast(S.lang === 'zh' ? '请先输入调试提示词' : 'Please input debug prompt first', 'warn')
+      toast(t('debugPromptRequired'), 'warn')
       return
     }
     const result = await send('xac:spark-complete', {
       prompt,
       timeoutMs: 70000,
-      systemPrompt: S.lang === 'zh'
-        ? '你是评论调试助手。仅返回可直接发布的一条回复内容，不要解释。'
-        : 'You are a comment debugging assistant. Return only one post-ready reply and no explanation.'
+      systemPrompt: t('debugSystemPrompt')
     })
     if (!result.ok) {
       toast(`${t('fail')}: ${formatUserError(s(result.error, t('unknownError')))}`, 'warn')
@@ -2315,10 +2436,12 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     let e = document.getElementById('xac-ind')
     if (!e) {
       e = document.createElement('div'); e.id = 'xac-ind'
-      e.innerHTML = '<span class="d"></span><span id="xac-ind-l"></span><button class="s" id="xac-ind-s">STOP</button>'
+      e.innerHTML = `<span class="d"></span><span id="xac-ind-l"></span><button class="s" id="xac-ind-s">${esc(t('stopBtn'))}</button>`
       document.documentElement.appendChild(e)
       e.querySelector('#xac-ind-s')?.addEventListener('click', () => stopAuto())
     }
+    const stopBtn = e.querySelector('#xac-ind-s')
+    if (stopBtn) stopBtn.textContent = t('stopBtn')
     const l = e.querySelector('#xac-ind-l'); if (l) { const m = S.auto.max > 0 ? `/${S.auto.max}` : ''; l.textContent = `${t('run')} ${S.auto.count}${m}` }
     if (show) e.classList.add('show'); else e.classList.remove('show')
   }
@@ -2448,7 +2571,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     const draft = S.editor?.draft || emptyProfileDraft()
     const name = s(draft.name, '')
     if (!name) {
-      toast(S.lang === 'zh' ? '请填写姓名' : 'Please input profile name', 'warn')
+      toast(t('profileNameRequired'), 'warn')
       return
     }
 
@@ -2604,7 +2727,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
       root.innerHTML = `<div class="shell">
         <button class="top" id="xac-t">
           <span><div class="t1">${esc(t('title'))}</div><div class="t2">${esc(t('sub'))}</div></span>
-          <span class="quota">● ${S.lang === 'zh' ? `剩余${quotaNum}次` : `${quotaNum} left`}</span>
+          <span class="quota">● ${esc(t('quotaLeft').replace('{count}', String(quotaNum)))}</span>
         </button>
         <div class="body">
           <div class="guide-banner">
@@ -2667,7 +2790,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     root.innerHTML = `<div class="shell">
       <button class="top" id="xac-t">
         <span><div class="t1">${esc(t('title'))}</div><div class="t2">${esc(t('sub'))}</div></span>
-        <span class="quota">● ${S.lang === 'zh' ? `剩余${quotaNum}次` : `${quotaNum} left`}</span>
+        <span class="quota">● ${esc(t('quotaLeft').replace('{count}', String(quotaNum)))}</span>
       </button>
       <div class="body">
         <div class="guide-banner">
@@ -2767,7 +2890,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <div class="status" id="xac-status">${esc(S.status || t('idle'))}</div>
         </div>
 
-        <div class="group">
+        <div class="group group-advanced">
           ${stepHead('stepAdvanced', 'stepAdvancedDesc', 'xac-advanced-anchor')}
           <div class="subh first"><span>${esc(t('sectionAutoActions'))}</span>${hintBtn('autoActions')}</div>
           <div class="switch"><span>${esc(t('autoLike'))}</span><input id="xac-like" type="checkbox" ${S.advanced.autoLike ? 'checked' : ''}/></div>
@@ -2776,16 +2899,16 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <label>${esc(t('replyLikeFrequency'))}</label><input id="xac-reply-like-frequency" type="number" min="0" max="100" step="1" value="${esc(String(S.advanced.replyLikeFrequency))}"/>
           <label>${esc(t('extraLikesFrequency'))}</label><input id="xac-extra-likes-frequency" type="number" min="0" max="100" step="1" value="${esc(String(S.advanced.extraLikesFrequency))}"/>
 
-          <div class="subh"><span>${esc(S.lang === 'zh' ? '会话风控' : 'Session Risk Controls')}</span></div>
-          <label>${esc(S.lang === 'zh' ? '每会话互动最小值' : 'Interactions/session min')}</label><input id="xac-session-min" type="number" min="1" max="500" step="1" value="${esc(String(S.advanced.maxInteractionsPerSessionMin))}"/>
-          <label>${esc(S.lang === 'zh' ? '每会话互动最大值' : 'Interactions/session max')}</label><input id="xac-session-max" type="number" min="1" max="600" step="1" value="${esc(String(S.advanced.maxInteractionsPerSessionMax))}"/>
-          <label>${esc(S.lang === 'zh' ? '总会话上限' : 'Max total sessions')}</label><input id="xac-session-total" type="number" min="1" max="30" step="1" value="${esc(String(S.advanced.maxTotalSessions))}"/>
-          <label>${esc(S.lang === 'zh' ? '会话等待最短（分钟）' : 'Session wait min (min)')}</label><input id="xac-session-wait-min" type="number" min="1" max="240" step="1" value="${esc(String(S.advanced.sessionWaitMin))}"/>
-          <label>${esc(S.lang === 'zh' ? '会话等待最长（分钟）' : 'Session wait max (min)')}</label><input id="xac-session-wait-max" type="number" min="1" max="360" step="1" value="${esc(String(S.advanced.sessionWaitMax))}"/>
-          <label>${esc(S.lang === 'zh' ? 'Bot 速度 (1-100)' : 'Bot speed (1-100)')}</label><input id="xac-bot-speed" type="number" min="1" max="100" step="1" value="${esc(String(S.advanced.botSpeed))}"/>
-          <label>${esc(S.lang === 'zh' ? '随机跳过比例 (%)' : 'Random skips (%)')}</label><input id="xac-random-skips" type="number" min="0" max="95" step="1" value="${esc(String(S.advanced.randomSkips))}"/>
-          <div class="switch"><span>${esc(S.lang === 'zh' ? '会话间刷新 Feed' : 'Refresh feed between sessions')}</span><input id="xac-use-refresh-feed" type="checkbox" ${S.advanced.useRefreshFeed ? 'checked' : ''}/></div>
-          <div class="switch"><span>${esc(S.lang === 'zh' ? '随机鼠标轨迹' : 'Random mouse movement')}</span><input id="xac-random-mouse" type="checkbox" ${S.advanced.randomMouseMovement ? 'checked' : ''}/></div>
+          <div class="subh"><span>${esc(t('sectionSessionRisk'))}</span></div>
+          <label>${esc(t('sessionInteractionsMin'))}</label><input id="xac-session-min" type="number" min="1" max="500" step="1" value="${esc(String(S.advanced.maxInteractionsPerSessionMin))}"/>
+          <label>${esc(t('sessionInteractionsMax'))}</label><input id="xac-session-max" type="number" min="1" max="600" step="1" value="${esc(String(S.advanced.maxInteractionsPerSessionMax))}"/>
+          <label>${esc(t('sessionMaxTotal'))}</label><input id="xac-session-total" type="number" min="1" max="30" step="1" value="${esc(String(S.advanced.maxTotalSessions))}"/>
+          <label>${esc(t('sessionWaitMin'))}</label><input id="xac-session-wait-min" type="number" min="1" max="240" step="1" value="${esc(String(S.advanced.sessionWaitMin))}"/>
+          <label>${esc(t('sessionWaitMax'))}</label><input id="xac-session-wait-max" type="number" min="1" max="360" step="1" value="${esc(String(S.advanced.sessionWaitMax))}"/>
+          <label>${esc(t('sessionBotSpeed'))}</label><input id="xac-bot-speed" type="number" min="1" max="100" step="1" value="${esc(String(S.advanced.botSpeed))}"/>
+          <label>${esc(t('sessionRandomSkips'))}</label><input id="xac-random-skips" type="number" min="0" max="95" step="1" value="${esc(String(S.advanced.randomSkips))}"/>
+          <div class="switch"><span>${esc(t('sessionRefreshFeed'))}</span><input id="xac-use-refresh-feed" type="checkbox" ${S.advanced.useRefreshFeed ? 'checked' : ''}/></div>
+          <div class="switch"><span>${esc(t('sessionRandomMouse'))}</span><input id="xac-random-mouse" type="checkbox" ${S.advanced.randomMouseMovement ? 'checked' : ''}/></div>
 
           <div class="subh"><span>${esc(t('sectionFollowRules'))}</span>${hintBtn('followConditions')}</div>
           <div class="meta">${esc(t('followRuleHint'))}</div>
@@ -2794,19 +2917,19 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <label>${esc(t('followMinMutuals'))}</label><input id="xac-follow-min-mutuals" type="number" min="0" max="9999999" step="1" value="${esc(String(S.advanced.followMinMutuals))}"/>
           <div class="switch"><span>${esc(t('followRequireSignals'))}</span><input id="xac-follow-require-signals" type="checkbox" ${S.advanced.followRequireSignals ? 'checked' : ''}/></div>
 
-          <div class="subh"><span>${esc(S.lang === 'zh' ? '名称替换系统' : 'Name Replacements')}</span></div>
-          <label>${esc(S.lang === 'zh' ? '名称替换策略' : 'Replacement strategy')}</label>
+          <div class="subh"><span>${esc(t('sectionNameReplacements'))}</span></div>
+          <label>${esc(t('nameReplacementStrategy'))}</label>
           <select id="xac-name-replacement-mode">
-            <option value="never" ${S.advanced.useNameReplacements === 'never' ? 'selected' : ''}>${esc(S.lang === 'zh' ? 'never（不替换）' : 'never')}</option>
-            <option value="smart" ${S.advanced.useNameReplacements === 'smart' ? 'selected' : ''}>${esc(S.lang === 'zh' ? 'smart（智能）' : 'smart')}</option>
-            <option value="always" ${S.advanced.useNameReplacements === 'always' ? 'selected' : ''}>${esc(S.lang === 'zh' ? 'always（总是替换）' : 'always')}</option>
+            <option value="never" ${S.advanced.useNameReplacements === 'never' ? 'selected' : ''}>${esc(t('nameReplacementNever'))}</option>
+            <option value="smart" ${S.advanced.useNameReplacements === 'smart' ? 'selected' : ''}>${esc(t('nameReplacementSmart'))}</option>
+            <option value="always" ${S.advanced.useNameReplacements === 'always' ? 'selected' : ''}>${esc(t('nameReplacementAlways'))}</option>
           </select>
-          <label>${esc(S.lang === 'zh' ? '替换词库（逗号分隔）' : 'Replacement dictionary (comma separated)')}</label>
+          <label>${esc(t('nameReplacementDictionary'))}</label>
           <input id="xac-name-replacements" type="text" value="${esc(usernameReplacementsText)}" />
 
-          <div class="subh"><span>${esc(S.lang === 'zh' ? '关注后尾句替换' : 'Followed End Greetings')}</span></div>
-          <div class="switch"><span>${esc(S.lang === 'zh' ? '关注成功后替换结尾' : 'Replace end greeting after follow')}</span><input id="xac-followed-end-enabled" type="checkbox" ${S.advanced.followedReplaceEndGreeting ? 'checked' : ''}/></div>
-          <label>${esc(S.lang === 'zh' ? '关注后尾句模板（--- 分隔）' : 'Followed end templates (--- split)')}</label>
+          <div class="subh"><span>${esc(t('sectionFollowedEndGreetings'))}</span></div>
+          <div class="switch"><span>${esc(t('followedEndEnabled'))}</span><input id="xac-followed-end-enabled" type="checkbox" ${S.advanced.followedReplaceEndGreeting ? 'checked' : ''}/></div>
+          <label>${esc(t('followedEndTemplates'))}</label>
           <textarea id="xac-followed-end-pool">${esc(followedEndText)}</textarea>
 
           <div class="subh"><span>${esc(t('sectionRetweetRules'))}</span>${hintBtn('retweetConditions')}</div>
@@ -2827,8 +2950,8 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <label>${esc(t('minTweetChars'))}</label><input id="xac-min-chars" type="number" min="0" max="1000" step="10" value="${esc(String(S.advanced.minTweetChars))}"/>
           <div class="switch"><span>${esc(t('skipIfContainsLinks'))}</span><input id="xac-skip-links" type="checkbox" ${S.advanced.skipIfContainsLinks ? 'checked' : ''}/></div>
           <div class="switch"><span>${esc(t('skipIfContainsImages'))}</span><input id="xac-skip-images" type="checkbox" ${S.advanced.skipIfContainsImages ? 'checked' : ''}/></div>
-          <label>${esc(S.lang === 'zh' ? '发布时间限制（分钟内）' : 'Post within minutes')}</label><input id="xac-post-within-minutes" type="number" min="5" max="10080" step="5" value="${esc(String(S.advanced.postWithinMinutes))}"/>
-          <div class="switch"><span>${esc(S.lang === 'zh' ? '仅蓝标账户' : 'Only blue checks')}</span><input id="xac-only-blue-checks" type="checkbox" ${S.advanced.onlyBlueChecks ? 'checked' : ''}/></div>
+          <label>${esc(t('postWithinMinutes'))}</label><input id="xac-post-within-minutes" type="number" min="5" max="10080" step="5" value="${esc(String(S.advanced.postWithinMinutes))}"/>
+          <div class="switch"><span>${esc(t('onlyBlueChecks'))}</span><input id="xac-only-blue-checks" type="checkbox" ${S.advanced.onlyBlueChecks ? 'checked' : ''}/></div>
           <label>${esc(t('searchIncludeTerms'))}</label>
           <div class="or-row">
             <input id="xac-search-include-a" type="text" placeholder="${esc(t('searchIncludePlaceholderA'))}" value="${esc(includeTermA)}"/>
@@ -2865,11 +2988,11 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
                 <span class="mini">${esc(`${t('sectionSchedule')} ${idx + 1}`)}</span>
                 <button id="xac-schedule-remove-${idx}">${esc(t('scheduleDelete'))}</button>
               </div>
-              <label>${esc(S.lang === 'zh' ? '开始时间' : 'Start time')}</label>
+              <label>${esc(t('scheduleStartTime'))}</label>
               <input id="xac-schedule-start-${idx}" type="time" value="${esc(item.startTime || item.time || '09:00')}" />
-              <label>${esc(S.lang === 'zh' ? '结束时间' : 'End time')}</label>
+              <label>${esc(t('scheduleEndTime'))}</label>
               <input id="xac-schedule-end-${idx}" type="time" value="${esc(item.endTime || item.startTime || item.time || '09:00')}" />
-              <label>${esc(S.lang === 'zh' ? '启动概率 (%)' : 'Probability (%)')}</label>
+              <label>${esc(t('scheduleProbability'))}</label>
               <input id="xac-schedule-probability-${idx}" type="number" min="10" max="100" step="1" value="${esc(String(item.probability || 100))}" />
               <label>${esc(t('scheduleMode'))}</label>
               <select id="xac-schedule-mode-${idx}">
@@ -2901,25 +3024,25 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
             </div>
           `).join('')}
 
-          <div class="subh"><span>${esc(S.lang === 'zh' ? '设置云备份' : 'Cloud Backup')}</span></div>
+          <div class="subh"><span>${esc(t('sectionCloudBackup'))}</span></div>
           <div class="r2">
-            <button id="xac-cloud-save">${esc(S.lang === 'zh' ? '保存到云端' : 'Save settings')}</button>
-            <button id="xac-cloud-load">${esc(S.lang === 'zh' ? '从云端读取' : 'Get saved settings')}</button>
+            <button id="xac-cloud-save">${esc(t('cloudSave'))}</button>
+            <button id="xac-cloud-load">${esc(t('cloudLoad'))}</button>
           </div>
-          <div class="meta">${esc(`Last synced: ${cloudSyncedLabel}`)}</div>
-          <div class="meta">${esc(`Last pulled: ${cloudPulledLabel}`)}</div>
+          <div class="meta">${esc(`${t('cloudLastSynced')}: ${cloudSyncedLabel}`)}</div>
+          <div class="meta">${esc(`${t('cloudLastPulled')}: ${cloudPulledLabel}`)}</div>
           <div class="meta">${esc(S.cloudSyncStatus?.lastError || '--')}</div>
 
-          <div class="subh"><span>${esc(S.lang === 'zh' ? '轻量元字段' : 'Meta Fields')}</span></div>
-          <label>${esc(S.lang === 'zh' ? '模板名称' : 'Template name')}</label><input id="xac-template-name" type="text" value="${esc(String(S.advanced.templateName || 'Default'))}" />
-          <div class="switch"><span>${esc('AddGMButton')}</span><input id="xac-add-gm-button" type="checkbox" ${S.advanced.addGMButton ? 'checked' : ''}/></div>
-          <div class="switch"><span>${esc('ShowSideBarControls')}</span><input id="xac-show-sidebar-controls" type="checkbox" ${S.advanced.showSideBarControls ? 'checked' : ''}/></div>
-          <div class="switch"><span>${esc('ratedUs')}</span><input id="xac-rated-us" type="checkbox" ${S.advanced.ratedUs ? 'checked' : ''}/></div>
+          <div class="subh"><span>${esc(t('sectionMetaFields'))}</span></div>
+          <label>${esc(t('templateName'))}</label><input id="xac-template-name" type="text" value="${esc(String(S.advanced.templateName || t('templateDefaultName')))}" />
+          <div class="switch"><span>${esc(t('addGMButtonLabel'))}</span><input id="xac-add-gm-button" type="checkbox" ${S.advanced.addGMButton ? 'checked' : ''}/></div>
+          <div class="switch"><span>${esc(t('showSideBarControlsLabel'))}</span><input id="xac-show-sidebar-controls" type="checkbox" ${S.advanced.showSideBarControls ? 'checked' : ''}/></div>
+          <div class="switch"><span>${esc(t('ratedUsLabel'))}</span><input id="xac-rated-us" type="checkbox" ${S.advanced.ratedUs ? 'checked' : ''}/></div>
           ${S.advanced.showSideBarControls ? `
             <div class="r3">
-              <button id="xac-tool-activity">Activity</button>
-              <button id="xac-tool-followus">Follow Us</button>
-              <button id="xac-tool-rateus">Rate Us</button>
+              <button id="xac-tool-activity">${esc(t('toolActivity'))}</button>
+              <button id="xac-tool-followus">${esc(t('toolFollowUs'))}</button>
+              <button id="xac-tool-rateus">${esc(t('toolRateUs'))}</button>
             </div>
           ` : ''}
 
@@ -2962,18 +3085,18 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
               <textarea id="xac-rule-start-pool-${idx}" ${rule.type === 'simple' ? 'disabled' : ''}>${esc(rule.startPool || '')}</textarea>
               <label>${esc(t('replyRuleEndPool'))}</label>
               <textarea id="xac-rule-end-pool-${idx}" ${rule.type === 'simple' ? 'disabled' : ''}>${esc(rule.endPool || '')}</textarea>
-              <label>${esc(S.lang === 'zh' ? '图片频率 (%)' : 'Image frequency (%)')}</label>
+              <label>${esc(t('replyRuleImageFrequency'))}</label>
               <input id="xac-rule-image-frequency-${idx}" type="number" min="0" max="100" step="1" value="${esc(String(rule.imageFrequency || 0))}" />
-              <label>${esc(S.lang === 'zh' ? '图片列表（URL 或 data:image）' : 'Images (URL or data:image)')}</label>
+              <label>${esc(t('replyRuleImages'))}</label>
               <textarea id="xac-rule-images-${idx}">${esc((rule.images || []).join('\n'))}</textarea>
-              <label>${esc(S.lang === 'zh' ? '新增图片 URL / Giphy URL' : 'Add image URL / Giphy URL')}</label>
+              <label>${esc(t('replyRuleImageAdd'))}</label>
               <div class="r2">
-                <input id="xac-rule-image-input-${idx}" type="text" value="" placeholder="${esc(S.lang === 'zh' ? '粘贴图片地址' : 'Paste image URL')}" />
-                <button id="xac-rule-image-add-${idx}">${esc(S.lang === 'zh' ? '添加' : 'Add')}</button>
+                <input id="xac-rule-image-input-${idx}" type="text" value="" placeholder="${esc(t('replyRuleImagePlaceholder'))}" />
+                <button id="xac-rule-image-add-${idx}">${esc(t('replyRuleImageAddBtn'))}</button>
               </div>
               <div class="r2">
-                <button id="xac-rule-image-upload-${idx}">${esc(S.lang === 'zh' ? '本地上传' : 'Upload local')}</button>
-                <button id="xac-rule-image-giphy-${idx}">Giphy</button>
+                <button id="xac-rule-image-upload-${idx}">${esc(t('replyRuleImageUploadBtn'))}</button>
+                <button id="xac-rule-image-giphy-${idx}">${esc(t('replyRuleImageGiphyBtn'))}</button>
               </div>
               <input id="xac-rule-image-file-${idx}" type="file" accept="image/*" style="display:none"/>
             </div>
@@ -2993,10 +3116,10 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
       <div class="modal-card">
         <div class="modal-h"><span>${esc(S.editor.mode === 'edit' ? t('profileEditTitle') : t('profileNewTitle'))}</span><button id="xac-editor-close">×</button></div>
         <div class="label-row">
-          <div><label>${esc(t('profileName'))}</label><input id="xac-ed-name" value="${esc(d.name)}" placeholder="${esc(S.lang === 'zh' ? '增长黑客' : 'Growth Hacker')}"/></div>
+          <div><label>${esc(t('profileName'))}</label><input id="xac-ed-name" value="${esc(d.name)}" placeholder="${esc(t('profileNamePlaceholder'))}"/></div>
           <div><label>${esc(t('profileEmoji'))}</label><input id="xac-ed-emoji" value="${esc(d.emoji)}" placeholder="⚡"/></div>
         </div>
-        <label>${esc(t('profileTone'))}</label><input id="xac-ed-tone" value="${esc(d.tone)}" placeholder="${esc(S.lang === 'zh' ? '例如：大胆简洁，或酷炫。' : 'Example: bold and concise')}" />
+        <label>${esc(t('profileTone'))}</label><input id="xac-ed-tone" value="${esc(d.tone)}" placeholder="${esc(t('profileTonePlaceholder'))}" />
         <label>${esc(t('goal'))}</label>
         <div class="chip-group">${goalOptions.map((item) => `<button class="chip ${d.goal === item.id ? 'active' : ''}" data-ed-goal="${item.id}">${esc(item.label)}</button>`).join('')}</div>
         <label>${esc(t('len'))}</label>
@@ -3063,7 +3186,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     document.getElementById('xac-save-spark')?.addEventListener('click', async () => {
       await runPendingAction('save-spark', t('saving'), async () => {
         await saveSparkSettingsFromDraft()
-        toast(S.lang === 'zh' ? 'AI 配置已保存' : 'AI settings saved', 'ok')
+        toast(t('aiSettingsSaved'), 'ok')
         render()
       }, false)
     })
@@ -3403,17 +3526,17 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
       })
     })
     document.getElementById('xac-cloud-save')?.addEventListener('click', async () => {
-      await runPendingAction('cloud-save', S.lang === 'zh' ? '正在保存云备份...' : 'Saving cloud backup...', async () => {
+      await runPendingAction('cloud-save', t('cloudSaving'), async () => {
         await saveSettingsToCloud()
-        toast(S.lang === 'zh' ? '设置已同步到云端。' : 'Settings saved to cloud.', 'ok')
+        toast(t('cloudSaved'), 'ok')
         render()
       }, false)
     })
     document.getElementById('xac-cloud-load')?.addEventListener('click', async () => {
       try {
-        await runPendingAction('cloud-load', S.lang === 'zh' ? '正在加载云备份...' : 'Loading cloud backup...', async () => {
+        await runPendingAction('cloud-load', t('cloudLoading'), async () => {
           await loadSettingsFromCloud()
-          toast(S.lang === 'zh' ? '已从云端恢复设置。' : 'Settings restored from cloud.', 'ok')
+          toast(t('cloudLoaded'), 'ok')
           render()
         }, false)
       } catch (error) {
@@ -3604,7 +3727,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           await saveReplyRules(true)
           render()
         } catch {
-          toast(S.lang === 'zh' ? '本地图片读取失败。' : 'Failed to read local image.', 'warn')
+          toast(t('localImageReadFail'), 'warn')
         } finally {
           if (e?.target) e.target.value = ''
         }
@@ -3626,7 +3749,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           await saveAdvanced(true)
           const result = await send('xac:open-advanced-panel', { query })
           if (!result.ok) throw new Error(s(result.error, t('unknownError')))
-          toast(S.lang === 'zh' ? '已打开 X 侧栏' : 'X sidebar opened', 'ok')
+          toast(t('sidebarOpened'), 'ok')
         }, false)
         return
       }
@@ -3642,7 +3765,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           toast(`${t('fail')}: ${s(result.error, t('unknownError'))}`, 'warn')
           return
         }
-        toast(S.lang === 'zh' ? '已打开搜索页' : 'Search page opened', 'ok')
+        toast(t('searchPageOpened'), 'ok')
         return
       }
       window.location.href = buildSearchUrl(query)
@@ -3659,7 +3782,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
       if (!text) return
       try {
         await navigator.clipboard.writeText(text)
-        toast(S.lang === 'zh' ? '已复制' : 'Copied', 'ok')
+        toast(t('copied'), 'ok')
       } catch {
         toast(t('fail'), 'warn')
       }

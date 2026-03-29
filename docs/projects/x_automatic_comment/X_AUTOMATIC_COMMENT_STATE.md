@@ -69,6 +69,18 @@
    - `tools/xac-smoke-check.js` currently fails due stale marker dependency (`const TEXT_REPLACE`).
    - `$env:NODE_PATH='C:\Temp\xac-playwright-runtime\node_modules'; node tools/xac-e2e-regression.js` passed.
 
+## 2026-03-29 Wide Options + i18n Cleanup
+1. Layout:
+   - options page upgraded to wide mode (`min(96vw,1180px)`), with responsive fallback below 900px.
+   - advanced group promoted to full-width block to reduce vertical crowding and improve readability.
+2. i18n:
+   - replaced hardcoded mixed-language labels in advanced/schedule/cloud/meta/reply-image sections with centralized i18n keys.
+   - normalized Chinese runtime messages for cloud sync status, sidebar/search toast, copy toast, and local image upload errors.
+3. Validation:
+   - `node --check D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js` passed.
+   - `$env:NODE_PATH='C:\Temp\xac-playwright-runtime\node_modules'; node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.js` passed.
+   - `node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-smoke-check.js` still fails due known stale marker dependency (`const TEXT_REPLACE`).
+
 ## Next Step
 1. 在真实 X 页面做一次人工回归：
    - 名称替换 `never/smart/always`

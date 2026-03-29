@@ -58,3 +58,6 @@
   - Tech-green theme with dark/light mode
   - `zh-CN / en` switch in popup runtime
   - Local paid-gate unlock patch without layout restructuring
+- 2026-03-29 loadability hardening:
+  - rebuilt clean unpacked `manifest.json` (removed `key` / `update_url`, normalized name encoding)
+  - ensured full runtime artifact set is included for local loading

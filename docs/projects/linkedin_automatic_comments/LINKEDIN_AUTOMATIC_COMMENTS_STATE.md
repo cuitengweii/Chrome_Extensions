@@ -8,6 +8,7 @@
 - Theme is now aligned to a tech-green style with dark/light mode switch in popup.
 - Popup now supports `zh-CN / en` switch at runtime.
 - Local paid-gate unlock patch is active via storage-level account override + UI control unlock.
+- Unpacked loading compatibility was hardened for Chrome (clean manifest + complete runtime files included).
 
 ## Landed Output
 - Added runtime patch script:
@@ -18,6 +19,13 @@
   - `D:\code\Chrome_Extensions\LinkedIn automatic comments\popup.html`
 - Updated content script registration to preload patch:
   - `D:\code\Chrome_Extensions\LinkedIn automatic comments\manifest.json`
+- Manifest hardened for unpacked loading:
+  - removed webstore-only `key` and `update_url`
+  - fixed display name encoding to plain ASCII form
+- Extension runtime files were included as first-class project artifacts:
+  - `contents.f6a134c0.js`, `popup.bce84c5a.js`, `popup.4b637d9e.css`
+  - `static/background/index.js`
+  - icons and `assets/*`
 
 ## Scope Boundary
 - Completed in this thread:
@@ -34,6 +42,8 @@
 - `runtime.patch.js` passed syntax check with `node --check`.
 - `manifest.json` passed JSON parse check.
 - Patched files existence check passed.
+- Core bundled scripts (`popup`, `content`, `background`) passed `node --check`.
+- Chrome `--pack-extension` reached packaging stage (manifest/structure accepted).
 
 ## Next Step
 - Validate end-to-end behavior in real Chrome extension runtime:

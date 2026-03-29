@@ -1,0 +1,83 @@
+{
+  "manifest_version": 3,
+  "name": "X Automatic Comment",
+  "version": "11.1.0",
+  "description": "Automatic comment assistant for X/Twitter with bilingual UI, Google login, and AI support.",
+  "author": "GasGx + Xtensions Clone",
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "X Automatic Comment",
+    "default_icon": {
+      "16": "xac-logo-16.png",
+      "32": "xac-logo-32.png",
+      "48": "xac-logo-48.png",
+      "64": "xac-logo-64.png",
+      "128": "xac-logo-128.png"
+    }
+  },
+  "icons": {
+    "16": "xac-logo-16.png",
+    "32": "xac-logo-32.png",
+    "48": "xac-logo-48.png",
+    "64": "xac-logo-64.png",
+    "128": "xac-logo-128.png"
+  },
+  "background": {
+    "service_worker": "background-sw.js"
+  },
+  "options_ui": {
+    "open_in_tab": true,
+    "page": "options.html"
+  },
+  "permissions": [
+    "storage",
+    "alarms",
+    "tabs",
+    "identity"
+  ],
+  "host_permissions": [
+    "https://xtensions.pro/*",
+    "https://*.supabase.co/*",
+    "https://spark-api.xf-yun.com/*",
+    "https://*.xf-yun.com/*",
+    "https://accounts.google.com/*",
+    "https://*.gasgx.com/*",
+    "https://gasgx.com/*",
+    "*://*.twitter.com/*",
+    "*://*.x.com/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.twitter.com/*",
+        "*://*.x.com/*"
+      ],
+      "js": [
+        "xac-content.js"
+      ],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://*.gasgx.com/*",
+        "https://gasgx.com/*"
+      ],
+      "js": [
+        "xac-gasgx-sync.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "resources": [
+        "options.html",
+        "tabs/pro.html",
+        "tabs/activity.html"
+      ]
+    }
+  ]
+}

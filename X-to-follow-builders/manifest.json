@@ -1,0 +1,53 @@
+{
+  "manifest_version": 3,
+  "name": "空来Ai-X日报账号采集器",
+  "version": "0.5.1",
+  "description": "采集 X/YouTube 账号并在 Supabase 中管理集合与账号池。",
+  "permissions": [
+    "contextMenus",
+    "storage",
+    "downloads",
+    "activeTab",
+    "scripting",
+    "clipboardRead"
+  ],
+  "host_permissions": [
+    "https://x.com/*",
+    "https://cdn.syndication.twimg.com/*",
+    "https://www.youtube.com/*",
+    "https://*.youtube.com/*",
+    "https://fmlneautjackwrcoaevo.supabase.co/*"
+  ],
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://x.com/*"
+      ],
+      "js": [
+        "x-copy-capture.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png"
+    },
+    "default_title": "空来Ai-X日报账号采集器"
+  },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  }
+}

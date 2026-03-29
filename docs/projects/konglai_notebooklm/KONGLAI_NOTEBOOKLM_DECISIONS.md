@@ -20,3 +20,5 @@
    - `refreshLabel` supports multiple candidates
    - candidate parsing supports separators and dedup
    - defaults are always merged to tolerate UI text drift
+6. Brand icon direction for this extension is now Notebook-style with green palette.
+   - Keep action/app icons aligned across `16/48/128` sizes.

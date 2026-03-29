@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Notebook-style mono logo">
+  <g fill="none" stroke="#1FA968" stroke-width="32" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M88 104h142c38 0 58 20 58 58v250c-15-18-36-28-64-28H88z"/>
+    <path d="M424 104H282c-38 0-58 20-58 58v250c15-18 36-28 64-28h136z"/>
+    <path d="M256 112v300"/>
+    <path d="M126 186h112"/>
+    <path d="M126 244h112"/>
+    <path d="M126 302h84"/>
+    <path d="M302 186h84"/>
+    <path d="M302 244h84"/>
+    <path d="M302 302h112"/>
+  </g>
+</svg>

@@ -12,6 +12,10 @@
    - source concurrency
    - retry count
    - retry base backoff delay
+6. Extension logo was replaced with a green Notebook-style icon set:
+   - `icons/icon16.png`
+   - `icons/icon48.png`
+   - `icons/icon128.png`
 
 ## Current State
 1. P0 goals are landed for refresh coverage, result visualization, source-level logs, and run lock.

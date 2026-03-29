@@ -47,3 +47,14 @@
   - Language: `zh-CN / en` switch
   - Paid features: runtime unlock patch (page + background)
   - No layout restructuring
+
+## 2026-03-29 LinkedIn Automatic Comments Route Sync
+- New stable project route added: `D:\code\Chrome_Extensions\LinkedIn automatic comments`
+- Upgraded from repo-level default routing to project-level docs routing:
+  - `D:\code\Chrome_Extensions\docs\projects\linkedin_automatic_comments\LINKEDIN_AUTOMATIC_COMMENTS_STATE.md`
+  - `D:\code\Chrome_Extensions\docs\projects\linkedin_automatic_comments\LINKEDIN_AUTOMATIC_COMMENTS_DECISIONS.md`
+  - `D:\code\Chrome_Extensions\docs\projects\linkedin_automatic_comments\LINKEDIN_AUTOMATIC_COMMENTS_LESSONS.md`
+- Current archived scope:
+  - Tech-green theme with dark/light mode
+  - `zh-CN / en` switch in popup runtime
+  - Local paid-gate unlock patch without layout restructuring

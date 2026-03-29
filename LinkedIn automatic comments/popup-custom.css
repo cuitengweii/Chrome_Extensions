@@ -1,0 +1,210 @@
+:root {
+  --ce-accent: #19e38c;
+  --ce-accent-strong: #0ec26f;
+  --ce-accent-soft: rgba(25, 227, 140, 0.18);
+}
+
+:root[data-theme="dark"] {
+  --ce-bg: #07120d;
+  --ce-panel: #0d1c15;
+  --ce-surface: #133022;
+  --ce-surface-elev: #164332;
+  --ce-text: #e6ffee;
+  --ce-muted: #98c7ab;
+  --ce-border: #25563f;
+  --ce-link: #53f5af;
+  --ce-shadow: rgba(0, 0, 0, 0.45);
+}
+
+:root[data-theme="light"] {
+  --ce-bg: #e8fff3;
+  --ce-panel: #f6fff9;
+  --ce-surface: #d9f8e8;
+  --ce-surface-elev: #cbf2de;
+  --ce-text: #173326;
+  --ce-muted: #4e7664;
+  --ce-border: #8dc8ab;
+  --ce-link: #0c8f52;
+  --ce-shadow: rgba(18, 95, 62, 0.18);
+}
+
+html,
+body {
+  background: var(--ce-bg) !important;
+  color: var(--ce-text) !important;
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+
+a {
+  color: var(--ce-link) !important;
+}
+
+.header {
+  background-image: linear-gradient(132deg, var(--ce-surface-elev) 0%, var(--ce-accent-strong) 140%) !important;
+  border-color: var(--ce-border) !important;
+  box-shadow: 0 4px 16px var(--ce-shadow) !important;
+}
+
+.main {
+  background: var(--ce-panel) !important;
+  color: var(--ce-text) !important;
+}
+
+.left-margin,
+.info-flex,
+.white-font {
+  color: var(--ce-text) !important;
+}
+
+.profile-image {
+  border-color: var(--ce-border) !important;
+}
+
+.white-button {
+  background-color: var(--ce-surface) !important;
+  color: var(--ce-text) !important;
+  border-color: var(--ce-border) !important;
+}
+
+.black-button {
+  background-color: var(--ce-accent-strong) !important;
+  color: #03160e !important;
+  border-color: var(--ce-accent) !important;
+}
+
+.MuiFormControlLabel-label,
+.MuiTypography-root,
+.MuiInputBase-input,
+.MuiInputLabel-root {
+  color: var(--ce-text) !important;
+}
+
+.MuiInputLabel-root {
+  color: var(--ce-muted) !important;
+}
+
+.MuiInputLabel-root.Mui-focused {
+  color: var(--ce-accent) !important;
+}
+
+.MuiInputBase-root,
+.MuiOutlinedInput-root {
+  color: var(--ce-text) !important;
+}
+
+.MuiOutlinedInput-notchedOutline {
+  border-color: var(--ce-border) !important;
+}
+
+.MuiOutlinedInput-root:hover .MuiOutlinedInput-notchedOutline,
+.MuiOutlinedInput-root.Mui-focused .MuiOutlinedInput-notchedOutline {
+  border-color: var(--ce-accent) !important;
+}
+
+.MuiToggleButtonGroup-root {
+  background: var(--ce-surface) !important;
+  color: var(--ce-text) !important;
+}
+
+.MuiToggleButton-root {
+  color: var(--ce-text) !important;
+}
+
+.MuiToggleButton-root.Mui-selected {
+  background: var(--ce-accent-soft) !important;
+  border-color: var(--ce-accent) !important;
+  box-shadow: 0 2px 8px var(--ce-shadow) !important;
+  color: var(--ce-text) !important;
+}
+
+.MuiPaper-root,
+.MuiMenu-paper,
+.MuiPopover-paper {
+  background: var(--ce-panel) !important;
+  color: var(--ce-text) !important;
+  border: 1px solid var(--ce-border) !important;
+}
+
+.MuiMenuItem-root {
+  border-top-color: var(--ce-border) !important;
+}
+
+.MuiMenuItem-root:hover,
+.MuiMenuItem-root.Mui-selected {
+  background: var(--ce-accent-soft) !important;
+  color: var(--ce-text) !important;
+}
+
+.MuiTooltip-tooltip {
+  background: var(--ce-surface-elev) !important;
+  color: var(--ce-text) !important;
+  border: 1px solid var(--ce-border) !important;
+}
+
+.MuiSlider-track,
+.MuiSlider-thumb,
+.MuiSlider-mark {
+  color: var(--ce-accent) !important;
+}
+
+.MuiSlider-rail {
+  opacity: 1 !important;
+  background: var(--ce-border) !important;
+}
+
+.MuiLinearProgress-root {
+  background: var(--ce-border) !important;
+}
+
+.MuiLinearProgress-bar {
+  background: var(--ce-accent) !important;
+}
+
+.MuiSwitch-track {
+  background: var(--ce-border) !important;
+  opacity: 1 !important;
+}
+
+.Mui-checked + .MuiSwitch-track {
+  background: var(--ce-accent) !important;
+}
+
+.MuiCheckbox-root,
+.MuiSvgIcon-root {
+  color: var(--ce-accent) !important;
+}
+
+#ce-runtime-controls {
+  position: fixed;
+  top: 8px;
+  right: 10px;
+  z-index: 9999;
+  display: inline-flex;
+  gap: 6px;
+}
+
+#ce-runtime-controls button {
+  width: 28px;
+  height: 24px;
+  border-radius: 12px;
+  border: 1px solid var(--ce-border);
+  background: var(--ce-surface-elev);
+  color: var(--ce-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#ce-runtime-controls button:hover {
+  border-color: var(--ce-accent);
+  background: var(--ce-accent-soft);
+}
+
+button[disabled],
+input[disabled],
+select[disabled],
+textarea[disabled],
+.Mui-disabled {
+  opacity: 1 !important;
+}

@@ -58,6 +58,17 @@
 - 未完成项：
   - `tools/xac-e2e-regression.js` 需要本机先安装 Playwright 依赖后再跑端到端。
 
+## 2026-03-29 UI Style Hotfix
+1. Fixed extension-page narrow-strip rendering in `D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js`.
+2. Updated `VIEW.isExtensionPage` styles:
+   - `html,body` now enforce width bounds and horizontal overflow protection.
+   - popup mode now has `min-width: 340px` fallback.
+   - `#xac-root` width moved from `clamp(340px,96vw,360px)` to adaptive `min(100%,360px)` with `min-width`/`max-width` safeguards.
+3. Regression checks:
+   - `node --check xac-content.js` passed.
+   - `tools/xac-smoke-check.js` currently fails due stale marker dependency (`const TEXT_REPLACE`).
+   - `$env:NODE_PATH='C:\Temp\xac-playwright-runtime\node_modules'; node tools/xac-e2e-regression.js` passed.
+
 ## Next Step
 1. 在真实 X 页面做一次人工回归：
    - 名称替换 `never/smart/always`

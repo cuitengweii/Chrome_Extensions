@@ -39,3 +39,13 @@
   1. `manifest` JSON 解析检查
   2. `manifest` 引用文件存在性检查
   3. `_metadata` 保留目录检查（必须不存在）
+
+## 2026-03-29 | Extension Name Single Source of Truth
+
+### Decision
+- 扩展名改为固定字面量，直接写入 `manifest.json > name`：
+  - `] | [E2E回归] | [验证加载后核心录制链路稳定性]`
+
+### Why
+- 当前项目为解包产物维护模式，直接改 `manifest` 可最小变更立即生效。
+- 避免引入大量 locale 文件变更，保持本次改动聚焦于“仅改扩展名”。

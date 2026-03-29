@@ -58,6 +58,12 @@
   - `D:\code\Chrome_Extensions\Browser Recorder\wrapper.html`
 - Verified `_metadata` reserved directory is not present in Browser Recorder root.
 
+## 2026-03-29 Browser Recorder Extension Name Sync
+- Unified extension display name in manifest:
+  - `] | [E2E回归] | [验证加载后核心录制链路稳定性]`
+- Updated targets:
+  - `D:\code\Chrome_Extensions\Browser Recorder\manifest.json` (`name`)
+
 ## 2026-03-29 LinkedIn Automatic Comments Route Sync
 - New stable project route added: `D:\code\Chrome_Extensions\LinkedIn automatic comments`
 - Upgraded from repo-level default routing to project-level docs routing:

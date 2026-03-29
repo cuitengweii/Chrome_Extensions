@@ -48,6 +48,12 @@
     - `D:\code\Chrome_Extensions\Browser Recorder\wrapper.html`
   - 确认 `_metadata` 目录不存在，避免 Chrome 因保留目录命名拒绝加载。
 
+## 2026-03-29 Extension Name Update
+- 扩展显示名已统一更新为：`] | [E2E回归] | [验证加载后核心录制链路稳定性]`
+- 生效范围：`D:\code\Chrome_Extensions\Browser Recorder\manifest.json` 的 `name`
+- 兼容性检查：
+  - `manifest.json` 解析通过
+
 ## Next Step
 - 在真实浏览器中完成一次端到端手工回归（录制、编辑、下载、上传、设置页），确认主题覆盖、语言切换、付费解锁与本次加载修复未引入功能回归。
 - 若后续继续迭代 Browser Recorder，建议补齐项目级 ARCHITECTURE 文档。

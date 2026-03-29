@@ -97,3 +97,5 @@
 ### Stable Defaults
 - Existing filtering guards remain unchanged (`comment-post` and `comment-reply-post` submit buttons are still excluded).
 - Trigger behavior remains identical after registration; only candidate button discovery scope is expanded.
+- Chinese keyword literals in bundled patch are written as unicode escapes (`\u8bc4\u8bba`, `\u56de\u590d`) to avoid shell/codepage corruption.
+- Attribute-based fallback selectors (`aria-label`, `data-view-name`) are enabled to reduce dependency on visible text locale.

@@ -57,3 +57,14 @@
 ### Avoid Next Time
 - For social-site automation features, avoid single-language text selectors.
 - Prefer multilingual fallback or attribute-based selectors when working with localized UIs.
+
+## 2026-03-29 | Terminal Encoding Corrupted Chinese Selector Text
+
+### Pitfall
+- Directly patching bundled JS with raw Chinese text via shell caused `评论/回复` literals to degrade into `??`, silently breaking selector matching.
+
+### What Worked
+- Replacing Chinese literals with unicode escapes (`\u8bc4\u8bba`, `\u56de\u590d`) made the patch encoding-safe across terminal/codepage differences.
+
+### Avoid Next Time
+- In minified/bundled patch workflows, prefer ASCII-safe unicode escape literals for non-ASCII selector text.

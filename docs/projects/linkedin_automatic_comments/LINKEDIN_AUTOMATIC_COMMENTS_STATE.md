@@ -13,6 +13,7 @@
 - Popup startup crash (`"[object Object] is not valid JSON"`) was fixed in runtime patch.
 - Popup bundle parser now has in-bundle fallback for legacy object/string payloads to prevent repeat crash.
 - LinkedIn 中文界面评论流程可触发性已修复（评论/回复按钮注册支持中英文）。
+- Content trigger matcher now avoids terminal encoding issues by using unicode escapes and attribute fallback selectors.
 
 ## Landed Output
 - Added runtime patch script:
@@ -32,6 +33,7 @@
 - Updated content trigger selector coverage:
   - `D:\code\Chrome_Extensions\LinkedIn automatic comments\contents.f6a134c0.js`
   - comment/reply button discovery now covers both English and Chinese button texts
+  - added `aria-label` / `data-view-name` selector fallback for locale-stable matching
 - Manifest hardened for unpacked loading:
   - removed webstore-only `key` and `update_url`
   - fixed display name encoding to plain ASCII form
@@ -67,6 +69,7 @@
 - Comment flow trigger compatibility:
   - content bundle passed `node --check`
   - verified selector injection includes both `Comment/Reply` and `评论/回复`
+  - verified Chinese keywords are encoded as `\u8bc4\u8bba` / `\u56de\u590d` (no terminal encoding corruption)
 
 ## Next Step
 - Validate end-to-end behavior in real Chrome extension runtime:

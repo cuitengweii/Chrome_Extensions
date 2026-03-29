@@ -16,6 +16,7 @@
    - `icons/icon16.png`
    - `icons/icon48.png`
    - `icons/icon128.png`
+7. Logo color tone was adjusted to a deeper green for clearer visual contrast in Chrome toolbar.
 
 ## Current State
 1. P0 goals are landed for refresh coverage, result visualization, source-level logs, and run lock.

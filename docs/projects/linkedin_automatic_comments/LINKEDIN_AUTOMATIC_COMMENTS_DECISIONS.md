@@ -63,3 +63,6 @@
 ### Stable Defaults
 - `account` storage value shape remains stringified JSON across popup/content contexts.
 - Runtime self-heals historical bad values without requiring manual storage clear.
+- Runtime applies two safety layers before app bootstrap:
+  - normalize object-shaped values from `chrome.storage.*.get` into JSON strings
+  - guard `JSON.parse` against legacy `"[object Object]"` input

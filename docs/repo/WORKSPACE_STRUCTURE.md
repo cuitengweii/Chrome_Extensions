@@ -60,7 +60,7 @@
 
 ## 2026-03-29 Browser Recorder Extension Name Sync
 - Unified extension display name in manifest:
-  - `] | [E2E回归] | [验证加载后核心录制链路稳定性]`
+  - `Browser Recorder`
 - Updated targets:
   - `D:\code\Chrome_Extensions\Browser Recorder\manifest.json` (`name`)
 

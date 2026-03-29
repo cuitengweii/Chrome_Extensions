@@ -52,6 +52,7 @@
 - Storage compatibility fix applied:
   - account value now writes as JSON string (compatible with `@rocket/storage` `getObject` parser)
   - runtime hook normalizes legacy object-shaped account values during `chrome.storage.*.get`
+  - global `JSON.parse` compatibility guard added to tolerate legacy `"[object Object]"` payload during popup boot
 
 ## Next Step
 - Validate end-to-end behavior in real Chrome extension runtime:

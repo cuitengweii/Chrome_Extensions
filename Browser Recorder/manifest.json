@@ -77,7 +77,7 @@
       "128": "assets/img/icon-128.png"
    },
    "manifest_version": 3,
-   "name": "] | [E2E回归] | [验证加载后核心录制链路稳定性]",
+   "name": "Browser Recorder",
    "oauth2": {
       "client_id": "560517327251-m7n1k3kddknu7s9s4ejvrs1bj91gutd7.apps.googleusercontent.com",
       "scopes": [

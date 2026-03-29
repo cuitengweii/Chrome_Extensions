@@ -6,6 +6,33 @@
   const LANG_KEY = "commentron_language";
   const THEMES = ["dark", "light"];
   const LANGUAGES = ["en", "zh-CN"];
+  const JSON_PARSE_PATCH_FLAG = "__ceJsonParsePatched";
+
+  function patchGlobalJsonParse() {
+    try {
+      if (JSON[JSON_PARSE_PATCH_FLAG]) return;
+      const originalParse = JSON.parse.bind(JSON);
+
+      JSON.parse = function patchedJSONParse(value, reviver) {
+        if (value !== null && typeof value === "object") {
+          return value;
+        }
+
+        if (value === "[object Object]") {
+          return {};
+        }
+
+        return originalParse(value, reviver);
+      };
+
+      Object.defineProperty(JSON, JSON_PARSE_PATCH_FLAG, {
+        value: true,
+        configurable: true
+      });
+    } catch (_err) {
+      // Ignore if JSON.parse cannot be monkey-patched.
+    }
+  }
 
   function parseStoredAccount(raw) {
     if (!raw) return {};
@@ -30,24 +57,44 @@
     }
   }
 
-  function normalizeAccountStorageShape(result, area) {
+  function normalizeStorageShape(result, area) {
     if (!result || typeof result !== "object") return result;
-    if (!Object.prototype.hasOwnProperty.call(result, ACCOUNT_KEY)) return result;
 
-    const parsed = parseStoredAccount(result[ACCOUNT_KEY]);
-    const normalized = stringifyStoredAccount(parsed);
+    let changed = false;
+    const patchPayload = {};
+    const patched = { ...result };
 
-    if (result[ACCOUNT_KEY] !== normalized) {
-      const patched = { ...result, [ACCOUNT_KEY]: normalized };
+    for (const key of Object.keys(patched)) {
+      const rawValue = patched[key];
+      let normalizedValue = rawValue;
+
+      if (key === ACCOUNT_KEY) {
+        normalizedValue = stringifyStoredAccount(parseStoredAccount(rawValue));
+      } else if (rawValue && typeof rawValue === "object") {
+        // The extension storage helper expects JSON strings for object/array payloads.
+        try {
+          normalizedValue = JSON.stringify(rawValue);
+        } catch (_err) {
+          normalizedValue = rawValue;
+        }
+      }
+
+      if (normalizedValue !== rawValue) {
+        patched[key] = normalizedValue;
+        patchPayload[key] = normalizedValue;
+        changed = true;
+      }
+    }
+
+    if (changed) {
       try {
-        area?.set?.({ [ACCOUNT_KEY]: normalized }, () => {});
+        area?.set?.(patchPayload, () => {});
       } catch (_err) {
         // Ignore storage write-back failures.
       }
-      return patched;
     }
 
-    return result;
+    return patched;
   }
 
   function patchStorageAreaGet(area) {
@@ -60,13 +107,13 @@
       area.get = function patchedGet(keys, callback) {
         if (typeof callback === "function") {
           return originalGet(keys, (res) => {
-            callback(normalizeAccountStorageShape(res || {}, area));
+            callback(normalizeStorageShape(res || {}, area));
           });
         }
 
         const ret = originalGet(keys);
         if (ret && typeof ret.then === "function") {
-          return ret.then((res) => normalizeAccountStorageShape(res || {}, area));
+          return ret.then((res) => normalizeStorageShape(res || {}, area));
         }
         return ret;
       };
@@ -81,6 +128,7 @@
   }
 
   const STORAGE_AREAS = [];
+  patchGlobalJsonParse();
   if (typeof chrome !== "undefined" && chrome.storage) {
     if (chrome.storage.local) {
       patchStorageAreaGet(chrome.storage.local);

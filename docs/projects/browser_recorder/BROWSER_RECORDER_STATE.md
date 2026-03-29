@@ -49,7 +49,7 @@
   - 确认 `_metadata` 目录不存在，避免 Chrome 因保留目录命名拒绝加载。
 
 ## 2026-03-29 Extension Name Update
-- 扩展显示名已统一更新为：`] | [E2E回归] | [验证加载后核心录制链路稳定性]`
+- 扩展显示名已更新为：`Browser Recorder`
 - 生效范围：`D:\code\Chrome_Extensions\Browser Recorder\manifest.json` 的 `name`
 - 兼容性检查：
   - `manifest.json` 解析通过

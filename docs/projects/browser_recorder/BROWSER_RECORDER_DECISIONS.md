@@ -44,7 +44,7 @@
 
 ### Decision
 - 扩展名改为固定字面量，直接写入 `manifest.json > name`：
-  - `] | [E2E回归] | [验证加载后核心录制链路稳定性]`
+  - `Browser Recorder`
 
 ### Why
 - 当前项目为解包产物维护模式，直接改 `manifest` 可最小变更立即生效。

@@ -122,3 +122,16 @@
 ### Validation
 - `node --check D:\code\Chrome_Extensions\LinkedIn automatic comments\runtime.patch.js` passed.
 - Runtime patch now executes brand/title normalization and logo cleanup in `applyRuntimeLayers()`.
+
+## 2026-03-29 | Hard Override Follow-up (Brand + Corner Icon)
+
+### Status
+- Upgraded popup brand replacement to force mode:
+  - always set document title to `LinkedIn Automatic Comments`
+  - inject centered header overlay title to avoid split-node rendering misses
+- Upgraded bottom-right logo removal to viewport-position detection:
+  - hide `/assets/logo.png` only when located in bottom-right corner
+  - keep header region logo-safe by bounding-box exclusion
+
+### Validation
+- `node --check D:\code\Chrome_Extensions\LinkedIn automatic comments\runtime.patch.js` passed.

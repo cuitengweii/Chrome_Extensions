@@ -593,12 +593,32 @@
   function enforceBrandTitle() {
     if (!document.body) return;
 
-    if (/commen\s*tron/i.test(document.title || "")) {
-      document.title = BRAND_TITLE;
-    }
+    document.title = BRAND_TITLE;
 
     const header = document.querySelector(".header");
     if (!header) return;
+
+    header.style.position = "relative";
+
+    const titleOverlayId = "ce-brand-title-overlay";
+    let overlay = document.getElementById(titleOverlayId);
+    if (!overlay) {
+      overlay = document.createElement("div");
+      overlay.id = titleOverlayId;
+      overlay.style.position = "absolute";
+      overlay.style.left = "50%";
+      overlay.style.top = "50%";
+      overlay.style.transform = "translate(-50%, -50%)";
+      overlay.style.pointerEvents = "none";
+      overlay.style.whiteSpace = "nowrap";
+      overlay.style.fontWeight = "700";
+      overlay.style.fontSize = "34px";
+      overlay.style.lineHeight = "1";
+      overlay.style.textShadow = "0 4px 4px rgba(0,0,0,.25)";
+      overlay.style.color = "inherit";
+      header.appendChild(overlay);
+    }
+    overlay.textContent = BRAND_TITLE;
 
     const walker = document.createTreeWalker(
       header,
@@ -607,7 +627,7 @@
         acceptNode(node) {
           const value = (node.nodeValue || "").trim();
           if (!value) return NodeFilter.FILTER_REJECT;
-          return /CommenTRON|CommenTron/.test(value)
+          return /CommenTRON|CommenTron|Commen|TRON/i.test(value)
             ? NodeFilter.FILTER_ACCEPT
             : NodeFilter.FILTER_REJECT;
         }
@@ -617,7 +637,16 @@
     const nodes = [];
     while (walker.nextNode()) nodes.push(walker.currentNode);
     for (const node of nodes) {
-      node.nodeValue = (node.nodeValue || "").replace(/CommenTRON|CommenTron/g, BRAND_TITLE);
+      node.nodeValue = (node.nodeValue || "").replace(/CommenTRON|CommenTron|Commen|TRON/gi, "");
+    }
+
+    const elementCandidates = header.querySelectorAll("span, b, strong, div");
+    for (const el of elementCandidates) {
+      const txt = (el.textContent || "").trim();
+      if (!txt) continue;
+      if (/^(CommenTRON|CommenTron|Commen|TRON)$/i.test(txt)) {
+        el.style.display = "none";
+      }
     }
   }
 
@@ -626,10 +655,18 @@
 
     const logoImgs = document.querySelectorAll("img[src*='/assets/logo.png'], img.logo");
     for (const img of logoImgs) {
-      const fixedParent = img.closest("[style*='position: fixed'][style*='right'][style*='bottom']");
-      if (fixedParent) {
-        fixedParent.style.display = "none";
-      }
+      const rect = img.getBoundingClientRect();
+      const inBottomRight =
+        rect.bottom >= window.innerHeight - 140 &&
+        rect.right >= window.innerWidth - 140 &&
+        rect.width > 0 &&
+        rect.height > 0;
+      const inHeader = rect.top <= 130;
+      if (!inBottomRight || inHeader) continue;
+
+      const container = img.closest("a, div, span");
+      if (container) container.style.display = "none";
+      img.style.display = "none";
     }
   }
 

@@ -352,6 +352,21 @@
       helpSchedule: 'Set fixed times for automatic start. Runs in background alarm mode.',
       helpScheduleRetry: 'Configure background retry attempts and delay strategy when scheduled start fails.',
       helpDebug: 'Manual one-off prompt testing area. Use to tune output before full automation.',
+      helpAccountStep: 'Step 0. Confirm login, language, and plan status first. This avoids mixed-language output and auth errors later.',
+      helpAiStep: 'Step 0.5. Fill Spark fields and sync from GasGx when needed. This must be ready before any generate or auto run.',
+      helpProfileStep: 'Step 1. Select or edit the profile that defines voice, goal baseline, and reusable defaults.',
+      helpStrategyStep: 'Step 2. Pick risk mode, objective, and length to set the overall response strategy.',
+      helpContentStep: 'Step 3. Add temporary constraints and persona memory to shape how each reply is written.',
+      helpExecutionStep: 'Step 4. Decide send behavior and run cap before starting automation.',
+      helpAdvancedStep: 'Step 5. Fine-tune automation pipeline modules from actions to debug. Use sections in order for safer setup.',
+      helpSessionRisk: 'Session risk guards cap interactions, sessions, waits, and speed to reduce over-automation patterns.',
+      helpNameReplacements: 'Controls {name} replacement strategy and dictionary so generated text sounds natural but varied.',
+      helpFollowedEnd: 'When enabled, follow-success replies can swap ending sentences using your followed template pool.',
+      helpSearchFlow: 'Build include/exclude terms and reply thresholds as a clean search pipeline before opening X search.',
+      helpCloudBackup: 'Save current settings to cloud and pull them back across devices or browser resets.',
+      helpMetaFields: 'Lightweight compatibility toggles for sidebar tools and legacy metadata fields.',
+      pipelineTitle: 'Configuration Pipeline',
+      pipelineDesc: 'Go step by step. Use ? on each block to understand why this setting exists.',
       stepAi: 'Preparation · AI Engine',
       stepAiDesc: 'Confirm Spark and GasGx sync settings before generation or automation.',
       sparkStatus: 'AI Engine Status',
@@ -622,6 +637,21 @@
       helpSchedule: '设置固定启动时间，由后台闹钟自动触发运行。',
       helpScheduleRetry: '配置定时启动失败后的后台重试次数与延迟策略。',
       helpDebug: '手动单次调试区，先试提示词效果，再用于自动化。',
+      helpAccountStep: '步骤0：先确认登录、语言和账号状态，避免后续出现权限或文案错位。',
+      helpAiStep: '步骤0.5：先补齐 Spark 关键字段，必要时从 GasGx 同步，再进入生成和自动化。',
+      helpProfileStep: '步骤1：先确定“谁在说话”的人设，统一语气、目标和默认参数。',
+      helpStrategyStep: '步骤2：设置风险模式、互动目标和长度，先把策略框架定住。',
+      helpContentStep: '步骤3：补充本轮约束和长期人设记忆，控制生成内容边界。',
+      helpExecutionStep: '步骤4：启动前先定发送方式和本轮上限，避免失控执行。',
+      helpAdvancedStep: '步骤5：按流水线逐段微调高级模块，从动作到调试，建议按顺序配置。',
+      helpSessionRisk: '会话风控用于限制每轮互动量、会话数、等待时间和速度，降低异常行为风险。',
+      helpNameReplacements: '控制 {name} 的替换策略与词库，让文案更自然且避免重复口癖。',
+      helpFollowedEnd: '开启后，关注成功场景可使用“关注后尾句模板池”替换结尾文案。',
+      helpSearchFlow: '先用包含词/排除词/最小评论数构建搜索流水线，再一键打开搜索页。',
+      helpCloudBackup: '把当前设置保存到云端，也可以随时从云端拉回，便于跨设备恢复。',
+      helpMetaFields: '轻量兼容字段和入口开关，主要用于侧栏工具与历史行为兼容。',
+      pipelineTitle: '配置流水线',
+      pipelineDesc: '按步骤从上到下配置；每个功能块右侧 `?` 可查看说明。',
       stepAi: '准备项 · AI 引擎',
       stepAiDesc: '在生成和自动化前，先确认 Spark 与 GasGx 同步配置。',
       sparkStatus: 'AI 引擎状态',
@@ -741,6 +771,13 @@
   }
 
   const HELP_KEY_TO_I18N = Object.freeze({
+    accountStep: 'helpAccountStep',
+    aiStep: 'helpAiStep',
+    profileStep: 'helpProfileStep',
+    strategyStep: 'helpStrategyStep',
+    contentStep: 'helpContentStep',
+    executionStep: 'helpExecutionStep',
+    advancedStep: 'helpAdvancedStep',
     mode: 'helpMode',
     goal: 'helpGoal',
     len: 'helpLen',
@@ -752,11 +789,17 @@
     followConditions: 'helpFollowConditions',
     retweetConditions: 'helpRetweetConditions',
     flow: 'helpFlow',
+    sessionRisk: 'helpSessionRisk',
     filter: 'helpFilter',
+    searchFlow: 'helpSearchFlow',
     replyRules: 'helpReplyRules',
     replyTemplates: 'helpReplyTemplates',
     schedule: 'helpSchedule',
     scheduleRetry: 'helpScheduleRetry',
+    nameReplacements: 'helpNameReplacements',
+    followedEnd: 'helpFollowedEnd',
+    cloudBackup: 'helpCloudBackup',
+    metaFields: 'helpMetaFields',
     debug: 'helpDebug'
   })
   const SPARK_REQUIRED_FIELDS = ['url', 'app_id', 'api_key', 'api_secret']
@@ -1797,10 +1840,18 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
 #xac-root .group{border:1px solid #24543a;background:linear-gradient(180deg,#10231b,#0b1913);border-radius:10px;padding:9px;display:grid;gap:8px}
 #xac-root .group-h{font-size:12px;color:#c7f8df;font-weight:800;letter-spacing:.2px}
 #xac-root .step{display:grid;gap:3px;padding-bottom:7px;margin-bottom:1px;border-bottom:1px solid #1f4b35}
+#xac-root .step-hlabel{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
 #xac-root .step-title{font-size:15px;color:#dcffed;font-weight:900;line-height:1.15;letter-spacing:.25px}
 #xac-root .step-desc{font-size:11px;color:#8ec4a7;line-height:1.35}
 #xac-root .flash{box-shadow:0 0 0 2px rgba(96,246,161,.35),0 0 14px rgba(96,246,161,.25)}
 #xac-root .guide-banner{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'};border:1px solid #2d6649;border-left:3px solid #56df93;background:linear-gradient(180deg,#123126,#0d2119);border-radius:10px;padding:8px 9px;display:grid;gap:4px}
+#xac-root .pipeline-board{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'};border:1px solid #2f6e48;border-radius:10px;background:linear-gradient(180deg,#112a20,#0b1a14);padding:8px 9px;display:grid;gap:8px}
+#xac-root .pipeline-head{font-size:12px;color:#d8ffe8;font-weight:800}
+#xac-root .pipeline-desc{font-size:11px;color:#97ccaf;line-height:1.35}
+#xac-root .pipeline-grid{display:grid;grid-template-columns:repeat(${VIEW.isOptions ? '3' : '2'},minmax(0,1fr));gap:8px}
+#xac-root .pipeline-item{border:1px solid #27563d;border-radius:9px;background:#0d1c15;padding:7px;display:grid;gap:4px}
+#xac-root .pipeline-item .title{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;font-size:11px;color:#c9f8df;font-weight:700;line-height:1.3}
+#xac-root .pipeline-item .meta{font-size:10px;color:#8ec4a6;line-height:1.35}
 #xac-root .group-advanced{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'}}
 #xac-root .guide-banner .meta{font-size:11px;color:#b8ebd0;line-height:1.4}
 #xac-root .mini-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
@@ -1858,7 +1909,8 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
 #xac-ind.show{display:inline-flex}#xac-ind .d{width:8px;height:8px;border-radius:50%;background:#4bd98b;box-shadow:0 0 8px rgba(75,217,139,.9)}
 #xac-ind .s{border:1px solid #a86060;background:#352020;color:#ffbcbc;border-radius:6px;font-size:10px;padding:3px 7px;cursor:pointer}
 #xac-root .pro{border-color:#7a7a2a;background:#232314;color:#f0f0a7}
-@media (max-width:900px){#xac-root .body{grid-template-columns:1fr}#xac-root .guide-banner,#xac-root .group-advanced{grid-column:auto}}
+@media (max-width:900px){#xac-root .body{grid-template-columns:1fr}#xac-root .guide-banner,#xac-root .group-advanced,#xac-root .pipeline-board{grid-column:auto}#xac-root .pipeline-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media (max-width:620px){#xac-root .pipeline-grid{grid-template-columns:1fr}}
 @media (max-width:520px){#xac-root{right:${VIEW.isExtensionPage ? 'auto' : '8px'};bottom:${VIEW.isExtensionPage ? 'auto' : '10px'};width:calc(100vw - 16px);max-width:calc(100vw - 16px);min-width:0}}`
     document.documentElement.appendChild(st)
   }
@@ -2721,7 +2773,16 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     const d = S.editor?.draft || emptyProfileDraft()
     const hintBtn = (key) => `<button class="hint" type="button" data-help="${esc(key)}">?</button>`
     const hintLabel = (text, key) => `<div class="hlabel"><label>${esc(text)}</label>${key ? hintBtn(key) : ''}</div>`
-    const stepHead = (titleKey, descKey, anchorId = '') => `<div class="step"><div class="step-title"${anchorId ? ` id="${esc(anchorId)}"` : ''}>${esc(t(titleKey))}</div><div class="step-desc">${esc(t(descKey))}</div></div>`
+    const stepHead = (titleKey, descKey, anchorId = '', helpKey = '') => `<div class="step"><div class="step-hlabel"><div class="step-title"${anchorId ? ` id="${esc(anchorId)}"` : ''}>${esc(t(titleKey))}</div>${helpKey ? hintBtn(helpKey) : ''}</div><div class="step-desc">${esc(t(descKey))}</div></div>`
+    const pipelineSteps = [
+      { titleKey: 'stepAccount', descKey: 'stepAccountDesc', helpKey: 'accountStep' },
+      { titleKey: 'stepAi', descKey: 'stepAiDesc', helpKey: 'aiStep' },
+      { titleKey: 'stepProfile', descKey: 'stepProfileDesc', helpKey: 'profileStep' },
+      { titleKey: 'stepStrategy', descKey: 'stepStrategyDesc', helpKey: 'strategyStep' },
+      { titleKey: 'stepContent', descKey: 'stepContentDesc', helpKey: 'contentStep' },
+      { titleKey: 'stepExecution', descKey: 'stepExecutionDesc', helpKey: 'executionStep' },
+      { titleKey: 'stepAdvanced', descKey: 'stepAdvancedDesc', helpKey: 'advancedStep' }
+    ]
     if (VIEW.isContentPage) {
       root.className = S.open ? '' : 'collapsed'
       root.innerHTML = `<div class="shell">
@@ -2736,7 +2797,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           </div>
 
           <div class="group">
-            ${stepHead('stepExecution', 'stepExecutionDesc')}
+            ${stepHead('stepExecution', 'stepExecutionDesc', '', 'executionStep')}
             <div class="hlabel"><span class="mini">${esc(t('autoPost'))}</span>${hintBtn('autoPost')}</div>
             <div class="switch"><span>${esc(t('autoPost'))}</span><input id="xac-ap" type="checkbox" ${S.autoPost ? 'checked' : ''}/></div>
             ${hintLabel(t('max'), 'max')}
@@ -2798,9 +2859,26 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <div class="meta">• ${esc(t('guideLine2'))}</div>
           <div class="meta">• ${esc(t('guideLine3'))}</div>
         </div>
+        ${VIEW.isOptions ? `
+          <div class="pipeline-board">
+            <div class="pipeline-head">${esc(t('pipelineTitle'))}</div>
+            <div class="pipeline-desc">${esc(t('pipelineDesc'))}</div>
+            <div class="pipeline-grid">
+              ${pipelineSteps.map((item) => `
+                <div class="pipeline-item">
+                  <div class="title">
+                    <span>${esc(t(item.titleKey))}</span>
+                    ${hintBtn(item.helpKey)}
+                  </div>
+                  <div class="meta">${esc(t(item.descKey))}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
 
         <div class="group">
-          ${stepHead('stepAccount', 'stepAccountDesc')}
+          ${stepHead('stepAccount', 'stepAccountDesc', '', 'accountStep')}
           <div class="card">
             <div class="meta">${esc(t('planLine'))}</div>
             <div class="meta">${esc(t('remainLine'))}</div>
@@ -2818,7 +2896,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepAi', 'stepAiDesc')}
+          ${stepHead('stepAi', 'stepAiDesc', '', 'aiStep')}
           <div class="card">
             <div class="meta">${esc(t('sparkStatus'))}: ${esc(formatSparkMissingMessage(S.sparkPublic))}</div>
           </div>
@@ -2844,7 +2922,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepProfile', 'stepProfileDesc')}
+          ${stepHead('stepProfile', 'stepProfileDesc', '', 'profileStep')}
           <div class="r3 profile-row">
             <select id="xac-p" ${isBusy ? 'disabled' : ''}>${ps.map((x) => { const pz = localizePresetProfile(x, S.lang); return `<option value="${esc(x.id)}" ${x.id === S.profile.activeProfileId ? 'selected' : ''}>${esc(`${pz.emoji} ${pz.name}`)}</option>` }).join('')}</select>
             <button class="profile-act" id="xac-p-e" ${isBusy ? 'disabled' : ''}>${esc(t('editP'))}</button>
@@ -2853,7 +2931,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepStrategy', 'stepStrategyDesc')}
+          ${stepHead('stepStrategy', 'stepStrategyDesc', '', 'strategyStep')}
           ${hintLabel(t('mode'), 'mode')}
           <div class="chip-group mode">
             ${modeOptions.map((item) => `<button class="chip ${q.engagementMode === item.id ? 'active' : ''}" data-mode="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
@@ -2869,7 +2947,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepContent', 'stepContentDesc')}
+          ${stepHead('stepContent', 'stepContentDesc', '', 'contentStep')}
           ${hintLabel(t('ci'), 'ci')}
           <textarea id="xac-ci">${esc(q.customInstructions || p.instructions || '')}</textarea>
           ${hintLabel(t('persona'), 'persona')}
@@ -2877,7 +2955,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepExecution', 'stepExecutionDesc')}
+          ${stepHead('stepExecution', 'stepExecutionDesc', '', 'executionStep')}
           <div class="hlabel"><span class="mini">${esc(t('autoPost'))}</span>${hintBtn('autoPost')}</div>
           <div class="switch"><span>${esc(t('autoPost'))}</span><input id="xac-ap" type="checkbox" ${S.autoPost ? 'checked' : ''}/></div>
           ${hintLabel(t('max'), 'max')}
@@ -2891,15 +2969,15 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group group-advanced">
-          ${stepHead('stepAdvanced', 'stepAdvancedDesc', 'xac-advanced-anchor')}
-          <div class="subh first"><span>${esc(t('sectionAutoActions'))}</span>${hintBtn('autoActions')}</div>
+          ${stepHead('stepAdvanced', 'stepAdvancedDesc', 'xac-advanced-anchor', 'advancedStep')}
+          <div class="subh first"><span>${esc(`${S.lang === 'zh' ? '5.1 · ' : '5.1 · '}${t('sectionAutoActions')}`)}</span>${hintBtn('autoActions')}</div>
           <div class="switch"><span>${esc(t('autoLike'))}</span><input id="xac-like" type="checkbox" ${S.advanced.autoLike ? 'checked' : ''}/></div>
           <div class="switch"><span>${esc(t('autoRetweet'))}</span><input id="xac-retweet" type="checkbox" ${S.advanced.autoRetweet ? 'checked' : ''}/></div>
           <div class="switch"><span>${esc(t('autoFollow'))}</span><input id="xac-follow" type="checkbox" ${S.advanced.autoFollow ? 'checked' : ''}/></div>
           <label>${esc(t('replyLikeFrequency'))}</label><input id="xac-reply-like-frequency" type="number" min="0" max="100" step="1" value="${esc(String(S.advanced.replyLikeFrequency))}"/>
           <label>${esc(t('extraLikesFrequency'))}</label><input id="xac-extra-likes-frequency" type="number" min="0" max="100" step="1" value="${esc(String(S.advanced.extraLikesFrequency))}"/>
 
-          <div class="subh"><span>${esc(t('sectionSessionRisk'))}</span></div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.2 · ' : '5.2 · '}${t('sectionSessionRisk')}`)}</span>${hintBtn('sessionRisk')}</div>
           <label>${esc(t('sessionInteractionsMin'))}</label><input id="xac-session-min" type="number" min="1" max="500" step="1" value="${esc(String(S.advanced.maxInteractionsPerSessionMin))}"/>
           <label>${esc(t('sessionInteractionsMax'))}</label><input id="xac-session-max" type="number" min="1" max="600" step="1" value="${esc(String(S.advanced.maxInteractionsPerSessionMax))}"/>
           <label>${esc(t('sessionMaxTotal'))}</label><input id="xac-session-total" type="number" min="1" max="30" step="1" value="${esc(String(S.advanced.maxTotalSessions))}"/>
@@ -2910,14 +2988,14 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <div class="switch"><span>${esc(t('sessionRefreshFeed'))}</span><input id="xac-use-refresh-feed" type="checkbox" ${S.advanced.useRefreshFeed ? 'checked' : ''}/></div>
           <div class="switch"><span>${esc(t('sessionRandomMouse'))}</span><input id="xac-random-mouse" type="checkbox" ${S.advanced.randomMouseMovement ? 'checked' : ''}/></div>
 
-          <div class="subh"><span>${esc(t('sectionFollowRules'))}</span>${hintBtn('followConditions')}</div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.3 · ' : '5.3 · '}${t('sectionFollowRules')}`)}</span>${hintBtn('followConditions')}</div>
           <div class="meta">${esc(t('followRuleHint'))}</div>
           <label>${esc(t('followMinFollowers'))}</label><input id="xac-follow-min-followers" type="number" min="0" max="9999999" step="1" value="${esc(String(S.advanced.followMinFollowers))}"/>
           <label>${esc(t('followMaxFollowers'))}</label><input id="xac-follow-max-followers" type="number" min="0" max="9999999" step="1" value="${esc(String(S.advanced.followMaxFollowers))}"/>
           <label>${esc(t('followMinMutuals'))}</label><input id="xac-follow-min-mutuals" type="number" min="0" max="9999999" step="1" value="${esc(String(S.advanced.followMinMutuals))}"/>
           <div class="switch"><span>${esc(t('followRequireSignals'))}</span><input id="xac-follow-require-signals" type="checkbox" ${S.advanced.followRequireSignals ? 'checked' : ''}/></div>
 
-          <div class="subh"><span>${esc(t('sectionNameReplacements'))}</span></div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.4 · ' : '5.4 · '}${t('sectionNameReplacements')}`)}</span>${hintBtn('nameReplacements')}</div>
           <label>${esc(t('nameReplacementStrategy'))}</label>
           <select id="xac-name-replacement-mode">
             <option value="never" ${S.advanced.useNameReplacements === 'never' ? 'selected' : ''}>${esc(t('nameReplacementNever'))}</option>
@@ -2927,18 +3005,18 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <label>${esc(t('nameReplacementDictionary'))}</label>
           <input id="xac-name-replacements" type="text" value="${esc(usernameReplacementsText)}" />
 
-          <div class="subh"><span>${esc(t('sectionFollowedEndGreetings'))}</span></div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.5 · ' : '5.5 · '}${t('sectionFollowedEndGreetings')}`)}</span>${hintBtn('followedEnd')}</div>
           <div class="switch"><span>${esc(t('followedEndEnabled'))}</span><input id="xac-followed-end-enabled" type="checkbox" ${S.advanced.followedReplaceEndGreeting ? 'checked' : ''}/></div>
           <label>${esc(t('followedEndTemplates'))}</label>
           <textarea id="xac-followed-end-pool">${esc(followedEndText)}</textarea>
 
-          <div class="subh"><span>${esc(t('sectionRetweetRules'))}</span>${hintBtn('retweetConditions')}</div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.6 · ' : '5.6 · '}${t('sectionRetweetRules')}`)}</span>${hintBtn('retweetConditions')}</div>
           <div class="meta">${esc(t('retweetRuleHint'))}</div>
           <label>${esc(t('retweetMinLikes'))}</label><input id="xac-retweet-min-likes" type="number" min="0" max="9999999" step="1" value="${esc(String(S.advanced.retweetMinLikes))}"/>
           <label>${esc(t('retweetMinRetweets'))}</label><input id="xac-retweet-min-retweets" type="number" min="0" max="9999999" step="1" value="${esc(String(S.advanced.retweetMinRetweets))}"/>
           <label>${esc(t('retweetMinReplies'))}</label><input id="xac-retweet-min-replies" type="number" min="0" max="9999999" step="1" value="${esc(String(S.advanced.retweetMinReplies))}"/>
 
-          <div class="subh"><span>${esc(t('sectionFlow'))}</span>${hintBtn('flow')}</div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.7 · ' : '5.7 · '}${t('sectionFlow')}`)}</span>${hintBtn('flow')}</div>
           <label>${esc(t('scrollStep'))}</label><input id="xac-scroll-step" type="number" min="300" max="2000" step="50" value="${esc(String(S.advanced.scrollStep))}"/>
           <label>${esc(t('scrollDelayMs'))}</label><input id="xac-scroll-delay" type="number" min="400" max="10000" step="100" value="${esc(String(S.advanced.scrollDelayMs))}"/>
           <label>${esc(t('replyDelayMinMs'))}</label><input id="xac-reply-delay-min" type="number" min="500" max="30000" step="100" value="${esc(String(S.advanced.replyDelayMinMs))}"/>
@@ -2946,12 +3024,13 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <label>${esc(t('actionDelayMs'))}</label><input id="xac-action-delay" type="number" min="100" max="5000" step="50" value="${esc(String(S.advanced.actionDelayMs))}"/>
           <label>${esc(t('maxIdleLoops'))}</label><input id="xac-max-idle" type="number" min="1" max="50" step="1" value="${esc(String(S.advanced.maxIdleLoops))}"/>
 
-          <div class="subh"><span>${esc(t('sectionFilter'))}</span>${hintBtn('filter')}</div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.8 · ' : '5.8 · '}${t('sectionFilter')}`)}</span>${hintBtn('filter')}</div>
           <label>${esc(t('minTweetChars'))}</label><input id="xac-min-chars" type="number" min="0" max="1000" step="10" value="${esc(String(S.advanced.minTweetChars))}"/>
           <div class="switch"><span>${esc(t('skipIfContainsLinks'))}</span><input id="xac-skip-links" type="checkbox" ${S.advanced.skipIfContainsLinks ? 'checked' : ''}/></div>
           <div class="switch"><span>${esc(t('skipIfContainsImages'))}</span><input id="xac-skip-images" type="checkbox" ${S.advanced.skipIfContainsImages ? 'checked' : ''}/></div>
           <label>${esc(t('postWithinMinutes'))}</label><input id="xac-post-within-minutes" type="number" min="5" max="10080" step="5" value="${esc(String(S.advanced.postWithinMinutes))}"/>
           <div class="switch"><span>${esc(t('onlyBlueChecks'))}</span><input id="xac-only-blue-checks" type="checkbox" ${S.advanced.onlyBlueChecks ? 'checked' : ''}/></div>
+          <div class="subh"><span>${esc(S.lang === 'zh' ? '5.9 · 搜索流水线' : '5.9 · Search Pipeline')}</span>${hintBtn('searchFlow')}</div>
           <label>${esc(t('searchIncludeTerms'))}</label>
           <div class="or-row">
             <input id="xac-search-include-a" type="text" placeholder="${esc(t('searchIncludePlaceholderA'))}" value="${esc(includeTermA)}"/>
@@ -2964,7 +3043,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <label>${esc(t('searchPreview'))}</label><input id="xac-search-preview" type="text" readonly value="${esc(S.advanced.searchQuery || DEFAULT_X_SEARCH_QUERY)}"/>
           <button id="xac-open-search">${esc(t('openSearch'))}</button>
 
-          <div class="subh"><span>${esc(t('sectionSchedule'))}</span>${hintBtn('schedule')}</div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.10 · ' : '5.10 · '}${t('sectionSchedule')}`)}</span>${hintBtn('schedule')}</div>
           <div class="meta">${esc(t('scheduleDesc'))}</div>
           <div class="card schedule-runtime">
             <div class="hlabel">
@@ -2973,7 +3052,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
             </div>
             <div class="meta">${esc(`${t('scheduleRuntimeUpdated')}: ${formatScheduleRuntimeTimestamp(scheduleRuntime.updatedAt || scheduleRuntime.lastSyncAt)}`)}</div>
           </div>
-          <div class="subh"><span>${esc(t('sectionScheduleRetry'))}</span>${hintBtn('scheduleRetry')}</div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.11 · ' : '5.11 · '}${t('sectionScheduleRetry')}`)}</span>${hintBtn('scheduleRetry')}</div>
           <div class="switch"><span>${esc(t('scheduleRetryEnabled'))}</span><input id="xac-schedule-retry-enabled" type="checkbox" ${S.advanced.scheduleRetryEnabled ? 'checked' : ''}/></div>
           <label>${esc(t('scheduleRetryMaxAttempts'))}</label>
           <input id="xac-schedule-retry-max-attempts" type="number" min="0" max="5" step="1" value="${esc(String(S.advanced.scheduleRetryMaxAttempts || 0))}" />
@@ -3024,7 +3103,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
             </div>
           `).join('')}
 
-          <div class="subh"><span>${esc(t('sectionCloudBackup'))}</span></div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.12 · ' : '5.12 · '}${t('sectionCloudBackup')}`)}</span>${hintBtn('cloudBackup')}</div>
           <div class="r2">
             <button id="xac-cloud-save">${esc(t('cloudSave'))}</button>
             <button id="xac-cloud-load">${esc(t('cloudLoad'))}</button>
@@ -3033,7 +3112,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <div class="meta">${esc(`${t('cloudLastPulled')}: ${cloudPulledLabel}`)}</div>
           <div class="meta">${esc(S.cloudSyncStatus?.lastError || '--')}</div>
 
-          <div class="subh"><span>${esc(t('sectionMetaFields'))}</span></div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.13 · ' : '5.13 · '}${t('sectionMetaFields')}`)}</span>${hintBtn('metaFields')}</div>
           <label>${esc(t('templateName'))}</label><input id="xac-template-name" type="text" value="${esc(String(S.advanced.templateName || t('templateDefaultName')))}" />
           <div class="switch"><span>${esc(t('addGMButtonLabel'))}</span><input id="xac-add-gm-button" type="checkbox" ${S.advanced.addGMButton ? 'checked' : ''}/></div>
           <div class="switch"><span>${esc(t('showSideBarControlsLabel'))}</span><input id="xac-show-sidebar-controls" type="checkbox" ${S.advanced.showSideBarControls ? 'checked' : ''}/></div>
@@ -3046,7 +3125,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
             </div>
           ` : ''}
 
-          <div class="subh"><span>${esc(t('sectionReplyRules'))}</span>${hintBtn('replyRules')}</div>
+          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.14 · ' : '5.14 · '}${t('sectionReplyRules')}`)}</span>${hintBtn('replyRules')}</div>
           <div class="meta">${esc(t('replyRulesDesc'))}</div>
           <div class="r2">
             <button id="xac-rule-add">${esc(t('replyRuleAdd'))}</button>
@@ -3102,7 +3181,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
             </div>
           `).join('')}
 
-          <div class="subh"><span>${esc(t('debugSec'))}</span>${hintBtn('debug')}</div>
+          <div class="subh"><span>${esc(S.lang === 'zh' ? '5.15 · 调试与校验' : '5.15 · Debug & Validation')}</span>${hintBtn('debug')}</div>
           <label>${esc(t('debugPrompt'))}</label><textarea id="xac-debug-prompt">${esc(S.advanced.debugPrompt || '')}</textarea>
           <div class="r2">
             <button id="xac-debug-g" ${isBusy ? 'disabled' : ''}>${esc(t('debugGenerate'))}</button>
@@ -3875,6 +3954,10 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           return
         }
         if (message.xacAction === 'xac:content-open-search') {
+          if (!VIEW.isContentPage) {
+            sendResponse({ opened: false, ignored: true })
+            return
+          }
           window.location.href = buildSearchUrl(message.query || S.advanced?.searchQuery || '')
           sendResponse({ opened: true })
           return

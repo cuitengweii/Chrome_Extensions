@@ -1415,7 +1415,9 @@ async function getPreferredXTab() {
   return allXTabs[0] || null
 }
 
-async function ensureXTabForCommand(rawQuery, createIfMissing = true) {
+async function ensureXTabForCommand(rawQuery, createIfMissing = true, options = {}) {
+  const activateExistingTab = options.activateExistingTab !== false
+  const focusSelectedWindow = options.focusSelectedWindow !== false
   const fallbackUrl = buildXSearchUrl(rawQuery)
   let tab = await getPreferredXTab()
   let created = false
@@ -1423,11 +1425,13 @@ async function ensureXTabForCommand(rawQuery, createIfMissing = true) {
   if (!tab && createIfMissing) {
     tab = await createTab({ url: fallbackUrl, active: true })
     created = true
-  } else if (tab) {
+  } else if (tab && activateExistingTab) {
     await updateTab(tab.id, { active: true })
   }
 
-  await focusWindow(tab?.windowId)
+  if (focusSelectedWindow && (created || activateExistingTab)) {
+    await focusWindow(tab?.windowId)
+  }
   if (created) {
     await waitForTabComplete(tab.id, 14000)
   }
@@ -1438,7 +1442,12 @@ async function ensureXTabForCommand(rawQuery, createIfMissing = true) {
 async function sendContentCommandWithRetry(rawQuery, payload, options = {}) {
   const createIfMissing = options.createIfMissing !== false
   const reopenOnRecoverable = options.reopenOnRecoverable !== false
-  const { tab, created, fallbackUrl } = await ensureXTabForCommand(rawQuery, createIfMissing)
+  const activateExistingTab = options.activateExistingTab !== false
+  const focusSelectedWindow = options.focusSelectedWindow !== false
+  const { tab, created, fallbackUrl } = await ensureXTabForCommand(rawQuery, createIfMissing, {
+    activateExistingTab,
+    focusSelectedWindow
+  })
 
   if (!tab || typeof tab.id !== "number") {
     return {
@@ -1476,7 +1485,9 @@ async function sendContentCommandWithRetry(rawQuery, payload, options = {}) {
 
   if (reopenOnRecoverable) {
     await updateTab(tab.id, { url: fallbackUrl, active: true })
-    await focusWindow(tab?.windowId)
+    if (focusSelectedWindow) {
+      await focusWindow(tab?.windowId)
+    }
     await waitForTabComplete(tab.id, 14000)
 
     for (const delayMs of delays) {
@@ -1551,7 +1562,12 @@ async function getXRuntimeState(rawQuery) {
   const result = await sendContentCommandWithRetry(
     toStringValue(rawQuery, ""),
     { xacAction: "xac:content-get-runtime-state" },
-    { createIfMissing: false, reopenOnRecoverable: false }
+    {
+      createIfMissing: false,
+      reopenOnRecoverable: false,
+      activateExistingTab: false,
+      focusSelectedWindow: false
+    }
   )
   if (result.ok) {
     return {

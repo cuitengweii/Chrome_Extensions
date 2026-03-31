@@ -133,3 +133,13 @@
 ### Stable Defaults
 - Branding replacement is limited to header text nodes only.
 - Bottom-right logo suppression is limited to fixed-position container carrying the logo image.
+
+## 2026-03-29 | Visual Override Robustness Upgrade
+
+### Decision
+- Replace fragile text-node-only branding logic with deterministic overlay title rendering in popup header.
+- Replace style-attribute-based corner-logo selector with viewport-position-based hiding logic.
+
+### Stable Defaults
+- Brand enforcement no longer depends on bundled DOM split structure (`Commen` + `TRON` cases covered).
+- Corner icon suppression no longer depends on inline style presence (works with MUI class-generated positioning).

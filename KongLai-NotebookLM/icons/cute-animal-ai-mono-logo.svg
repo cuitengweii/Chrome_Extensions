@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Cute animal AI mono logo">
+  <g fill="none" stroke="#1A73E8" stroke-width="24" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M166 168l-34-64 86 34"/>
+    <path d="M346 168l34-64-86 34"/>
+
+    <path d="M106 286c0-83 67-150 150-150s150 67 150 150v36c0 83-67 150-150 150s-150-67-150-150z"/>
+
+    <circle cx="208" cy="296" r="28"/>
+    <circle cx="304" cy="296" r="28"/>
+    <path d="M286 296h36"/>
+    <path d="M304 278v36"/>
+
+    <circle cx="256" cy="342" r="8"/>
+    <path d="M224 374c19 18 45 18 64 0"/>
+
+    <rect x="232" y="206" width="48" height="34" rx="8"/>
+    <path d="M256 206v-32"/>
+    <circle cx="256" cy="162" r="8"/>
+  </g>
+</svg>

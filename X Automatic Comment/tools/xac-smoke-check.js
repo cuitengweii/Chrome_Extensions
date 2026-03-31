@@ -30,6 +30,84 @@ function extractBetween(src, startMarker, endMarker) {
   return src.slice(start + startMarker.length, end).trim().replace(/;$/, "")
 }
 
+function extractObjectLiteralAfter(src, marker) {
+  const markerIndex = src.indexOf(marker)
+  if (markerIndex < 0) throw new Error(`Missing marker: ${marker}`)
+  const openIndex = src.indexOf("{", markerIndex + marker.length)
+  if (openIndex < 0) throw new Error(`Missing object literal after marker: ${marker}`)
+
+  let depth = 0
+  let startIndex = -1
+  let inSingle = false
+  let inDouble = false
+  let inTemplate = false
+  let escaped = false
+
+  for (let i = openIndex; i < src.length; i += 1) {
+    const ch = src[i]
+    const next = src[i + 1]
+
+    if (inSingle) {
+      if (escaped) escaped = false
+      else if (ch === "\\") escaped = true
+      else if (ch === "'") inSingle = false
+      continue
+    }
+    if (inDouble) {
+      if (escaped) escaped = false
+      else if (ch === "\\") escaped = true
+      else if (ch === '"') inDouble = false
+      continue
+    }
+    if (inTemplate) {
+      if (escaped) escaped = false
+      else if (ch === "\\") escaped = true
+      else if (ch === "`") inTemplate = false
+      continue
+    }
+
+    if (ch === "/" && next === "/") {
+      i += 2
+      while (i < src.length && src[i] !== "\n") i += 1
+      continue
+    }
+    if (ch === "/" && next === "*") {
+      i += 2
+      while (i < src.length - 1 && !(src[i] === "*" && src[i + 1] === "/")) i += 1
+      i += 1
+      continue
+    }
+
+    if (ch === "'") {
+      inSingle = true
+      continue
+    }
+    if (ch === '"') {
+      inDouble = true
+      continue
+    }
+    if (ch === "`") {
+      inTemplate = true
+      continue
+    }
+
+    if (ch === "{") {
+      if (depth === 0) startIndex = i
+      depth += 1
+      continue
+    }
+    if (ch === "}") {
+      depth -= 1
+      if (depth === 0 && startIndex >= 0) {
+        return src.slice(startIndex, i + 1)
+      }
+      continue
+    }
+  }
+
+  throw new Error(`Unclosed object literal after marker: ${marker}`)
+}
+
 function evalObjectLiteral(rawObjectLiteral) {
   return Function(`return (${rawObjectLiteral})`)()
 }
@@ -58,8 +136,8 @@ function run() {
   const popupHtml = read(FILES.popup)
   const optionsHtml = read(FILES.options)
 
-  const uiI18n = evalObjectLiteral(extractBetween(uiSource, "const I18N = ", "\n\n  const TEXT_REPLACE"))
-  const contentI18n = evalObjectLiteral(extractBetween(contentSource, "const I18N = ", "\n\n  const S ="))
+  const uiI18n = evalObjectLiteral(extractObjectLiteralAfter(uiSource, "const I18N ="))
+  const contentI18n = evalObjectLiteral(extractObjectLiteralAfter(contentSource, "const I18N ="))
 
   const uiI18nDiff = compareKeys(uiI18n.en, uiI18n.zh)
   const contentI18nDiff = compareKeys(contentI18n.en, contentI18n.zh)

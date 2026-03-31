@@ -103,3 +103,14 @@
 
 ### Avoid Next Time
 - For popup visual cleanup requests, inspect both textual nodes and fixed-position decorative assets.
+
+## 2026-03-29 | MUI sx Positioning Broke Style-Substring Selectors
+
+### Pitfall
+- Selecting fixed elements via `[style*='position: fixed']` is unreliable when layout is generated via MUI `sx` classes rather than inline style attributes.
+
+### What Worked
+- Switched to geometry-based detection (`getBoundingClientRect`) for bottom-right icon removal.
+
+### Avoid Next Time
+- For UI cleanup in bundled React/MUI outputs, avoid relying solely on inline-style substring selectors.

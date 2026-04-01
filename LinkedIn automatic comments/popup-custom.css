@@ -201,6 +201,70 @@ a {
   background: var(--ce-accent-soft);
 }
 
+#ce-preferences-auto-send-root {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  border: 1px solid var(--ce-border);
+  background: var(--ce-surface);
+}
+
+.ce-pref-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ce-pref-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--ce-text);
+}
+
+.ce-pref-toggle input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+}
+
+#ce-pref-delay-caption {
+  font-size: 11px;
+  color: var(--ce-muted);
+}
+
+#ce-pref-delay-label {
+  font-size: 11px;
+  font-weight: 600;
+  min-width: 44px;
+  text-align: center;
+  color: var(--ce-text);
+}
+
+#ce-pref-delay-min,
+#ce-pref-delay-max {
+  width: 42px;
+  height: 24px;
+  border-radius: 10px;
+  border: 1px solid var(--ce-border);
+  background: var(--ce-panel);
+  color: var(--ce-text);
+  text-align: center;
+  font-size: 11px;
+  padding: 0 4px;
+  outline: none;
+}
+
+#ce-pref-delay-min:focus,
+#ce-pref-delay-max:focus {
+  border-color: var(--ce-accent);
+}
+
 button[disabled],
 input[disabled],
 select[disabled],

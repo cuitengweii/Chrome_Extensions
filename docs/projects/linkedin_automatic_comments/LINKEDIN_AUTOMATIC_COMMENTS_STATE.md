@@ -135,3 +135,41 @@
 
 ### Validation
 - `node --check D:\code\Chrome_Extensions\LinkedIn automatic comments\runtime.patch.js` passed.
+
+## 2026-04-01 | Preferences Auto-Send Controls + Delay Range
+
+### Status
+- Popup preferences now include a new auto-send control block injected by runtime patch:
+  - toggle: enable/disable auto click on comment send
+  - delay range: min/max random seconds before auto-send
+- New storage keys landed:
+  - `ce_auto_send_enabled`
+  - `ce_auto_send_delay_min_sec`
+  - `ce_auto_send_delay_max_sec`
+- Runtime now exposes delay helpers for cross-context use:
+  - `window.__ceGetAutoSendDelayMs()`
+  - `window.__ceIsAutoSendEnabled()`
+- Delay range is normalized and clamped to `0~30s`, with min/max auto-correction when input order is reversed.
+
+### Landed Output
+- Updated runtime logic:
+  - `D:\code\Chrome_Extensions\LinkedIn automatic comments\runtime.patch.js`
+- Updated popup style block for preferences row:
+  - `D:\code\Chrome_Extensions\LinkedIn automatic comments\popup-custom.css`
+- Updated content bundle patch segment:
+  - `D:\code\Chrome_Extensions\LinkedIn automatic comments\contents.f6a134c0.js`
+
+### Regression Snapshot
+- `node --check D:\code\Chrome_Extensions\LinkedIn automatic comments\runtime.patch.js` passed.
+- `node --check D:\code\Chrome_Extensions\LinkedIn automatic comments\contents.f6a134c0.js` passed.
+- Cross-file control wiring checks passed for:
+  - `ce-preferences-auto-send-root`
+  - `ce-pref-auto-send-toggle`
+  - `setupAutoSendDelayRuntime`
+  - `mountPreferencesAutoSendControls`
+
+### Next Step
+- Validate real-browser behavior in LinkedIn popup:
+  - toggle on/off truly controls auto-send execution path
+  - min/max delay values persist after popup reopen and browser restart
+  - zh-CN/en labels for new controls remain consistent with current language toggle

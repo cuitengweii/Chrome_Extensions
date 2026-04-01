@@ -114,3 +114,19 @@
 
 ### Avoid Next Time
 - For UI cleanup in bundled React/MUI outputs, avoid relying solely on inline-style substring selectors.
+
+## 2026-04-01 | Popup Preference Injection Needs Cross-File Wiring Checks
+
+### Pitfall
+- In packaged-output extension projects, adding popup runtime controls can silently fail when style layer and runtime injection IDs drift.
+
+### What Worked
+- Used ID-level cross-file checks between `runtime.patch.js` and `popup-custom.css` for the new auto-send block.
+- Added storage normalization + clamped range helpers before wiring UI events, reducing malformed input edge cases.
+
+### Avoid Next Time
+- Treat each new popup control as a 3-part contract:
+  - runtime mount/injection ID
+  - style selector ID/class
+  - storage key + normalization rule
+- Before handoff, always run syntax checks plus ID/wiring verification for patched bundle projects.

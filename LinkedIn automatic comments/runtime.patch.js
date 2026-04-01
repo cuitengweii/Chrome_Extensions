@@ -8,6 +8,16 @@
   const THEMES = ["dark", "light"];
   const LANGUAGES = ["en", "zh-CN"];
   const JSON_PARSE_PATCH_FLAG = "__ceJsonParsePatched";
+  const AUTO_SEND_ENABLED_KEY = "ce_auto_send_enabled";
+  const DELAY_MIN_SEC_KEY = "ce_auto_send_delay_min_sec";
+  const DELAY_MAX_SEC_KEY = "ce_auto_send_delay_max_sec";
+  const DEFAULT_AUTO_SEND_ENABLED = true;
+  const DEFAULT_DELAY_MIN_SEC = 2;
+  const DEFAULT_DELAY_MAX_SEC = 7;
+
+  let autoSendEnabled = DEFAULT_AUTO_SEND_ENABLED;
+  let autoSendDelayMinSec = DEFAULT_DELAY_MIN_SEC;
+  let autoSendDelayMaxSec = DEFAULT_DELAY_MAX_SEC;
 
   function patchGlobalJsonParse() {
     try {
@@ -383,6 +393,127 @@
     return navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
   }
 
+  function clampDelaySecond(value, fallback) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.max(0, Math.min(30, Math.round(n)));
+  }
+
+  function normalizeDelayRange(minSec, maxSec) {
+    let min = clampDelaySecond(minSec, DEFAULT_DELAY_MIN_SEC);
+    let max = clampDelaySecond(maxSec, DEFAULT_DELAY_MAX_SEC);
+    if (max < min) {
+      const tmp = min;
+      min = max;
+      max = tmp;
+    }
+    return { min, max };
+  }
+
+  function setAutoSendDelayRange(minSec, maxSec) {
+    const normalized = normalizeDelayRange(minSec, maxSec);
+    autoSendDelayMinSec = normalized.min;
+    autoSendDelayMaxSec = normalized.max;
+    return normalized;
+  }
+
+  function normalizeAutoSendEnabled(value) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "string") {
+      const lowered = value.toLowerCase();
+      if (lowered === "true") return true;
+      if (lowered === "false") return false;
+    }
+    return DEFAULT_AUTO_SEND_ENABLED;
+  }
+
+  function persistAutoSendDelayRange() {
+    const storage = chrome?.storage?.local;
+    if (!storage?.set) return Promise.resolve();
+    const normalized = setAutoSendDelayRange(autoSendDelayMinSec, autoSendDelayMaxSec);
+    return new Promise((resolve) => {
+      try {
+        storage.set(
+          {
+            [DELAY_MIN_SEC_KEY]: normalized.min,
+            [DELAY_MAX_SEC_KEY]: normalized.max
+          },
+          () => resolve()
+        );
+      } catch (_err) {
+        resolve();
+      }
+    });
+  }
+
+  function persistAutoSendSettings() {
+    const storage = chrome?.storage?.local;
+    if (!storage?.set) return Promise.resolve();
+
+    const normalized = setAutoSendDelayRange(autoSendDelayMinSec, autoSendDelayMaxSec);
+    autoSendEnabled = normalizeAutoSendEnabled(autoSendEnabled);
+
+    return new Promise((resolve) => {
+      try {
+        storage.set(
+          {
+            [AUTO_SEND_ENABLED_KEY]: autoSendEnabled,
+            [DELAY_MIN_SEC_KEY]: normalized.min,
+            [DELAY_MAX_SEC_KEY]: normalized.max
+          },
+          () => resolve()
+        );
+      } catch (_err) {
+        resolve();
+      }
+    });
+  }
+
+  function loadAutoSendDelayRange() {
+    const storage = chrome?.storage?.local;
+    if (!storage?.get) {
+      autoSendEnabled = DEFAULT_AUTO_SEND_ENABLED;
+      setAutoSendDelayRange(DEFAULT_DELAY_MIN_SEC, DEFAULT_DELAY_MAX_SEC);
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      try {
+        storage.get(
+          {
+            [AUTO_SEND_ENABLED_KEY]: DEFAULT_AUTO_SEND_ENABLED,
+            [DELAY_MIN_SEC_KEY]: DEFAULT_DELAY_MIN_SEC,
+            [DELAY_MAX_SEC_KEY]: DEFAULT_DELAY_MAX_SEC
+          },
+          (obj) => {
+            autoSendEnabled = normalizeAutoSendEnabled(obj?.[AUTO_SEND_ENABLED_KEY]);
+            setAutoSendDelayRange(obj?.[DELAY_MIN_SEC_KEY], obj?.[DELAY_MAX_SEC_KEY]);
+            resolve();
+          }
+        );
+      } catch (_err) {
+        autoSendEnabled = DEFAULT_AUTO_SEND_ENABLED;
+        setAutoSendDelayRange(DEFAULT_DELAY_MIN_SEC, DEFAULT_DELAY_MAX_SEC);
+        resolve();
+      }
+    });
+  }
+
+  function getAutoSendDelayMs() {
+    const minMs = Math.max(0, autoSendDelayMinSec * 1000);
+    const maxMs = Math.max(minMs, autoSendDelayMaxSec * 1000);
+    return Math.floor(minMs + Math.random() * (maxMs - minMs + 1));
+  }
+
+  function setupAutoSendDelayRuntime() {
+    window.__ceGetAutoSendDelayMs = getAutoSendDelayMs;
+    window.__ceIsAutoSendEnabled = () => !!autoSendEnabled;
+    void loadAutoSendDelayRange();
+    setInterval(() => {
+      void loadAutoSendDelayRange();
+    }, 15_000);
+  }
+
   function getStorageValue(area, key) {
     return new Promise((resolve) => {
       try {
@@ -675,6 +806,7 @@
     unlockDisabledControls();
     enforceBrandTitle();
     hideBottomRightLogo();
+    mountPreferencesAutoSendControls();
   }
 
   function queueApplyRuntime() {
@@ -689,15 +821,59 @@
   function updateControls() {
     const modeBtn = document.getElementById("ce-theme-toggle");
     const langBtn = document.getElementById("ce-lang-toggle");
+    const autoToggle = document.getElementById("ce-pref-auto-send-toggle");
+    const autoToggleText = document.getElementById("ce-pref-auto-send-text");
+    const delayCaption = document.getElementById("ce-pref-delay-caption");
+    const delayLabel = document.getElementById("ce-pref-delay-label");
+    const minInput = document.getElementById("ce-pref-delay-min");
+    const maxInput = document.getElementById("ce-pref-delay-max");
     if (!modeBtn || !langBtn) return;
 
     modeBtn.textContent = currentMode === "dark" ? "L" : "D";
     modeBtn.title = currentLang === "zh-CN"
-      ? (currentMode === "dark" ? "\u5207\u6362\u5230\u6d45\u8272\u6a21\u5f0f" : "\u5207\u6362\u5230\u6df1\u8272\u6a21\u5f0f")
+      ? (currentMode === "dark" ? "切换到浅色模式" : "切换到深色模式")
       : (currentMode === "dark" ? "Switch to light mode" : "Switch to dark mode");
 
-    langBtn.textContent = currentLang === "zh-CN" ? "EN" : "\u4e2d";
-    langBtn.title = currentLang === "zh-CN" ? "\u5207\u6362\u5230\u82f1\u6587" : "Switch to Chinese";
+    langBtn.textContent = currentLang === "zh-CN" ? "EN" : "中";
+    langBtn.title = currentLang === "zh-CN" ? "切换到英文" : "Switch to Chinese";
+
+    if (autoToggle) {
+      autoToggle.checked = !!autoSendEnabled;
+      autoToggle.title = currentLang === "zh-CN"
+        ? "生成评论后自动点击发送"
+        : "Auto click comment send after generation";
+    }
+
+    if (autoToggleText) {
+      autoToggleText.textContent = currentLang === "zh-CN"
+        ? "自动点击评论发送"
+        : "Auto click comment send";
+    }
+
+    if (delayCaption) {
+      delayCaption.textContent = currentLang === "zh-CN"
+        ? "随机延时(秒)"
+        : "Random delay (s)";
+    }
+
+    if (delayLabel) {
+      delayLabel.textContent = `${autoSendDelayMinSec}~${autoSendDelayMaxSec}s`;
+      delayLabel.title = currentLang === "zh-CN"
+        ? "自动发送随机延时"
+        : "Auto-send random delay";
+    }
+
+    if (minInput) {
+      minInput.value = String(autoSendDelayMinSec);
+      minInput.disabled = !autoSendEnabled;
+      minInput.title = currentLang === "zh-CN" ? "最小秒数" : "Min seconds";
+    }
+
+    if (maxInput) {
+      maxInput.value = String(autoSendDelayMaxSec);
+      maxInput.disabled = !autoSendEnabled;
+      maxInput.title = currentLang === "zh-CN" ? "最大秒数" : "Max seconds";
+    }
   }
 
   function mountControls() {
@@ -730,6 +906,98 @@
     updateControls();
   }
 
+  function findPreferenceAnchorRow() {
+    const labels = Array.from(document.querySelectorAll("label, span, p, div"));
+    for (const el of labels) {
+      const text = (el.textContent || "").trim();
+      if (!text) continue;
+      if (
+        text === "Comment/Reply in English" ||
+        text === "评论/回复使用英文" ||
+        text === "Use Emojis" ||
+        text === "使用表情"
+      ) {
+        return el.closest(".info-flex") || el.closest("div");
+      }
+    }
+    return null;
+  }
+
+  function mountPreferencesAutoSendControls() {
+    if (!document.body) return;
+    if (document.getElementById("ce-preferences-auto-send-root")) return;
+
+    const anchorRow = findPreferenceAnchorRow();
+    if (!anchorRow || !anchorRow.parentElement) return;
+
+    const root = document.createElement("div");
+    root.id = "ce-preferences-auto-send-root";
+    root.className = "info-flex ce-preferences-auto-send";
+
+    const toggleRow = document.createElement("div");
+    toggleRow.className = "ce-pref-row";
+    const toggleLabel = document.createElement("label");
+    toggleLabel.className = "ce-pref-toggle";
+    const autoToggle = document.createElement("input");
+    autoToggle.id = "ce-pref-auto-send-toggle";
+    autoToggle.type = "checkbox";
+    autoToggle.addEventListener("change", async () => {
+      autoSendEnabled = !!autoToggle.checked;
+      await persistAutoSendSettings();
+      updateControls();
+    });
+    const autoToggleText = document.createElement("span");
+    autoToggleText.id = "ce-pref-auto-send-text";
+    toggleLabel.appendChild(autoToggle);
+    toggleLabel.appendChild(autoToggleText);
+    toggleRow.appendChild(toggleLabel);
+
+    const delayRow = document.createElement("div");
+    delayRow.className = "ce-pref-row ce-pref-delay-row";
+    const delayCaption = document.createElement("span");
+    delayCaption.id = "ce-pref-delay-caption";
+    const delayLabel = document.createElement("span");
+    delayLabel.id = "ce-pref-delay-label";
+
+    const minInput = document.createElement("input");
+    minInput.id = "ce-pref-delay-min";
+    minInput.type = "number";
+    minInput.min = "0";
+    minInput.max = "30";
+    minInput.step = "1";
+
+    const separator = document.createElement("span");
+    separator.textContent = "~";
+
+    const maxInput = document.createElement("input");
+    maxInput.id = "ce-pref-delay-max";
+    maxInput.type = "number";
+    maxInput.min = "0";
+    maxInput.max = "30";
+    maxInput.step = "1";
+
+    const onDelayChange = async () => {
+      setAutoSendDelayRange(Number(minInput.value), Number(maxInput.value));
+      await persistAutoSendSettings();
+      updateControls();
+    };
+
+    minInput.addEventListener("change", onDelayChange);
+    maxInput.addEventListener("change", onDelayChange);
+
+    delayRow.appendChild(delayCaption);
+    delayRow.appendChild(delayLabel);
+    delayRow.appendChild(minInput);
+    delayRow.appendChild(separator);
+    delayRow.appendChild(maxInput);
+
+    root.appendChild(toggleRow);
+    root.appendChild(delayRow);
+
+    anchorRow.insertAdjacentElement("afterend", root);
+    updateControls();
+  }
+
   function initPopupContext() {
     applyTheme(currentMode);
     applyLanguage(currentLang);
@@ -751,6 +1019,8 @@
   setInterval(() => {
     void enforceUnlockedAccount();
   }, 5_000);
+
+  setupAutoSendDelayRuntime();
 
   if (!isPopupContext()) return;
 

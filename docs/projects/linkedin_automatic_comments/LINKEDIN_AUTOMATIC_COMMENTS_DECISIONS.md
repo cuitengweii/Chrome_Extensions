@@ -143,3 +143,26 @@
 ### Stable Defaults
 - Brand enforcement no longer depends on bundled DOM split structure (`Commen` + `TRON` cases covered).
 - Corner icon suppression no longer depends on inline style presence (works with MUI class-generated positioning).
+
+## 2026-04-01 | Auto-Send Preference Model in Runtime Patch
+
+### Decision
+- Introduce explicit popup preferences for auto-send behavior at runtime layer:
+  - one boolean switch for send automation
+  - one bounded random delay range (`min/max` seconds)
+- Keep the persistence contract in `chrome.storage.local` under dedicated keys.
+
+### Why
+- Existing auto-flow lacked user-visible safety control for send timing.
+- A bounded random delay reduces deterministic click timing while preserving operator control.
+- Runtime-layer addition keeps packaged bundle change scope minimal for this repo shape.
+
+### Stable Defaults
+- `ce_auto_send_enabled = true`
+- `ce_auto_send_delay_min_sec = 2`
+- `ce_auto_send_delay_max_sec = 7`
+- Delay bounds are clamped to `0..30` seconds with min/max normalization.
+
+### Trade-off
+- This is a client-side preference patch; server-side policy constraints are unchanged.
+- Full behavior confidence still requires real LinkedIn UI runtime validation after popup reload.

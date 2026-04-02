@@ -767,7 +767,8 @@
     auto: { active: false, count: 0, max: 0 },
     status: '',
     scheduled: false,
-    idle: 0
+    idle: 0,
+    popupGuideExpanded: false
   }
 
   const HELP_KEY_TO_I18N = Object.freeze({
@@ -1826,89 +1827,101 @@
     const st = document.createElement('style')
     st.id = 'xac-style'
     st.textContent = `
-${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.isPopup ? '360px' : '0'};background:radial-gradient(circle at top right,#173124,#09130f 45%);color:#d9ffe9;overflow-x:hidden}body{margin:0;display:flex;justify-content:center;align-items:flex-start;padding:${VIEW.isOptions ? '16px 14px' : '0'}}` : ''}
-#xac-root{position:${VIEW.isExtensionPage ? 'static' : 'fixed'};right:${VIEW.isExtensionPage ? 'auto' : '14px'};bottom:${VIEW.isExtensionPage ? 'auto' : '16px'};z-index:2147483645;width:${VIEW.isOptions ? 'min(96vw,1180px)' : (VIEW.isExtensionPage ? 'min(100%,420px)' : 'min(94vw,360px)')};max-width:${VIEW.isOptions ? '1180px' : (VIEW.isExtensionPage ? '420px' : 'none')};min-width:${VIEW.isOptions ? 'min(900px,100%)' : (VIEW.isExtensionPage ? 'min(360px,100%)' : '0')};margin:${VIEW.isExtensionPage ? '0 auto' : '0'};padding:${VIEW.isExtensionPage ? '10px' : '0'};box-sizing:border-box;font-family:Segoe UI,Microsoft YaHei,sans-serif}
-#xac-root .shell{border:1px solid #2f6e48;border-radius:14px;background:linear-gradient(180deg,#132c21,#08140f);box-shadow:0 12px 32px rgba(0,0,0,.42);overflow:hidden;max-width:100%}
-#xac-root .top{width:100%;border:0;cursor:pointer;background:transparent;color:#d9ffe9;padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
+${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.isPopup ? '360px' : '0'};background:#0a0f0c;color:#e2ece5;overflow-x:hidden}body{margin:0;display:flex;justify-content:center;align-items:flex-start;padding:${VIEW.isOptions ? '16px 14px' : '0'}}` : ''}
+#xac-root{--xac-bg-app:#090d0b;--xac-bg-shell:#0f1511;--xac-bg-panel:#131b16;--xac-bg-input:#0e1411;--xac-bg-soft:#162019;--xac-border:#27342d;--xac-border-strong:#335244;--xac-text:#e2ece5;--xac-muted:#97ad9f;--xac-accent:#43ad6c;--xac-accent-soft:#2f8452;--xac-accent-bg:#173026;--xac-danger:#8e6464;--xac-warning:#8a795f;position:${VIEW.isExtensionPage ? 'static' : 'fixed'};right:${VIEW.isExtensionPage ? 'auto' : '14px'};bottom:${VIEW.isExtensionPage ? 'auto' : '16px'};z-index:2147483645;width:${VIEW.isOptions ? 'min(96vw,1180px)' : (VIEW.isExtensionPage ? 'min(100%,420px)' : 'min(94vw,360px)')};max-width:${VIEW.isOptions ? '1180px' : (VIEW.isExtensionPage ? '420px' : 'none')};min-width:${VIEW.isOptions ? 'min(900px,100%)' : (VIEW.isExtensionPage ? 'min(360px,100%)' : '0')};margin:${VIEW.isExtensionPage ? '0 auto' : '0'};padding:${VIEW.isExtensionPage ? '10px' : '0'};box-sizing:border-box;font-family:Segoe UI,Microsoft YaHei,sans-serif}
+#xac-root .shell{border:1px solid var(--xac-border-strong);border-radius:14px;background:var(--xac-bg-shell);box-shadow:0 10px 28px rgba(0,0,0,.45);overflow:hidden;max-width:100%}
+#xac-root .top{width:100%;border:0;cursor:pointer;background:transparent;color:var(--xac-text);padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
 #xac-root .top .t1{font-size:15px;font-weight:800;line-height:1.1}
-#xac-root .top .t2{font-size:11px;color:#89bca1;line-height:1.2}
-#xac-root .quota{border:1px solid #2f6e48;border-radius:999px;padding:2px 8px;font-size:11px;color:#8df4be;background:#0d2219;white-space:nowrap}
-#xac-root .body{border-top:1px solid #1f4933;display:grid;grid-template-columns:${VIEW.isOptions ? 'repeat(2,minmax(0,1fr))' : '1fr'};align-items:start;gap:8px;padding:10px 12px;max-height:${VIEW.isExtensionPage ? 'none' : '76vh'};overflow:${VIEW.isExtensionPage ? 'visible' : 'auto'}}
+#xac-root .top .t2{font-size:11px;color:var(--xac-muted);line-height:1.2}
+#xac-root .quota{border:1px solid var(--xac-border-strong);border-radius:999px;padding:2px 8px;font-size:11px;color:#b4dec4;background:var(--xac-bg-soft);white-space:nowrap}
+#xac-root .body{border-top:1px solid var(--xac-border);display:grid;grid-template-columns:${VIEW.isOptions ? 'repeat(2,minmax(0,1fr))' : '1fr'};align-items:start;gap:8px;padding:10px 12px;max-height:${VIEW.isExtensionPage ? 'none' : '76vh'};overflow:${VIEW.isExtensionPage ? 'visible' : 'auto'}}
 #xac-root.collapsed .body{display:none}
-#xac-root .sec{font-size:11px;color:#76b396;padding-left:2px}
-#xac-root .sec.flash{color:#bafdd6;text-shadow:0 0 8px rgba(96,246,161,.5)}
-#xac-root .group{border:1px solid #24543a;background:linear-gradient(180deg,#10231b,#0b1913);border-radius:10px;padding:9px;display:grid;gap:8px}
-#xac-root .group-h{font-size:12px;color:#c7f8df;font-weight:800;letter-spacing:.2px}
-#xac-root .step{display:grid;gap:3px;padding-bottom:7px;margin-bottom:1px;border-bottom:1px solid #1f4b35}
+#xac-root .sec{font-size:11px;color:#88ab97;padding-left:2px}
+#xac-root .sec.flash{color:#b9e9cd;text-shadow:none}
+#xac-root .group{border:1px solid var(--xac-border);background:var(--xac-bg-panel);border-radius:10px;padding:9px;display:grid;gap:8px}
+#xac-root .group-h{font-size:12px;color:#d2e5d9;font-weight:800;letter-spacing:.2px}
+#xac-root .step{display:grid;gap:3px;padding-bottom:7px;margin-bottom:1px;border-bottom:1px solid var(--xac-border)}
 #xac-root .step-hlabel{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-#xac-root .step-title{font-size:15px;color:#dcffed;font-weight:900;line-height:1.15;letter-spacing:.25px}
-#xac-root .step-desc{font-size:11px;color:#8ec4a7;line-height:1.35}
-#xac-root .flash{box-shadow:0 0 0 2px rgba(96,246,161,.35),0 0 14px rgba(96,246,161,.25)}
-#xac-root .guide-banner{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'};border:1px solid #2d6649;border-left:3px solid #56df93;background:linear-gradient(180deg,#123126,#0d2119);border-radius:10px;padding:8px 9px;display:grid;gap:4px}
-#xac-root .pipeline-board{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'};border:1px solid #2f6e48;border-radius:10px;background:linear-gradient(180deg,#112a20,#0b1a14);padding:8px 9px;display:grid;gap:8px}
-#xac-root .pipeline-head{font-size:12px;color:#d8ffe8;font-weight:800}
-#xac-root .pipeline-desc{font-size:11px;color:#97ccaf;line-height:1.35}
+#xac-root .step-title{font-size:15px;color:var(--xac-text);font-weight:900;line-height:1.15;letter-spacing:.25px}
+#xac-root .step-desc{font-size:11px;color:var(--xac-muted);line-height:1.35}
+#xac-root.popup-lite .step{gap:2px;padding-bottom:2px;margin-bottom:0;border-bottom:0}
+#xac-root.popup-lite .step-desc{display:none}
+#xac-root.popup-lite .group{gap:6px}
+#xac-root .key-config .meta{line-height:1.35}
+#xac-root .key-item{font-size:11px;color:#afc4b8}
+#xac-root .flash{box-shadow:0 0 0 2px rgba(63,181,111,.2)}
+#xac-root .guide-banner{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'};border:1px solid var(--xac-border);border-left:3px solid var(--xac-accent);background:var(--xac-bg-soft);border-radius:10px;padding:8px 9px;display:grid;gap:4px}
+#xac-root .guide-toggle{justify-self:start}
+#xac-root .pipeline-board{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'};border:1px solid var(--xac-border-strong);border-radius:10px;background:var(--xac-bg-panel);padding:8px 9px;display:grid;gap:8px}
+#xac-root .pipeline-head{font-size:12px;color:var(--xac-text);font-weight:800}
+#xac-root .pipeline-desc{font-size:11px;color:var(--xac-muted);line-height:1.35}
 #xac-root .pipeline-grid{display:grid;grid-template-columns:repeat(${VIEW.isOptions ? '3' : '2'},minmax(0,1fr));gap:8px}
-#xac-root .pipeline-item{border:1px solid #27563d;border-radius:9px;background:#0d1c15;padding:7px;display:grid;gap:4px}
-#xac-root .pipeline-item .title{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;font-size:11px;color:#c9f8df;font-weight:700;line-height:1.3}
-#xac-root .pipeline-item .meta{font-size:10px;color:#8ec4a6;line-height:1.35}
+#xac-root .pipeline-item{border:1px solid var(--xac-border);border-radius:9px;background:var(--xac-bg-soft);padding:7px;display:grid;gap:4px}
+#xac-root .pipeline-item .title{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;font-size:11px;color:#d0e3d7;font-weight:700;line-height:1.3}
+#xac-root .pipeline-item .meta{font-size:10px;color:var(--xac-muted);line-height:1.35}
 #xac-root .group-advanced{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'}}
-#xac-root .guide-banner .meta{font-size:11px;color:#b8ebd0;line-height:1.4}
+#xac-root .guide-banner .meta{font-size:11px;color:#aec5b7;line-height:1.4}
 #xac-root .mini-row{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 #xac-root .mini-btn{padding:6px 4px;font-size:11px;line-height:1.1;text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #xac-root .hlabel{display:flex;align-items:center;justify-content:space-between;gap:8px}
-#xac-root .hlabel label,#xac-root .hlabel .mini{font-size:11px;color:#93c9ad}
-#xac-root .subh{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:6px;margin-top:2px;border-top:1px dashed #25533b;font-size:11px;color:#84bea0}
+#xac-root .hlabel label,#xac-root .hlabel .mini{font-size:11px;color:var(--xac-muted)}
+#xac-root .subh{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:6px;margin-top:2px;border-top:1px dashed var(--xac-border);font-size:11px;color:#8ea89a}
 #xac-root .subh.first{border-top:0;padding-top:0}
-#xac-root .card{border:1px solid #24543a;background:#0d1b15;border-radius:10px;padding:8px 9px;display:grid;gap:3px}
+#xac-root .card{border:1px solid var(--xac-border);background:var(--xac-bg-soft);border-radius:10px;padding:8px 9px;display:grid;gap:3px}
 #xac-root .card.schedule-runtime{gap:5px}
-#xac-root .meta{font-size:11px;color:#9cd8b8}
-#xac-root .schedule-runtime-line{font-size:11px;color:#b6ecd0}
+#xac-root .summary-compact{gap:4px}
+#xac-root .meta{font-size:11px;color:#a5bfae}
+#xac-root .schedule-runtime-line{font-size:11px;color:#bdd3c6}
 #xac-root .r2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 #xac-root .r3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px}
+#xac-root .actions-main{display:grid;gap:8px}
+#xac-root .actions-secondary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+#xac-root .actions-tertiary{display:grid;grid-template-columns:1fr;gap:6px}
 #xac-root .or-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center}
-#xac-root .or-tag{display:inline-flex;align-items:center;justify-content:center;border:1px solid #2f6e48;border-radius:999px;padding:4px 10px;min-height:28px;font-size:11px;color:#9dddb8;background:#10241b;white-space:nowrap}
+#xac-root .or-tag{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--xac-border-strong);border-radius:999px;padding:4px 10px;min-height:28px;font-size:11px;color:#a8c6b3;background:var(--xac-bg-soft);white-space:nowrap}
 #xac-root .profile-row{grid-template-columns:minmax(0,1.7fr) minmax(88px,1fr) minmax(88px,1fr)}
-#xac-root label{font-size:11px;color:#8ebca4}
+#xac-root label{font-size:11px;color:#9bb1a3}
 #xac-root select,#xac-root input,#xac-root textarea,#xac-root button{border-radius:8px}
-#xac-root select,#xac-root input,#xac-root textarea{width:100%;box-sizing:border-box;border:1px solid #265a3c;background:#0a1a14;color:#d9ffe9;padding:7px 9px;font-size:12px;outline:none}
+#xac-root select,#xac-root input,#xac-root textarea{width:100%;box-sizing:border-box;border:1px solid var(--xac-border);background:var(--xac-bg-input);color:var(--xac-text);padding:7px 9px;font-size:12px;outline:none}
 #xac-root textarea{min-height:52px;resize:vertical}
 #xac-root #xac-debug-output{min-height:72px}
-#xac-root button{border:1px solid #2b6543;background:#10251d;color:#d9ffe9;font-size:12px;padding:8px 10px;cursor:pointer}
-#xac-root .profile-act{font-size:13px;font-weight:700;color:#e8fff2}
+#xac-root button{border:1px solid var(--xac-border-strong);background:var(--xac-bg-soft);color:var(--xac-text);font-size:12px;padding:8px 10px;cursor:pointer}
+#xac-root button.secondary{border-color:var(--xac-border);background:transparent;color:#bdd0c5}
+#xac-root button.tertiary{border-color:var(--xac-border);border-style:dashed;background:transparent;color:#99aea2;font-size:11px;padding:7px 9px}
+#xac-root .profile-act{font-size:13px;font-weight:700;color:var(--xac-text)}
 #xac-root button:disabled{opacity:.58;cursor:not-allowed;filter:saturate(.65)}
-#xac-root button.p{border-color:#2fb065;background:linear-gradient(120deg,#2ea860,#49d581);color:#04140d;font-weight:700}
-#xac-root button.hint{width:19px;min-width:19px;height:19px;padding:0;border-radius:999px;border:1px solid #3b7658;background:#10291f;color:#9fe4be;font-size:11px;font-weight:800;line-height:1;text-align:center}
-#xac-root button.hint:hover{border-color:#57bf85;color:#d7ffe9}
+#xac-root button.p{border-color:var(--xac-accent-soft);background:var(--xac-accent-bg);color:#cce9d8;font-weight:700}
+#xac-root button.hint{width:19px;min-width:19px;height:19px;padding:0;border-radius:999px;border:1px solid var(--xac-border-strong);background:var(--xac-bg-soft);color:#a6c8b3;font-size:11px;font-weight:800;line-height:1;text-align:center}
+#xac-root button.hint:hover{border-color:var(--xac-accent-soft);color:#cae2d4}
 #xac-root .chip-group{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 #xac-root .chip-group.mode{grid-template-columns:repeat(3,minmax(0,1fr))}
 #xac-root .chip-group.days{grid-template-columns:repeat(7,minmax(0,1fr))}
-#xac-root .chip{border:1px solid #365f4a;background:#101c16;color:#c9f4de;font-size:12px;padding:8px 6px;text-align:center}
+#xac-root .chip{border:1px solid var(--xac-border);background:var(--xac-bg-soft);color:#c4d8cc;font-size:12px;padding:8px 6px;text-align:center}
 #xac-root .chip.small{padding:6px 4px;font-size:11px}
-#xac-root .chip.active{border-color:#36cf79;background:#153527;color:#8ef1bd;font-weight:700}
-#xac-root .status{font-size:11px;color:#9ad6b5}
-#xac-root .switch{display:flex;align-items:center;justify-content:space-between;border:1px solid #2f6e48;border-radius:9px;padding:8px 10px;background:#0f1d17;min-height:40px}
-#xac-root .switch span{color:#d8ffe8 !important;font-weight:650;font-size:13px;letter-spacing:.1px}
-#xac-root .switch input{width:34px;height:18px;appearance:none;background:#274536;border-radius:999px;position:relative;outline:none;border:1px solid #355a47;cursor:pointer;padding:0}
-#xac-root .switch input::after{content:'';position:absolute;left:2px;top:1px;width:13px;height:13px;border-radius:50%;background:#c9f4de;transition:all .15s ease}
-#xac-root .switch input:checked{background:#2fb065}
-#xac-root .switch input:checked::after{left:17px;background:#04140d}
-#xac-root .modal{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.52);display:flex;align-items:center;justify-content:center;padding:14px}
-#xac-root .modal-card{width:min(96vw,350px);max-height:86vh;overflow:auto;border:1px solid #2f6e48;border-radius:12px;background:linear-gradient(180deg,#132b21,#0a1712);padding:12px;display:grid;gap:8px}
-#xac-root .modal-h{display:flex;justify-content:space-between;align-items:center;color:#d8ffe8;font-size:15px;font-weight:800}
+#xac-root .chip.active{border-color:var(--xac-accent-soft);background:var(--xac-accent-bg);color:#b6e0c8;font-weight:700}
+#xac-root .status{font-size:11px;color:#a6bfae}
+#xac-root .switch{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--xac-border-strong);border-radius:9px;padding:8px 10px;background:var(--xac-bg-soft);min-height:40px}
+#xac-root .switch span{color:var(--xac-text) !important;font-weight:650;font-size:13px;letter-spacing:.1px}
+#xac-root .switch input{width:34px;height:18px;appearance:none;background:#2d4438;border-radius:999px;position:relative;outline:none;border:1px solid #3a5848;cursor:pointer;padding:0}
+#xac-root .switch input::after{content:'';position:absolute;left:2px;top:1px;width:13px;height:13px;border-radius:50%;background:#cfddd4;transition:all .15s ease}
+#xac-root .switch input:checked{background:var(--xac-accent-soft)}
+#xac-root .switch input:checked::after{left:17px;background:#0c140f}
+#xac-root .modal{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.58);display:flex;align-items:center;justify-content:center;padding:14px}
+#xac-root .modal-card{width:min(96vw,350px);max-height:86vh;overflow:auto;border:1px solid var(--xac-border-strong);border-radius:12px;background:var(--xac-bg-panel);padding:12px;display:grid;gap:8px}
+#xac-root .modal-h{display:flex;justify-content:space-between;align-items:center;color:var(--xac-text);font-size:15px;font-weight:800}
 #xac-root .modal-h button{width:auto;padding:5px 9px}
 #xac-root .label-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .xac-inline-host{margin-top:8px;width:100%}
-.xac-inline-btn{display:block;width:100%;border:1px solid #7ea729;background:linear-gradient(120deg,#b8e62f,#b0e238);color:#10210e;border-radius:8px;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;transition:all .15s ease;text-align:left}
-.xac-inline-btn.w{border-color:#3ea7ff;background:#13273a;color:#a8ddff}
-.xac-inline-btn.o{border-color:#56d689;background:#193329;color:#9ff3c2}
-.xac-inline-btn.f{border-color:#b85b5b;background:#311f1f;color:#ffb0b0}
-.xac-toast{position:fixed;left:50%;bottom:16px;transform:translate(-50%,8px);background:#0f2018;border:1px solid #2f6e48;color:#d9ffe9;font-size:12px;border-radius:8px;padding:8px 12px;z-index:2147483647;opacity:0;transition:all .2s ease;pointer-events:none;max-width:min(92vw,520px);line-height:1.4;white-space:normal}
-.xac-toast.warn{border-color:#b88e53;color:#ffd6a8}.xac-toast.ok{border-color:#4bbf78;color:#b9ffd6}
-#xac-ind{position:fixed;left:14px;top:14px;z-index:2147483646;background:#0e1f18;border:1px solid #2f6e48;color:#d9ffe9;border-radius:10px;padding:7px 10px;display:none;align-items:center;gap:8px;font-size:12px;box-shadow:0 10px 28px rgba(0,0,0,.38)}
-#xac-ind.show{display:inline-flex}#xac-ind .d{width:8px;height:8px;border-radius:50%;background:#4bd98b;box-shadow:0 0 8px rgba(75,217,139,.9)}
-#xac-ind .s{border:1px solid #a86060;background:#352020;color:#ffbcbc;border-radius:6px;font-size:10px;padding:3px 7px;cursor:pointer}
-#xac-root .pro{border-color:#7a7a2a;background:#232314;color:#f0f0a7}
+.xac-inline-btn{display:block;width:100%;border:1px solid var(--xac-accent-soft);background:var(--xac-accent-bg);color:#cde7d9;border-radius:8px;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;transition:all .15s ease;text-align:left}
+.xac-inline-btn.w{border-color:var(--xac-border-strong);background:var(--xac-bg-soft);color:#c2d3c9}
+.xac-inline-btn.o{border-color:var(--xac-accent-soft);background:var(--xac-accent-bg);color:#b7dfca}
+.xac-inline-btn.f{border-color:#705252;background:#241b1b;color:#ceb0b0}
+.xac-toast{position:fixed;left:50%;bottom:16px;transform:translate(-50%,8px);background:var(--xac-bg-soft);border:1px solid var(--xac-border-strong);color:var(--xac-text);font-size:12px;border-radius:8px;padding:8px 12px;z-index:2147483647;opacity:0;transition:all .2s ease;pointer-events:none;max-width:min(92vw,520px);line-height:1.4;white-space:normal}
+.xac-toast.warn{border-color:#6f6454;color:#d0c5b2}.xac-toast.ok{border-color:var(--xac-accent-soft);color:#c6e5d3}
+#xac-ind{position:fixed;left:14px;top:14px;z-index:2147483646;background:var(--xac-bg-soft);border:1px solid var(--xac-border-strong);color:var(--xac-text);border-radius:10px;padding:7px 10px;display:none;align-items:center;gap:8px;font-size:12px;box-shadow:0 10px 28px rgba(0,0,0,.38)}
+#xac-ind.show{display:inline-flex}#xac-ind .d{width:8px;height:8px;border-radius:50%;background:var(--xac-accent);box-shadow:none}
+#xac-ind .s{border:1px solid #855858;background:#2f2020;color:#e2b8b8;border-radius:6px;font-size:10px;padding:3px 7px;cursor:pointer}
+#xac-root .pro{border-color:var(--xac-border-strong);background:var(--xac-bg-soft);color:#c1d5c8}
 @media (max-width:900px){#xac-root .body{grid-template-columns:1fr}#xac-root .guide-banner,#xac-root .group-advanced,#xac-root .pipeline-board{grid-column:auto}#xac-root .pipeline-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:620px){#xac-root .pipeline-grid{grid-template-columns:1fr}}
 @media (max-width:520px){#xac-root{right:${VIEW.isExtensionPage ? 'auto' : '8px'};bottom:${VIEW.isExtensionPage ? 'auto' : '10px'};width:calc(100vw - 16px);max-width:calc(100vw - 16px);min-width:0}}`
@@ -2770,6 +2783,21 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     const cloudPulledLabel = S.cloudSyncStatus?.lastPulledAt ? formatScheduleRuntimeTimestamp(S.cloudSyncStatus.lastPulledAt) : '--'
     const runToggleLabel = S.auto.active ? t('stop') : t('start')
     const runToggleClass = S.auto.active ? '' : 'p'
+    const modeLabel = modeOptions.find((item) => item.id === q.engagementMode)?.label || q.engagementMode
+    const goalLabel = goalOptions.find((item) => item.id === q.goal)?.label || q.goal
+    const lengthLabel = lengthOptions.find((item) => item.id === q.length)?.label || q.length
+    const searchIncludeSummary = [includeTermA, includeTermB].filter(Boolean).join(' OR ') || (S.lang === 'zh' ? '未设置' : 'Not set')
+    const searchExcludeSummary = s(S.advanced.searchExcludeTerms, '').trim() || (S.lang === 'zh' ? '无' : 'None')
+    const searchMinReplies = Math.max(0, Math.round(n(S.advanced.searchMinReplies, DEFAULT_ADVANCED.searchMinReplies)))
+    const searchExcludeRepliesSummary = b(S.advanced.searchExcludeReplies, DEFAULT_ADVANCED.searchExcludeReplies)
+      ? (S.lang === 'zh' ? '是' : 'Yes')
+      : (S.lang === 'zh' ? '否' : 'No')
+    const autoPostSummary = S.autoPost ? (S.lang === 'zh' ? '开' : 'On') : (S.lang === 'zh' ? '关' : 'Off')
+    const maxSummary = Math.max(0, Math.round(n(S.auto.max, 0)))
+    const sparkStatusSummary = formatSparkMissingMessage(S.sparkPublic)
+    const popupGuideToggleLabel = S.lang === 'zh'
+      ? (S.popupGuideExpanded ? '收起说明' : '查看说明')
+      : (S.popupGuideExpanded ? 'Hide Notes' : 'View Notes')
     const d = S.editor?.draft || emptyProfileDraft()
     const hintBtn = (key) => `<button class="hint" type="button" data-help="${esc(key)}">?</button>`
     const hintLabel = (text, key) => `<div class="hlabel"><label>${esc(text)}</label>${key ? hintBtn(key) : ''}</div>`
@@ -2847,17 +2875,107 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
       restorePanelUiState(uiState)
       return
     }
-    root.className = S.open ? '' : 'collapsed'
-    root.innerHTML = `<div class="shell">
+    if (VIEW.isPopup) {
+      root.className = `popup-lite${S.open ? '' : ' collapsed'}`
+      root.innerHTML = `<div class="shell">
       <button class="top" id="xac-t">
         <span><div class="t1">${esc(t('title'))}</div><div class="t2">${esc(t('sub'))}</div></span>
         <span class="quota">● ${esc(t('quotaLeft').replace('{count}', String(quotaNum)))}</span>
       </button>
       <div class="body">
         <div class="guide-banner">
-          <div class="meta">• ${esc(t('guideLine1'))}</div>
-          <div class="meta">• ${esc(t('guideLine2'))}</div>
-          <div class="meta">• ${esc(t('guideLine3'))}</div>
+          <div class="meta">• ${esc(S.lang === 'zh' ? '弹窗仅保留常用必选项，避免与完整配置页重复。' : 'Popup keeps only essential controls to avoid duplicate setup.')}</div>
+          <button class="tertiary guide-toggle" id="xac-popup-guide-toggle">${esc(popupGuideToggleLabel)}</button>
+          ${S.popupGuideExpanded ? `
+            <div class="meta">• ${esc(S.lang === 'zh' ? '全部高级设置请使用“打开完整配置页”。' : 'Use "Open Full Config" for all advanced settings.')}</div>
+            <div class="meta">• ${esc(S.lang === 'zh' ? '建议先确认账号与 AI 状态，再执行自动回复。' : 'Confirm account and AI status first, then run auto reply.')}</div>
+          ` : ''}
+        </div>
+
+        <div class="group">
+          ${stepHead('stepAccount', 'stepAccountDesc', '', 'accountStep')}
+          <div class="card summary-compact">
+            <div class="meta xac-account-email">${esc(accountEmail)}</div>
+            <div class="key-item">${esc(S.lang === 'zh' ? `账号状态: ${S.signedIn ? '已登录' : '未登录'}` : `Account: ${S.signedIn ? 'Signed in' : 'Signed out'}`)}</div>
+            <div class="key-item">${esc(S.lang === 'zh' ? `AI 状态: ${sparkStatusSummary}` : `AI status: ${sparkStatusSummary}`)}</div>
+          </div>
+          <div class="actions-secondary">
+            <button class="secondary" id="xac-login" ${isBusy ? 'disabled' : ''}>${esc(signInLabel)}</button>
+            <button class="secondary" id="xac-sync-spark" ${isBusy ? 'disabled' : ''}>${esc(t('syncSpark'))}</button>
+          </div>
+          <div class="meta">${esc(S.lang === 'zh' ? 'AI 详细参数请在完整配置页维护。' : 'Manage full AI fields in Full Config.')}</div>
+          <div class="mini-row">
+            <button class="mini-btn chip ${S.lang === 'en' ? 'active' : ''}" id="xac-l-en" ${isBusy ? 'disabled' : ''}>EN</button>
+            <button class="mini-btn chip ${S.lang === 'zh' ? 'active' : ''}" id="xac-l-zh" ${isBusy ? 'disabled' : ''}>中文</button>
+            <button class="mini-btn pro" id="xac-upgrade">${esc(t('upgradePro'))}</button>
+            <span></span>
+          </div>
+        </div>
+
+        <div class="group">
+          ${stepHead('stepProfile', 'stepProfileDesc', '', 'profileStep')}
+          <select id="xac-p" ${isBusy ? 'disabled' : ''}>${ps.map((x) => { const pz = localizePresetProfile(x, S.lang); return `<option value="${esc(x.id)}" ${x.id === S.profile.activeProfileId ? 'selected' : ''}>${esc(`${pz.emoji} ${pz.name}`)}</option>` }).join('')}</select>
+        </div>
+
+        <div class="group">
+          ${stepHead('stepStrategy', 'stepStrategyDesc', '', 'strategyStep')}
+          ${hintLabel(t('mode'), 'mode')}
+          <div class="chip-group mode">
+            ${modeOptions.map((item) => `<button class="chip ${q.engagementMode === item.id ? 'active' : ''}" data-mode="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
+          </div>
+          ${hintLabel(t('goal'), 'goal')}
+          <div class="chip-group">
+            ${goalOptions.map((item) => `<button class="chip ${q.goal === item.id ? 'active' : ''}" data-goal="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
+          </div>
+          ${hintLabel(t('len'), 'len')}
+          <div class="r3">
+            ${lengthOptions.map((item) => `<button class="chip ${q.length === item.id ? 'active' : ''}" data-len="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
+          </div>
+        </div>
+
+        <div class="group">
+          ${stepHead('stepExecution', 'stepExecutionDesc', '', 'executionStep')}
+          <div class="hlabel"><span class="mini">${esc(t('autoPost'))}</span>${hintBtn('autoPost')}</div>
+          <div class="switch"><span>${esc(t('autoPost'))}</span><input id="xac-ap" type="checkbox" ${S.autoPost ? 'checked' : ''}/></div>
+          ${hintLabel(t('max'), 'max')}
+          <input id="xac-max" type="number" min="0" max="200" value="${esc(String(S.auto.max || 0))}"/>
+          <div class="actions-main">
+            <button class="${runToggleClass}" id="xac-run-toggle" ${isBusy ? 'disabled' : ''}>${esc(runToggleLabel)}</button>
+          </div>
+          <div class="actions-secondary">
+            <button class="secondary" id="xac-open-search">${esc(t('openSearch'))}</button>
+            <button class="secondary" id="xac-open-options">${esc(t('openDetailedOptions'))}</button>
+          </div>
+          <div class="actions-tertiary">
+            <button class="tertiary" id="xac-open-advanced-panel">${esc(t('openAdvancedPanel'))}</button>
+          </div>
+          <div class="card key-config">
+            <div class="meta">${esc(S.lang === 'zh' ? '搜索关键配置（在完整配置页修改）' : 'Search key config (edit in Full Config)')}</div>
+            <div class="key-item">${esc(S.lang === 'zh' ? `包含词: ${searchIncludeSummary}` : `Include: ${searchIncludeSummary}`)}</div>
+            <div class="key-item">${esc(S.lang === 'zh' ? `排除词: ${searchExcludeSummary}` : `Exclude: ${searchExcludeSummary}`)}</div>
+            <div class="key-item">${esc(S.lang === 'zh' ? `最小评论数: ${searchMinReplies}` : `Min comments: ${searchMinReplies}`)}</div>
+            <div class="key-item">${esc(S.lang === 'zh' ? `排除回复流: ${searchExcludeRepliesSummary}` : `Exclude replies feed: ${searchExcludeRepliesSummary}`)}</div>
+            <div class="meta">${esc(S.lang === 'zh' ? '自动回复关键配置' : 'Auto-reply key config')}</div>
+            <div class="key-item">${esc(S.lang === 'zh' ? `模式/目标/长度: ${modeLabel} / ${goalLabel} / ${lengthLabel}` : `Mode/Goal/Length: ${modeLabel} / ${goalLabel} / ${lengthLabel}`)}</div>
+            <div class="key-item">${esc(S.lang === 'zh' ? `自动发送: ${autoPostSummary}，单次上限: ${maxSummary}` : `Auto-send: ${autoPostSummary}, max/run: ${maxSummary}`)}</div>
+            <div class="key-item">${esc(S.lang === 'zh' ? '执行开关: 开始/停止自动回复按钮' : 'Run switch: Start/Stop Auto Reply button')}</div>
+          </div>
+          <div class="status" id="xac-status">${esc(S.status || t('idle'))}</div>
+        </div>
+      </div>
+    </div>`
+    } else {
+      root.className = S.open ? '' : 'collapsed'
+      root.innerHTML = `<div class="shell">
+      <button class="top" id="xac-t">
+        <span><div class="t1">${esc(t('title'))}</div><div class="t2">${esc(t('sub'))}</div></span>
+        <span class="quota">● ${esc(t('quotaLeft').replace('{count}', String(quotaNum)))}</span>
+      </button>
+      <div class="body">
+        <div class="guide-banner">
+          <div class="meta">• ${esc(S.lang === 'zh' ? '本页是“完整配置中心”：负责策略、规则、模板、风控与定时。' : 'This page is the full configuration center: strategy, rules, templates, risk controls, and schedules.')}</div>
+          <div class="meta">• ${esc(S.lang === 'zh' ? '弹窗只保留“执行入口与必要选项”，避免两边重复配置。' : 'Popup keeps only execution entry and essential options to avoid duplicated setup.')}</div>
+          <div class="meta">• ${esc(S.lang === 'zh' ? '建议先按流水线完成配置，再回弹窗启动自动回复。' : 'Complete setup in pipeline order here, then return to popup to run automation.')}</div>
         </div>
         ${VIEW.isOptions ? `
           <div class="pipeline-board">
@@ -2960,16 +3078,18 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <div class="switch"><span>${esc(t('autoPost'))}</span><input id="xac-ap" type="checkbox" ${S.autoPost ? 'checked' : ''}/></div>
           ${hintLabel(t('max'), 'max')}
           <input id="xac-max" type="number" min="0" max="200" value="${esc(String(S.auto.max || 0))}"/>
-          <button class="${runToggleClass}" id="xac-run-toggle" ${isBusy ? 'disabled' : ''}>${esc(runToggleLabel)}</button>
-          <div class="r2">
-            <button id="xac-open-advanced-panel">${esc(t('openAdvancedPanel'))}</button>
-            ${VIEW.isPopup ? `<button id="xac-open-options">${esc(t('openDetailedOptions'))}</button>` : '<span></span>'}
+          <div class="card">
+            <div class="meta">${esc(S.lang === 'zh' ? '这里仅设置“默认执行参数”。' : 'This section stores default execution parameters only.')}</div>
+            <div class="meta">${esc(S.lang === 'zh' ? '实际开始/停止与侧栏打开请在弹窗执行，避免入口重复。' : 'Start/stop and sidebar launch are handled in popup to keep a single execution entry.')}</div>
           </div>
-          <div class="status" id="xac-status">${esc(S.status || t('idle'))}</div>
         </div>
 
         <div class="group group-advanced">
           ${stepHead('stepAdvanced', 'stepAdvancedDesc', 'xac-advanced-anchor', 'advancedStep')}
+          <div class="card">
+            <div class="meta">${esc(S.lang === 'zh' ? '阶段 A（动作与风控基础）' : 'Phase A (Actions and core risk controls)')}</div>
+            <div class="meta">${esc(S.lang === 'zh' ? '先完成 5.1~5.7，再做过滤和调度，避免参数互相冲突。' : 'Finish 5.1~5.7 first, then continue to filtering and scheduling to avoid conflicting parameters.')}</div>
+          </div>
           <div class="subh first"><span>${esc(`${S.lang === 'zh' ? '5.1 · ' : '5.1 · '}${t('sectionAutoActions')}`)}</span>${hintBtn('autoActions')}</div>
           <div class="switch"><span>${esc(t('autoLike'))}</span><input id="xac-like" type="checkbox" ${S.advanced.autoLike ? 'checked' : ''}/></div>
           <div class="switch"><span>${esc(t('autoRetweet'))}</span><input id="xac-retweet" type="checkbox" ${S.advanced.autoRetweet ? 'checked' : ''}/></div>
@@ -3024,6 +3144,10 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <label>${esc(t('actionDelayMs'))}</label><input id="xac-action-delay" type="number" min="100" max="5000" step="50" value="${esc(String(S.advanced.actionDelayMs))}"/>
           <label>${esc(t('maxIdleLoops'))}</label><input id="xac-max-idle" type="number" min="1" max="50" step="1" value="${esc(String(S.advanced.maxIdleLoops))}"/>
 
+          <div class="card">
+            <div class="meta">${esc(S.lang === 'zh' ? '阶段 B（内容过滤与搜索建模）' : 'Phase B (Filtering and search modeling)')}</div>
+            <div class="meta">${esc(S.lang === 'zh' ? '先定义过滤边界，再组装搜索表达式，最后用“打开搜索”验证。' : 'Define filter boundaries first, then build query terms, and validate via Open Search.')}</div>
+          </div>
           <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.8 · ' : '5.8 · '}${t('sectionFilter')}`)}</span>${hintBtn('filter')}</div>
           <label>${esc(t('minTweetChars'))}</label><input id="xac-min-chars" type="number" min="0" max="1000" step="10" value="${esc(String(S.advanced.minTweetChars))}"/>
           <div class="switch"><span>${esc(t('skipIfContainsLinks'))}</span><input id="xac-skip-links" type="checkbox" ${S.advanced.skipIfContainsLinks ? 'checked' : ''}/></div>
@@ -3043,6 +3167,10 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           <label>${esc(t('searchPreview'))}</label><input id="xac-search-preview" type="text" readonly value="${esc(S.advanced.searchQuery || DEFAULT_X_SEARCH_QUERY)}"/>
           <button id="xac-open-search">${esc(t('openSearch'))}</button>
 
+          <div class="card">
+            <div class="meta">${esc(S.lang === 'zh' ? '阶段 C（调度与重试策略）' : 'Phase C (Scheduling and retry strategy)')}</div>
+            <div class="meta">${esc(S.lang === 'zh' ? '先设置定时窗口，再配置失败重试，最后检查运行状态行。' : 'Set schedule windows first, then retries, then verify runtime status lines.')}</div>
+          </div>
           <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.10 · ' : '5.10 · '}${t('sectionSchedule')}`)}</span>${hintBtn('schedule')}</div>
           <div class="meta">${esc(t('scheduleDesc'))}</div>
           <div class="card schedule-runtime">
@@ -3103,6 +3231,10 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
             </div>
           `).join('')}
 
+          <div class="card">
+            <div class="meta">${esc(S.lang === 'zh' ? '阶段 D（模板资产与运维工具）' : 'Phase D (Template assets and operations tools)')}</div>
+            <div class="meta">${esc(S.lang === 'zh' ? '包含云备份、元字段、规则模板与调试，建议在业务策略稳定后再调整。' : 'Includes cloud backup, meta fields, rule templates, and debug. Tune after core strategy stabilizes.')}</div>
+          </div>
           <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.12 · ' : '5.12 · '}${t('sectionCloudBackup')}`)}</span>${hintBtn('cloudBackup')}</div>
           <div class="r2">
             <button id="xac-cloud-save">${esc(t('cloudSave'))}</button>
@@ -3211,8 +3343,14 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         <div class="r2"><button class="p" id="xac-editor-save">${esc(t('saveProfile'))}</button><button id="xac-editor-cancel">${esc(t('cancel'))}</button></div>
       </div>
     </div>` : ''}`
+    }
 
     document.getElementById('xac-t')?.addEventListener('click', () => { S.open = !S.open; render() })
+    document.getElementById('xac-popup-guide-toggle')?.addEventListener('click', (event) => {
+      event.preventDefault()
+      S.popupGuideExpanded = !S.popupGuideExpanded
+      render()
+    })
     document.getElementById('xac-login')?.addEventListener('click', async () => {
       if (S.signedIn) {
         await runPendingAction('logout', t('working'), async () => { await send('xac:google-sign-out'); S.signedIn = false; toast(t('signedOut'), 'ok') })
@@ -3940,9 +4078,12 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     if (VIEW.isContentPage) {
       scanNow()
       observe()
-    } else {
+    } else if (VIEW.isPopup) {
       await refreshRemoteRuntimeState().catch(() => {})
       setInterval(() => { refreshRemoteRuntimeState().catch(() => {}) }, 1800)
+    } else if (VIEW.isOptions) {
+      await refreshScheduleRuntimeState(false).catch(() => {})
+      render()
     }
     const runtimeOnMessage = globalThis.chrome?.runtime?.onMessage
     if (runtimeOnMessage && typeof runtimeOnMessage.addListener === 'function') {

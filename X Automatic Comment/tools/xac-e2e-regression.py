@@ -2,10 +2,10 @@
 """End-to-end regression checks for X Automatic Comment.
 
 Checks covered:
-1) Search query assembly and final X search URL.
+1) Search query assembly from options full config and final X search URL.
 2) Single run-toggle start/stop/start behavior.
-3) Popup login area state switching (logged out -> logged in -> logged out).
-4) Key copy consistency for search and account areas.
+3) Popup compact surface (essential controls only).
+4) Popup login area state switching (logged out -> logged in -> logged out).
 """
 
 from __future__ import annotations
@@ -124,75 +124,75 @@ def parse_search_url(url_text: str) -> tuple[str, str, str]:
 
 
 def check_search_url(context: BrowserContext, ext_id: str) -> CheckResult:
-    popup = context.new_page()
-    popup.goto(f"chrome-extension://{ext_id}/popup.html", wait_until="domcontentloaded", timeout=30000)
-    popup.wait_for_selector("#xac-search-include-a", timeout=20000)
+    options = context.new_page()
+    options.goto(f"chrome-extension://{ext_id}/options.html", wait_until="domcontentloaded", timeout=30000)
+    options.wait_for_selector("#xac-search-include-a", timeout=20000)
 
-    popup.fill("#xac-search-include-a", "keyword1")
-    popup.fill("#xac-search-include-b", "keyword2")
-    popup.fill("#xac-search-exclude", "exclude1")
-    popup.fill("#xac-search-min-replies", "3")
-    popup.locator("#xac-search-min-replies").press("Tab")
+    options.fill("#xac-search-include-a", "keyword1")
+    options.fill("#xac-search-include-b", "keyword2")
+    options.fill("#xac-search-exclude", "exclude1")
+    options.fill("#xac-search-min-replies", "3")
+    options.locator("#xac-search-min-replies").press("Tab")
 
-    exclude_box = popup.locator("#xac-search-exclude-replies")
+    exclude_box = options.locator("#xac-search-exclude-replies")
     if not exclude_box.is_checked():
         exclude_box.check()
 
     expected_query = "(keyword1 OR keyword2) -exclude1 min_replies:3 -filter:replies"
-    popup.wait_for_timeout(500)
-    preview = popup.locator("#xac-search-preview").input_value(timeout=5000).strip()
+    options.wait_for_timeout(500)
+    preview = options.locator("#xac-search-preview").input_value(timeout=5000).strip()
     if preview != expected_query:
         return CheckResult(
-            "Search URL assembly",
+            "Search URL assembly (options)",
             False,
             f"Preview mismatch. expected='{expected_query}', actual='{preview}'",
         )
 
-    popup.locator("#xac-open-search").click(timeout=10000)
+    options.locator("#xac-open-search").click(timeout=10000)
 
     current_url = ""
     actual_query = ""
     src = ""
     feed = ""
     for _ in range(120):
-      for page in context.pages:
-        if page == popup:
-            continue
-        if not str(page.url or "").startswith("https://x.com/"):
-            continue
-        current_url = page.url
-        actual_query, src, feed = parse_search_url(current_url)
+        for page in context.pages:
+            if page == options:
+                continue
+            if not str(page.url or "").startswith("https://x.com/"):
+                continue
+            current_url = page.url
+            actual_query, src, feed = parse_search_url(current_url)
+            if current_url:
+                break
         if current_url:
             break
-      if current_url:
-          break
-      popup.wait_for_timeout(250)
+        options.wait_for_timeout(250)
 
     if not current_url:
-        return CheckResult("Search URL assembly", False, "No X page was opened from popup search action.")
+        return CheckResult("Search URL assembly (options)", False, "No X page was opened from options search action.")
 
     if actual_query != expected_query or src != "typed_query" or feed != "live":
         parsed = urllib.parse.urlparse(current_url or "")
         if parsed.path.startswith("/i/flow/login"):
             return CheckResult(
-                "Search URL assembly",
+                "Search URL assembly (options)",
                 True,
                 f"redirected-to-login-without-query: '{current_url}' (preview verified='{preview}')",
             )
         return CheckResult(
-            "Search URL assembly",
+            "Search URL assembly (options)",
             False,
             f"URL mismatch. page='{current_url}', q='{actual_query}', src='{src}', f='{feed}'",
         )
 
     if "gm" in actual_query.lower() or "gn" in actual_query.lower():
         return CheckResult(
-            "Search URL assembly",
+            "Search URL assembly (options)",
             False,
             f"Unexpected gm/gn found in query: '{actual_query}'",
         )
 
-    return CheckResult("Search URL assembly", True, actual_query)
+    return CheckResult("Search URL assembly (options)", True, actual_query)
 
 
 def _toggle_text(page: Page) -> str:
@@ -332,25 +332,36 @@ def check_popup_login(context: BrowserContext, ext_id: str) -> CheckResult:
     return CheckResult("Popup login state switch", True, f"login='{login_text}' | logout='{logout_text}' | email='{email_text}'")
 
 
-def check_popup_full_config(context: BrowserContext, ext_id: str) -> CheckResult:
+def check_popup_compact_surface(context: BrowserContext, ext_id: str) -> CheckResult:
     popup = context.new_page()
     popup.goto(f"chrome-extension://{ext_id}/popup.html", wait_until="domcontentloaded", timeout=30000)
     popup.wait_for_selector("#xac-root", timeout=20000)
 
     required = [
         "#xac-p",
+        "#xac-open-search",
+        "#xac-open-advanced-panel",
+        "#xac-open-options",
+        "#xac-sync-spark",
+        "#xac-run-toggle",
+    ]
+    hidden = [
         "#xac-ci",
         "#xac-search-include-a",
         "#xac-search-preview",
         "#xac-debug-prompt",
         "#xac-spark-url",
-        "#xac-run-toggle",
     ]
     missing = [sel for sel in required if popup.locator(sel).count() == 0]
-    if missing:
-        return CheckResult("Popup full config surface", False, f"Missing popup controls: {', '.join(missing)}")
+    unexpected = [sel for sel in hidden if popup.locator(sel).count() > 0]
+    if missing or unexpected:
+        return CheckResult(
+            "Popup compact surface",
+            False,
+            f"missing={missing} unexpected={unexpected}",
+        )
 
-    return CheckResult("Popup full config surface", True, ", ".join(required))
+    return CheckResult("Popup compact surface", True, f"required={required} hidden={hidden}")
 
 
 def check_popup_to_options(context: BrowserContext, ext_id: str) -> CheckResult:
@@ -374,7 +385,6 @@ def check_options_page_scope_and_save(context: BrowserContext, ext_id: str) -> C
     options = context.new_page()
     options.goto(f"chrome-extension://{ext_id}/options.html", wait_until="domcontentloaded", timeout=30000)
     options.wait_for_selector("#xac-root", timeout=20000)
-    options.wait_for_selector("#xac-open-advanced-panel", timeout=15000)
     options.wait_for_selector("#xac-spark-url", timeout=15000)
 
     required_selectors = [
@@ -383,7 +393,8 @@ def check_options_page_scope_and_save(context: BrowserContext, ext_id: str) -> C
         "#xac-search-include-a",
         "#xac-debug-prompt",
         "#xac-spark-url",
-        "#xac-run-toggle",
+        "#xac-ap",
+        "#xac-max",
     ]
     missing = [sel for sel in required_selectors if options.locator(sel).count() == 0]
     if missing:
@@ -466,8 +477,7 @@ def run() -> int:
             if x_pages:
                 page = x_pages[-1]
             results.append(check_run_toggle(page))
-            results.append(check_popup_full_config(context, ext_id))
-            results.append(check_popup_login(context, ext_id))
+            results.append(check_popup_compact_surface(context, ext_id))
             results.append(check_popup_to_options(context, ext_id))
             results.append(check_options_page_scope_and_save(context, ext_id))
 

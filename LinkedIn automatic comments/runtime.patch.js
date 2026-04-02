@@ -801,11 +801,40 @@
     }
   }
 
+  function hideGateToasts() {
+    if (!document.body) return;
+
+    const gatePattern = /(free\s*trial|max(?:imum)?\s*usage|maximum\s*usage\s*allowed|upgrade|subscribe|already\s*a\s*subscriber|reached\s*the\s*maximum\s*usage)/i;
+
+    const removeNodeIfGate = (node) => {
+      if (!node) return;
+      const text = (node.textContent || "").trim();
+      if (!text || !gatePattern.test(text)) return;
+
+      const host = node.closest(".iziToast, [id^='iziToast'], .Toastify__toast, [role='alert'], [aria-live], div");
+      const target = host || node;
+
+      const closeBtn = target.querySelector?.("button, [role='button'], .iziToast-close");
+      try {
+        if (closeBtn && typeof closeBtn.click === "function") closeBtn.click();
+      } catch (_err) {
+        // Ignore close button click failures.
+      }
+
+      if (typeof target.remove === "function") target.remove();
+      else target.style.display = "none";
+    };
+
+    const candidates = Array.from(document.querySelectorAll(".iziToast, [id^='iziToast'], .Toastify__toast, [role='alert'], [aria-live='polite'], [aria-live='assertive'], div"));
+    for (const el of candidates) removeNodeIfGate(el);
+  }
+
   function applyRuntimeLayers() {
     applyLanguageToDom();
     unlockDisabledControls();
     enforceBrandTitle();
     hideBottomRightLogo();
+    hideGateToasts();
     mountPreferencesAutoSendControls();
   }
 
@@ -998,6 +1027,22 @@
     updateControls();
   }
 
+  function initContentContext() {
+    const run = () => hideGateToasts();
+
+    run();
+    if (document.body) {
+      const observer = new MutationObserver(run);
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+    }
+
+    setInterval(run, 600);
+  }
+
   function initPopupContext() {
     applyTheme(currentMode);
     applyLanguage(currentLang);
@@ -1022,7 +1067,14 @@
 
   setupAutoSendDelayRuntime();
 
-  if (!isPopupContext()) return;
+  if (!isPopupContext()) {
+    if (document.readyState === "loading") {
+      document.addEventListener("DOMContentLoaded", initContentContext);
+    } else {
+      initContentContext();
+    }
+    return;
+  }
 
   if (document.readyState === "loading") {
     document.addEventListener("DOMContentLoaded", initPopupContext);

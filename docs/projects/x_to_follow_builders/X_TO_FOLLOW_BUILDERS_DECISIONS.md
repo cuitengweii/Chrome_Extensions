@@ -55,3 +55,23 @@
 - 字段：`name`、`description`、`action.default_title`
 - 目的：降低不同终端默认编码导致的 JSON 读取误判风险，保证跨环境可解析性
 - 说明：仅编码表达方式变更，不改变扩展运行时功能
+
+## 2026-04-05 补充：GasGx v3.0 视觉规范落地（popup/options）
+
+10. 主题令牌统一到“赛博工业”双主题体系
+- 落地文件：
+  - `D:\code\Chrome_Extensions\X-to-follow-builders\popup.html`
+  - `D:\code\Chrome_Extensions\X-to-follow-builders\options.html`
+- 统一采用深色默认 + `prefers-color-scheme: light` 亮色覆盖。
+- 基础变量统一为 `--bg-main / --bg-card / --text-primary / --text-secondary / --border-line / --accent-aurora`，并补齐 `--status-success / --status-warning / --status-danger / --status-info`。
+
+11. 交互层强制采用工业风控件约束
+- 卡片圆角统一收敛到 `8px`，按钮与输入控件圆角统一 `4px`。
+- 间距使用 `8px` 栅格（8/16 为主），避免混用 10/12/14 导致的节奏不一致。
+- 主 CTA（`button.primary`）启用呼吸发光动画（2s 周期）。
+
+12. 玻璃态层级与下拉防坑规则已固化
+- 顶栏、主面板、写入诊断、弹窗统一为 glassmorphism：半透明背景 + `backdrop-filter: blur(12px)` + 低透明度极光绿边框。
+- 集合列表 hover/active 统一使用透明极光绿背景 + 左侧 2px 高亮边线，替代默认亮蓝风格。
+- 复选框强制 `16x16` 且 `flex-shrink: 0`，避免在 flex 布局中拉伸变形。
+- 原生 `select` 统一主题色与箭头样式，禁止出现深色背景下低对比文本。

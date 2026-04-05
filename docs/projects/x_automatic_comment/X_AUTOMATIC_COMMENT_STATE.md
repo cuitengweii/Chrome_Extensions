@@ -177,6 +177,107 @@
    - `$env:NODE_PATH='C:\Temp\xac-playwright-runtime\node_modules'; node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.js` passed.
    - `python D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.py` passed.
 
+## 2026-04-02 Sidebar UI Round 5 (Minimal Execution Scope)
+1. Popup scope tightening (`D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js`):
+   - removed profile selector block from popup.
+   - popup strategy section now explicitly states profile management moved to Full Config.
+   - sidebar now focuses on execution loop only: account+AI summary, strategy chips, run controls, status, and key-config summary.
+2. Regression alignment (`D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.py`):
+   - popup compact-surface assertion updated: `#xac-p` is no longer required in popup.
+3. Validation:
+   - `node --check D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js` passed.
+   - `python -m py_compile D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.py` passed.
+   - `node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-smoke-check.js` passed.
+   - `$env:NODE_PATH='C:\Temp\xac-playwright-runtime\node_modules'; node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.js` passed.
+   - `python D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.py` passed.
+
+## 2026-04-02 Sidebar UI Round 6 (Clickable Key-Config Jump)
+1. Popup key-config navigation (`D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js`):
+   - added direct jump actions in popup key-config summary:
+     - `Go to Search Config`
+     - `Go to Auto-Reply Config`
+   - jump actions open options page with anchor hashes.
+2. Options anchor support:
+   - added stable anchor ids for major options steps:
+     - `xac-account-anchor`
+     - `xac-ai-anchor`
+     - `xac-profile-anchor`
+     - `xac-strategy-anchor`
+     - `xac-content-anchor`
+     - `xac-execution-anchor`
+     - existing `xac-advanced-anchor`
+   - search filter section now exposes `xac-search-anchor`.
+3. Hash-focus behavior:
+   - `openDetailedOptionsPage(anchor)` now supports optional anchor parameter.
+   - options page auto-focuses and highlights target anchor on initial render when hash exists.
+4. Validation:
+   - `node --check D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js` passed.
+   - `python -m py_compile D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.py` passed.
+   - `node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-smoke-check.js` passed.
+   - `$env:NODE_PATH='C:\Temp\xac-playwright-runtime\node_modules'; node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.js` passed.
+   - `python D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.py` passed.
+
+## 2026-04-02 Sidebar UI Round 7 (Two-Line Copy Compression)
+1. Popup guidance copy simplification (`D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js`):
+   - replaced expandable guide notes with fixed two-line concise guidance.
+   - removed popup guide expand/collapse state and related event wiring.
+2. Key-config copy compression:
+   - search key config collapsed into one summary line.
+   - auto-reply key config collapsed into one summary line.
+   - kept both jump actions (`Go to Search Config` / `Go to Auto-Reply Config`) unchanged.
+3. Validation:
+   - `node --check D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js` passed.
+   - `node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-smoke-check.js` passed.
+   - `$env:NODE_PATH='C:\Temp\xac-playwright-runtime\node_modules'; node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.js` passed.
+   - `python D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.py` passed.
+
+## 2026-04-02 Step Label Unification (Cross Surfaces)
+1. Step naming normalization (`D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js`):
+   - unified step title format to one numbering system across popup/options/content:
+     - `Step 0 · Account`
+     - `Step 0.5 · AI Engine`
+     - existing `Step 1~5` retained
+   - Chinese titles aligned to the same scheme:
+     - `步骤0 · 账号`
+     - `步骤0.5 · AI 引擎`
+2. Rationale:
+   - keeps advanced module numbering (`5.1~5.15`) consistent with existing `Step 5 · Advanced`.
+   - removes mixed wording (`Preparation/准备项`) between pages.
+3. Validation:
+   - `node --check D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js` passed.
+   - `node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-smoke-check.js` passed.
+   - `$env:NODE_PATH='C:\Temp\xac-playwright-runtime\node_modules'; node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.js` passed.
+   - `python D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.py` passed.
+
+## 2026-04-02 Step Visual Unification (Badge Style)
+1. Unified step title rendering (`D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js`):
+   - step titles now render as:
+     - number badge (`Step 0`, `步骤0.5`, etc.)
+     - title label (`Account`, `AI 引擎`, etc.)
+   - applied through shared `stepHead` renderer, covering popup/options/content consistently.
+2. Shared style system:
+   - added `step-badge` + `step-label` styles for unified visual hierarchy.
+   - popup-lite gets compact badge sizing while keeping the same style language.
+3. Validation:
+   - `node --check D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js` passed.
+   - `node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-smoke-check.js` passed.
+   - `$env:NODE_PATH='C:\Temp\xac-playwright-runtime\node_modules'; node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.js` passed.
+   - `python D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.py` passed.
+
+## 2026-04-02 Step Visual Unification (Current-Step Emphasis)
+1. Current-step highlight rules (`D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js`):
+   - active step now uses brighter badge/label treatment while other steps remain muted.
+   - style is shared across popup/options/content for consistent hierarchy.
+2. Context-aware step selection:
+   - content page: `Step 4 · Run Settings` highlighted.
+   - popup: account not ready -> highlight `Step 0 · Account`; ready -> highlight `Step 4 · Run Settings`.
+   - options page: highlight step by hash anchor (`#xac-*-anchor`), defaulting to `Step 0 · Account`.
+3. Validation:
+   - `node --check D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js` passed.
+   - `node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-smoke-check.js` passed.
+   - `$env:NODE_PATH='C:\Temp\xac-playwright-runtime\node_modules'; node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.js` passed.
+   - `python D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.py` passed.
+
 ## Next Step
 1. 在真实 X 页面做一次人工回归：
    - 名称替换 `never/smart/always`

@@ -73,3 +73,25 @@
 - 扫描结论：`X-to-follow-builders/` 与 `docs/projects/x_to_follow_builders/` 本轮无新增业务代码改动，仅执行状态归档同步。
 - 边界说明：当前仓库存在其他子项目（LinkedIn automatic comments）的未提交改动，本次归档未并入该子项目内容。
 - 本线程性质：`discussion-only / no code landed`（仅项目状态同步，不含该项目源码落地变更）。
+
+## 2026-04-05 UI 规范优化（code landed）
+
+### 本次落地范围（OUTPUT）
+1. 已按 GasGx v3.0 对 `popup.html`、`options.html` 完成视觉系统升级，保留原有 DOM 与 JS 交互逻辑不变。
+2. 已新增双主题设计令牌（深色默认 + 亮色覆盖）、状态色系统、玻璃态层级、工业风圆角与 8px 间距节奏。
+3. 已对下拉与复选框加入防畸变与高对比保护（`select` 主题化、checkbox `16x16` + `flex-shrink: 0`）。
+
+### 回归验证（TEST）
+1. `node --check D:\code\Chrome_Extensions\X-to-follow-builders\popup.js`：通过。
+2. `node --check D:\code\Chrome_Extensions\X-to-follow-builders\options.js`：通过。
+3. 视觉手工回归：尝试用 Playwright 加载本地页面时，受现有浏览器会话占用限制未执行成功；本线程仅完成静态样式与语法级验证。
+
+### 当前状态（STATE）
+1. UI 样式已从旧深色单主题升级为可切换双主题；核心按钮、面板、列表状态、弹窗层级已统一为赛博工业风。
+2. 图表规范条款暂未落地（当前页面无 ECharts/G2 组件）。
+
+### Next Step
+1. 在 Chrome 扩展真实运行上下文做一次可视化回归，重点检查：
+   - popup 的下拉/按钮/自动监听开关可读性
+   - options 的列表 hover/active、批量操作栏、modal 层级
+2. 如后续引入图表组件，按同一规范补齐图表配色、渐变面积与 tooltip 玻璃态样式。

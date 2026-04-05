@@ -338,7 +338,6 @@ def check_popup_compact_surface(context: BrowserContext, ext_id: str) -> CheckRe
     popup.wait_for_selector("#xac-root", timeout=20000)
 
     required = [
-        "#xac-p",
         "#xac-open-search",
         "#xac-open-advanced-panel",
         "#xac-open-options",

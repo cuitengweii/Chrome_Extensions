@@ -857,6 +857,12 @@
     const minInput = document.getElementById("ce-pref-delay-min");
     const maxInput = document.getElementById("ce-pref-delay-max");
     if (!modeBtn || !langBtn) return;
+    modeBtn.classList.add("toggle-group-btn");
+    langBtn.classList.add("toggle-group-btn");
+    modeBtn.classList.toggle("active", currentMode === "dark");
+    langBtn.classList.toggle("active", currentLang === "zh-CN");
+    modeBtn.setAttribute("data-state", currentMode);
+    langBtn.setAttribute("data-state", currentLang);
 
     modeBtn.textContent = currentMode === "dark" ? "L" : "D";
     modeBtn.title = currentLang === "zh-CN"
@@ -911,6 +917,7 @@
 
     const controls = document.createElement("div");
     controls.id = "ce-runtime-controls";
+    controls.className = "toggle-group-container";
 
     const modeBtn = document.createElement("button");
     modeBtn.id = "ce-theme-toggle";
@@ -1026,21 +1033,10 @@
     anchorRow.insertAdjacentElement("afterend", root);
     updateControls();
   }
-
   function initContentContext() {
-    const run = () => hideGateToasts();
-
-    run();
-    if (document.body) {
-      const observer = new MutationObserver(run);
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        characterData: true
-      });
-    }
-
-    setInterval(run, 600);
+    // Avoid mutating LinkedIn feed DOM from runtime patch logic.
+    // Content-side gate toast sweeping can click unrelated buttons and break page rendering.
+    return;
   }
 
   function initPopupContext() {

@@ -73,3 +73,28 @@
 ### Impact
 - Cloud backup/meta fields/reply-image/schedule/session controls now render from i18n keys.
 - Runtime toast and error messages for zh/en switched to key-based rendering.
+
+## 2026-04-05 | GasGx Cyber-Industrial Visual System Applied
+
+### Decision
+- Align X Automatic Comment UI to GasGx visual spec v1.0 (Cyber-Industrial / dark tech).
+- Adopt fixed design tokens: `#0F0F0F`, `#202020`, `#5DD62C`, `#28A745`, `#00E676`, `#337418`.
+- Standardize effects: glassmorphism panels, breathing glow for primary CTA, and deep inset shadows for inputs.
+
+### Impact
+- `xac-content.js` inline runtime styles and `xac-theme.css` are now token-aligned.
+- Primary actions use green CTA states with breathing hover animation.
+- Data badges use dark-to-green gradient and glow emphasis.
+- Status indicator uses bright green dot with glow for active/running state.
+
+## 2026-04-05 | GasGx-UI-v4.0 Locked (Dark Default + Light Support)
+
+### Decision
+- Lock UI tokens to GasGx-UI-v4.0 across runtime panel and extension page styles.
+- Keep dark mode as default visual baseline, while providing explicit `xac-theme-light` token overrides.
+- Enforce anti-pattern protections: no default blue dropdown active state, no low-contrast menu text, and no stretched checkbox/radio/switch/select-arrow controls.
+
+### Impact
+- `xac-theme.css` was rebuilt around v4.0 tokens, glassmorphism overlays, breathing CTA glow, and industrial spacing/radius rules.
+- `xac-content.js` runtime `styles()` now includes a v4.0 locked override block to prevent legacy hardcoded values from drifting the design.
+- Form controls now apply explicit width/height and `flex-shrink: 0` safeguards to avoid size blow-ups in flex layouts.

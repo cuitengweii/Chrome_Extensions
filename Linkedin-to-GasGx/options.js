@@ -12,6 +12,7 @@ const saveButton = document.getElementById("saveSettings");
 const resetButton = document.getElementById("resetSettings");
 const statusNode = document.getElementById("status");
 const ruleGroupsNode = document.getElementById("ruleGroups");
+const customSelectStates = new WeakMap();
 
 function arrayToMultiline(values) {
   return (values || []).join("\n");
@@ -28,6 +29,138 @@ function setStatus(message) {
   statusNode.textContent = message;
 }
 
+function closeOpenCustomSelects(exceptWrapper) {
+  document.querySelectorAll(".custom-select.is-open").forEach((wrapper) => {
+    if (wrapper === exceptWrapper) return;
+    wrapper.classList.remove("is-open");
+    const trigger = wrapper.querySelector(".custom-select-trigger");
+    if (trigger) trigger.setAttribute("aria-expanded", "false");
+  });
+}
+
+function syncCustomSelect(select) {
+  const state = customSelectStates.get(select);
+  if (!state) return;
+  const selectedOption = select.selectedOptions[0] || select.options[0];
+  state.trigger.textContent = selectedOption ? selectedOption.textContent : "Select an option";
+  state.wrapper.classList.toggle("is-disabled", select.disabled);
+  state.trigger.disabled = select.disabled;
+  state.menu.querySelectorAll(".custom-dropdown-item").forEach((item) => {
+    item.classList.toggle("is-selected", item.dataset.value === select.value);
+  });
+}
+
+function rebuildCustomSelectOptions(select) {
+  const state = customSelectStates.get(select);
+  if (!state) return;
+
+  state.menu.innerHTML = "";
+  Array.from(select.options).forEach((option) => {
+    const item = document.createElement("button");
+    item.type = "button";
+    item.className = "custom-dropdown-item";
+    item.dataset.value = option.value;
+    item.textContent = option.textContent;
+    item.disabled = option.disabled;
+    item.addEventListener("click", () => {
+      if (option.disabled) return;
+      select.value = option.value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      closeOpenCustomSelects();
+      state.trigger.focus();
+    });
+    state.menu.appendChild(item);
+  });
+
+  syncCustomSelect(select);
+}
+
+function ensureCustomSelect(select) {
+  if (customSelectStates.has(select)) {
+    rebuildCustomSelectOptions(select);
+    return;
+  }
+
+  const wrapper = document.createElement("div");
+  wrapper.className = "custom-select";
+
+  const trigger = document.createElement("button");
+  trigger.type = "button";
+  trigger.className = "custom-select-trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+
+  const menu = document.createElement("div");
+  menu.className = "custom-dropdown-menu";
+  menu.setAttribute("role", "listbox");
+
+  select.classList.add("native-select");
+  const parent = select.parentNode;
+  parent.insertBefore(wrapper, select);
+  wrapper.appendChild(select);
+  wrapper.appendChild(trigger);
+  wrapper.appendChild(menu);
+
+  customSelectStates.set(select, { wrapper, trigger, menu });
+
+  trigger.addEventListener("click", () => {
+    if (select.disabled) return;
+    const willOpen = !wrapper.classList.contains("is-open");
+    closeOpenCustomSelects(wrapper);
+    wrapper.classList.toggle("is-open", willOpen);
+    trigger.setAttribute("aria-expanded", willOpen ? "true" : "false");
+  });
+
+  trigger.addEventListener("keydown", (event) => {
+    if (!["ArrowDown", "ArrowUp", "Enter", " "].includes(event.key)) return;
+    event.preventDefault();
+    if (select.disabled) return;
+    if (!wrapper.classList.contains("is-open")) {
+      closeOpenCustomSelects(wrapper);
+      wrapper.classList.add("is-open");
+      trigger.setAttribute("aria-expanded", "true");
+    }
+    const target = menu.querySelector(".custom-dropdown-item.is-selected") || menu.querySelector(".custom-dropdown-item");
+    target?.focus();
+  });
+
+  menu.addEventListener("keydown", (event) => {
+    const items = Array.from(menu.querySelectorAll(".custom-dropdown-item:not(:disabled)"));
+    if (!items.length) return;
+    const currentIndex = items.indexOf(document.activeElement);
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      const next = items[Math.min(currentIndex + 1, items.length - 1)] || items[0];
+      next.focus();
+      return;
+    }
+
+    if (event.key === "ArrowUp") {
+      event.preventDefault();
+      const prev = items[Math.max(currentIndex - 1, 0)] || items[0];
+      prev.focus();
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeOpenCustomSelects();
+      trigger.focus();
+    }
+  });
+
+  select.addEventListener("change", () => {
+    syncCustomSelect(select);
+  });
+
+  rebuildCustomSelectOptions(select);
+}
+
+function enhanceCustomSelects(root = document) {
+  root.querySelectorAll("select").forEach((select) => ensureCustomSelect(select));
+}
+
 function populateDefaultCategoryOptions(categories, selectedValue) {
   defaultCategorySelect.innerHTML = "";
   categories.forEach((category) => {
@@ -37,6 +170,7 @@ function populateDefaultCategoryOptions(categories, selectedValue) {
     if (category === selectedValue) option.selected = true;
     defaultCategorySelect.appendChild(option);
   });
+  ensureCustomSelect(defaultCategorySelect);
 }
 
 function buildRuleCard(rule, index) {
@@ -110,6 +244,7 @@ function renderRuleGroups(settings) {
     entries.forEach(({ rule, index }) => section.appendChild(buildRuleCard(rule, index)));
     ruleGroupsNode.appendChild(section);
   });
+  enhanceCustomSelects(ruleGroupsNode);
 }
 
 function readSettingsFromForm() {
@@ -146,6 +281,7 @@ function renderSettings(settings) {
   populateDefaultCategoryOptions(settings.categoryOptions, settings.defaultCategory);
   defaultPublisherInput.value = settings.defaultPublisher;
   renderRuleGroups(settings);
+  enhanceCustomSelects(document);
 }
 
 async function loadSettings() {
@@ -157,6 +293,16 @@ async function loadSettings() {
 categoryOptionsInput.addEventListener("input", () => {
   const categories = multilineToArray(categoryOptionsInput.value);
   populateDefaultCategoryOptions(categories.length ? categories : DEFAULT_COLLECTOR_SETTINGS.categoryOptions, defaultCategorySelect.value);
+});
+
+document.addEventListener("click", (event) => {
+  if (!(event.target instanceof Element) || event.target.closest(".custom-select")) return;
+  closeOpenCustomSelects();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Escape") return;
+  closeOpenCustomSelects();
 });
 
 saveButton.addEventListener("click", async () => {

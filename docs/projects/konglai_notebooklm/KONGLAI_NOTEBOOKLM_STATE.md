@@ -31,3 +31,31 @@
 1. Add/expand e2e coverage for "multi-rule-set + same notebook + multi-source" conflict and summary rendering.
 2. Add edge-case tests for pending/active run lock across multiple manager tabs.
 3. Evaluate whether to split automation logs by mode in dedicated tabs/filters when log volume grows.
+
+## 2026-04-05 UI Standardization Update
+1. Applied GasGx Cyber-Industrial visual spec to all extension UI entry pages:
+   - popup (`popup.css`)
+   - options (`options.css`)
+   - manager (`manager.css`)
+   - prompts (`prompts.css`)
+2. Landed effects:
+   - glass panel/card shell
+   - aurora-green breathing CTA style
+   - industrial inset form controls
+   - status indicator glow + data metric highlight
+3. Current UI state is visually unified and dark-mode consistent across all pages.
+
+## 2026-04-05 UI v3.1 Landing State
+1. Applied `GasGx-UI-v3.1` to all extension entry stylesheets:
+   - `popup.css`
+   - `options.css`
+   - `prompts.css`
+   - `manager.css`
+2. Current visual behavior:
+   - default dark-mode cyber-industrial theme
+   - light-mode token path restored (for theme toggle / data-theme switch)
+   - no empty count circles in sidebar nav
+3. Current testing status:
+   - style token injection verified
+   - empty badge visibility logic verified
+   - JS syntax remains valid (no runtime syntax regression introduced by this UI pass)

@@ -14,10 +14,12 @@
       isContentPage: !(isPopup || isOptions)
     }
   })()
+  const ENABLE_CONTENT_SIDEBAR = false
 
   const K = {
     lang: 'xac.language',
     autoPost: 'xac.autoPostEnabled',
+    autoRunMax: 'xac.autoRunMax',
     googleSession: 'xac.googleSession',
     profileMeta: 'xac.profileMeta',
     advanced: 'xac.advancedSettings',
@@ -202,6 +204,8 @@
       emptyModelOutput: 'Empty model output',
       editorMissing: 'No editor found',
       insertFailed: 'Failed to insert text into editor',
+      autoPostRequiredForAuto: 'Auto run requires "Auto-post after generate" enabled.',
+      autoPostNotSent: 'Reply was generated but not sent. Skipped this item.',
       guideSec: 'Usage Guide',
       guideLine1: 'Prompt + Output is debug mode for manual one-off generation.',
       guideLine2: 'Custom instructions are short-term task constraints for this run.',
@@ -242,7 +246,7 @@
       savedAdvanced: 'Advanced settings saved',
       stepProfile: 'Step 1 · Choose Profile',
       stepProfileDesc: 'Select and edit who this account sounds like before generating anything.',
-      stepAccount: 'Preparation · Account',
+      stepAccount: 'Step 0 · Account',
       stepAccountDesc: 'Confirm login status and language first to avoid misconfigured runs.',
       stepStrategy: 'Step 2 · Set Strategy',
       stepStrategyDesc: 'Choose interaction intensity, objective, and target reply length.',
@@ -367,7 +371,7 @@
       helpMetaFields: 'Lightweight compatibility toggles for sidebar tools and legacy metadata fields.',
       pipelineTitle: 'Configuration Pipeline',
       pipelineDesc: 'Go step by step. Use ? on each block to understand why this setting exists.',
-      stepAi: 'Preparation · AI Engine',
+      stepAi: 'Step 0.5 · AI Engine',
       stepAiDesc: 'Confirm Spark and GasGx sync settings before generation or automation.',
       sparkStatus: 'AI Engine Status',
       sparkUrl: 'Spark URL',
@@ -487,6 +491,8 @@
       emptyModelOutput: '模型返回为空',
       editorMissing: '未找到回复输入框',
       insertFailed: '写入回复框失败',
+      autoPostRequiredForAuto: '自动运行前请开启“生成后自动发送”。',
+      autoPostNotSent: '已生成回复但未成功发送，已跳过该条。',
       guideSec: '功能说明',
       guideLine1: '提示词 + 输出是调试模式，用于手动单次生成。',
       guideLine2: '自定义指令是本轮任务约束，影响当前回复策略。',
@@ -527,7 +533,7 @@
       savedAdvanced: '高级设置已保存',
       stepProfile: '步骤1 · 选择人设',
       stepProfileDesc: '先选定账号“说话的人设”，再进行后续生成。',
-      stepAccount: '准备阶段 · 账号',
+      stepAccount: '步骤0 · 账号',
       stepAccountDesc: '先确认登录状态与语言，避免后续配置错位。',
       stepStrategy: '步骤2 · 设置策略',
       stepStrategyDesc: '确定互动强度、目标和回复长度预期。',
@@ -652,7 +658,7 @@
       helpMetaFields: '轻量兼容字段和入口开关，主要用于侧栏工具与历史行为兼容。',
       pipelineTitle: '配置流水线',
       pipelineDesc: '按步骤从上到下配置；每个功能块右侧 `?` 可查看说明。',
-      stepAi: '准备项 · AI 引擎',
+      stepAi: '步骤0.5 · AI 引擎',
       stepAiDesc: '在生成和自动化前，先确认 Spark 与 GasGx 同步配置。',
       sparkStatus: 'AI 引擎状态',
       sparkUrl: 'Spark 地址',
@@ -768,7 +774,7 @@
     status: '',
     scheduled: false,
     idle: 0,
-    popupGuideExpanded: false
+    optionsHashApplied: ''
   }
 
   const HELP_KEY_TO_I18N = Object.freeze({
@@ -1464,6 +1470,58 @@
     }
   }
 
+  function normalizeCompareText(text) {
+    return String(text || '')
+      .toLowerCase()
+      .replace(/[\r\n]+/g, ' ')
+      .replace(/[“”"‘’'`]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }
+
+  function dedupeHashtags(text) {
+    const source = String(text || '').trim()
+    if (!source) return ''
+    const hashtagRe = /#[a-zA-Z0-9_\u4e00-\u9fff]+/g
+    const allTags = source.match(hashtagRe) || []
+    if (allTags.length < 6) return source
+    const uniq = []
+    for (const tag of allTags) {
+      if (!uniq.includes(tag)) uniq.push(tag)
+      if (uniq.length >= 4) break
+    }
+    const body = source.replace(hashtagRe, ' ').replace(/\s{2,}/g, ' ').trim()
+    return uniq.length ? `${body}\n${uniq.join(' ')}`.trim() : body
+  }
+
+  function sanitizeGeneratedReply(rawText, ctx = null) {
+    let out = String(rawText || '').replace(/\r\n/g, '\n').trim()
+    if (!out) return ''
+
+    out = out
+      .replace(/^```[\w-]*\n?/i, '')
+      .replace(/\n?```$/i, '')
+      .trim()
+
+    const contextCorpus = normalizeCompareText([
+      ctx?.tweetText || '',
+      ctx?.quoteText || '',
+      ctx?.threadText || ''
+    ].join('\n'))
+
+    // Remove leading echoed source line(s), usually copied from tweet text.
+    for (let i = 0; i < 3; i += 1) {
+      const firstLine = String(out.split('\n')[0] || '').trim()
+      if (!firstLine) break
+      const firstNorm = normalizeCompareText(firstLine.replace(/^>\s*/, '').replace(/^[-*]\s*/, ''))
+      if (firstNorm.length < 18 || !contextCorpus.includes(firstNorm)) break
+      out = out.split('\n').slice(1).join('\n').trim()
+    }
+
+    out = dedupeHashtags(out)
+    return out.trim()
+  }
+
   function setStatus(x) { S.status = x; const e = document.getElementById('xac-status'); if (e) e.textContent = x || '' }
 
   async function runPendingAction(action, statusText, task, restoreIdle = true) {
@@ -1626,6 +1684,7 @@
     }
     const local = await g([
       K.autoPost,
+      K.autoRunMax,
       K.profileMeta,
       K.advanced,
       K.replyRules,
@@ -1639,6 +1698,7 @@
     const hasCurrentAdvanced = local[K.advanced] && typeof local[K.advanced] === 'object'
     const hasCurrentRules = Array.isArray(local[K.replyRules]) && local[K.replyRules].length > 0
     S.autoPost = b(local[K.autoPost], false)
+    S.auto.max = clampNum(local[K.autoRunMax], 0, 200, Math.max(0, Math.round(n(S.auto.max, 0))))
     S.profileMeta = local[K.profileMeta] && typeof local[K.profileMeta] === 'object' ? local[K.profileMeta] : {}
     S.advanced = normalizeAdvanced(hasCurrentAdvanced ? local[K.advanced] : legacySettings)
     const legacyRules = convertLegacyMessagesToRules(local.messages || legacySettings?.messages || [])
@@ -1775,10 +1835,13 @@
       return S.auto
     }
     const remote = result.state || {}
+    const localMax = Math.max(0, Math.round(n(S.auto.max, 0)))
+    const remoteMax = Math.max(0, Math.round(n(remote.auto?.max, localMax)))
+    const keepLocalMax = !remote.auto?.active && remoteMax === 0 && localMax > 0
     S.auto = {
       active: !!remote.auto?.active,
       count: Math.max(0, Math.round(n(remote.auto?.count, 0))),
-      max: Math.max(0, Math.round(n(remote.auto?.max, S.auto.max || 0)))
+      max: keepLocalMax ? localMax : remoteMax
     }
     setStatus(s(remote.status, S.auto.active ? t('run') : t('idle')))
     render()
@@ -1786,9 +1849,10 @@
   }
 
   async function requestRemoteStartAuto(maxValue) {
+    const safeMax = clampNum(maxValue, 0, 200, 0)
     const result = await send('xac:start-auto', {
       query: S.advanced?.searchQuery || DEFAULT_X_SEARCH_QUERY,
-      max: Math.max(0, Math.round(n(maxValue, 0)))
+      max: safeMax
     })
     if (!result.ok) {
       throw new Error(s(result.error, t('unknownError')))
@@ -1797,8 +1861,9 @@
     S.auto = {
       active: !!remote.auto?.active,
       count: Math.max(0, Math.round(n(remote.auto?.count, 0))),
-      max: Math.max(0, Math.round(n(remote.auto?.max, maxValue)))
+      max: Math.max(0, Math.round(n(remote.auto?.max, safeMax)))
     }
+    await set({ [K.autoRunMax]: S.auto.max }).catch(() => {})
     setStatus(s(remote.status, t('run')))
     render()
     return S.auto
@@ -1817,6 +1882,7 @@
       count: Math.max(0, Math.round(n(remote.auto?.count, 0))),
       max: Math.max(0, Math.round(n(remote.auto?.max, S.auto.max || 0)))
     }
+    await set({ [K.autoRunMax]: S.auto.max }).catch(() => {})
     setStatus(s(remote.status, t('stopped')))
     render()
     return S.auto
@@ -1827,36 +1893,43 @@
     const st = document.createElement('style')
     st.id = 'xac-style'
     st.textContent = `
-${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.isPopup ? '360px' : '0'};background:#0a0f0c;color:#e2ece5;overflow-x:hidden}body{margin:0;display:flex;justify-content:center;align-items:flex-start;padding:${VIEW.isOptions ? '16px 14px' : '0'}}` : ''}
-#xac-root{--xac-bg-app:#090d0b;--xac-bg-shell:#0f1511;--xac-bg-panel:#131b16;--xac-bg-input:#0e1411;--xac-bg-soft:#162019;--xac-border:#27342d;--xac-border-strong:#335244;--xac-text:#e2ece5;--xac-muted:#97ad9f;--xac-accent:#43ad6c;--xac-accent-soft:#2f8452;--xac-accent-bg:#173026;--xac-danger:#8e6464;--xac-warning:#8a795f;position:${VIEW.isExtensionPage ? 'static' : 'fixed'};right:${VIEW.isExtensionPage ? 'auto' : '14px'};bottom:${VIEW.isExtensionPage ? 'auto' : '16px'};z-index:2147483645;width:${VIEW.isOptions ? 'min(96vw,1180px)' : (VIEW.isExtensionPage ? 'min(100%,420px)' : 'min(94vw,360px)')};max-width:${VIEW.isOptions ? '1180px' : (VIEW.isExtensionPage ? '420px' : 'none')};min-width:${VIEW.isOptions ? 'min(900px,100%)' : (VIEW.isExtensionPage ? 'min(360px,100%)' : '0')};margin:${VIEW.isExtensionPage ? '0 auto' : '0'};padding:${VIEW.isExtensionPage ? '10px' : '0'};box-sizing:border-box;font-family:Segoe UI,Microsoft YaHei,sans-serif}
-#xac-root .shell{border:1px solid var(--xac-border-strong);border-radius:14px;background:var(--xac-bg-shell);box-shadow:0 10px 28px rgba(0,0,0,.45);overflow:hidden;max-width:100%}
+${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.isPopup ? '360px' : '0'};background:#0f0f0f;color:#eaf7e6;overflow-x:hidden}body{margin:0;display:flex;justify-content:center;align-items:flex-start;padding:${VIEW.isOptions ? '16px 14px' : '0'}}` : ''}
+#xac-root{--xac-bg-app:#0f0f0f;--xac-bg-shell:#202020;--xac-bg-panel:rgba(32,32,32,.7);--xac-bg-input:#0f0f0f;--xac-bg-soft:#171717;--xac-border:rgba(93,214,44,.15);--xac-border-strong:rgba(93,214,44,.22);--xac-text:#eaf7e6;--xac-muted:#9ab29a;--xac-accent:#5dd62c;--xac-accent-soft:#28a745;--xac-accent-bg:#337418;--xac-danger:#00e676;--xac-warning:#00e676;position:${VIEW.isExtensionPage ? 'static' : 'fixed'};right:${VIEW.isExtensionPage ? 'auto' : '14px'};bottom:${VIEW.isExtensionPage ? 'auto' : '16px'};z-index:2147483645;width:${VIEW.isOptions ? 'min(96vw,1180px)' : (VIEW.isExtensionPage ? 'min(100%,420px)' : 'min(94vw,360px)')};max-width:${VIEW.isOptions ? '1180px' : (VIEW.isExtensionPage ? '420px' : 'none')};min-width:${VIEW.isOptions ? 'min(900px,100%)' : (VIEW.isExtensionPage ? 'min(360px,100%)' : '0')};margin:${VIEW.isExtensionPage ? '0 auto' : '0'};padding:${VIEW.isExtensionPage ? '10px' : '0'};box-sizing:border-box;font-family:Segoe UI,Microsoft YaHei,sans-serif}
+@keyframes breathing{0%{box-shadow:0 0 10px rgba(93,214,44,.3)}50%{box-shadow:0 0 20px rgba(93,214,44,.8)}100%{box-shadow:0 0 10px rgba(93,214,44,.3)}}
+#xac-root .shell{border:1px solid rgba(93,214,44,.15);border-radius:14px;background:rgba(32,32,32,.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 10px 28px rgba(0,0,0,.45);overflow:hidden;max-width:100%}
 #xac-root .top{width:100%;border:0;cursor:pointer;background:transparent;color:var(--xac-text);padding:10px 12px;display:flex;justify-content:space-between;align-items:center}
 #xac-root .top .t1{font-size:15px;font-weight:800;line-height:1.1}
 #xac-root .top .t2{font-size:11px;color:var(--xac-muted);line-height:1.2}
-#xac-root .quota{border:1px solid var(--xac-border-strong);border-radius:999px;padding:2px 8px;font-size:11px;color:#b4dec4;background:var(--xac-bg-soft);white-space:nowrap}
+#xac-root .quota{border:1px solid var(--xac-border-strong);border-radius:999px;padding:2px 8px;font-size:11px;color:var(--xac-accent);background:linear-gradient(135deg,#202020,#337418);text-shadow:0 0 8px rgba(93,214,44,.45);white-space:nowrap}
 #xac-root .body{border-top:1px solid var(--xac-border);display:grid;grid-template-columns:${VIEW.isOptions ? 'repeat(2,minmax(0,1fr))' : '1fr'};align-items:start;gap:8px;padding:10px 12px;max-height:${VIEW.isExtensionPage ? 'none' : '76vh'};overflow:${VIEW.isExtensionPage ? 'visible' : 'auto'}}
 #xac-root.collapsed .body{display:none}
-#xac-root .sec{font-size:11px;color:#88ab97;padding-left:2px}
-#xac-root .sec.flash{color:#b9e9cd;text-shadow:none}
-#xac-root .group{border:1px solid var(--xac-border);background:var(--xac-bg-panel);border-radius:10px;padding:9px;display:grid;gap:8px}
+#xac-root .sec{font-size:11px;color:#87a587;padding-left:2px}
+#xac-root .sec.flash{color:var(--xac-accent);text-shadow:none}
+#xac-root .group{border:1px solid rgba(93,214,44,.15);background:rgba(32,32,32,.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:10px;padding:9px;display:grid;gap:8px}
 #xac-root .group-h{font-size:12px;color:#d2e5d9;font-weight:800;letter-spacing:.2px}
 #xac-root .step{display:grid;gap:3px;padding-bottom:7px;margin-bottom:1px;border-bottom:1px solid var(--xac-border)}
 #xac-root .step-hlabel{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-#xac-root .step-title{font-size:15px;color:var(--xac-text);font-weight:900;line-height:1.15;letter-spacing:.25px}
+#xac-root .step-title{display:flex;align-items:center;gap:7px;font-size:15px;color:var(--xac-text);font-weight:900;line-height:1.15;letter-spacing:.1px}
+#xac-root .step-badge{display:inline-flex;align-items:center;justify-content:center;min-width:56px;height:20px;padding:0 8px;border-radius:999px;border:1px solid var(--xac-border-strong);background:#1a1a1a;font-size:10px;font-weight:700;color:#b6cfbf;letter-spacing:.2px;white-space:nowrap}
+#xac-root .step-label{font-size:14px;font-weight:900;color:var(--xac-text)}
+#xac-root .step.current .step-badge{border-color:var(--xac-accent-soft);background:rgba(51,116,24,.45);color:#d0eadb}
+#xac-root .step.current .step-label{color:#edf8f1}
+#xac-root .step.current{border-bottom-color:var(--xac-border-strong)}
 #xac-root .step-desc{font-size:11px;color:var(--xac-muted);line-height:1.35}
 #xac-root.popup-lite .step{gap:2px;padding-bottom:2px;margin-bottom:0;border-bottom:0}
 #xac-root.popup-lite .step-desc{display:none}
 #xac-root.popup-lite .group{gap:6px}
+#xac-root.popup-lite .step-badge{min-width:52px;height:18px;font-size:9px;padding:0 7px}
+#xac-root.popup-lite .step-label{font-size:13px}
 #xac-root .key-config .meta{line-height:1.35}
 #xac-root .key-item{font-size:11px;color:#afc4b8}
-#xac-root .flash{box-shadow:0 0 0 2px rgba(63,181,111,.2)}
-#xac-root .guide-banner{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'};border:1px solid var(--xac-border);border-left:3px solid var(--xac-accent);background:var(--xac-bg-soft);border-radius:10px;padding:8px 9px;display:grid;gap:4px}
-#xac-root .guide-toggle{justify-self:start}
-#xac-root .pipeline-board{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'};border:1px solid var(--xac-border-strong);border-radius:10px;background:var(--xac-bg-panel);padding:8px 9px;display:grid;gap:8px}
+#xac-root .flash{box-shadow:0 0 0 2px rgba(93,214,44,.2)}
+#xac-root .guide-banner{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'};border:1px solid rgba(93,214,44,.15);border-left:3px solid var(--xac-accent);background:rgba(32,32,32,.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:10px;padding:8px 9px;display:grid;gap:4px}
+#xac-root .pipeline-board{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'};border:1px solid rgba(93,214,44,.2);border-radius:10px;background:rgba(32,32,32,.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:8px 9px;display:grid;gap:8px}
 #xac-root .pipeline-head{font-size:12px;color:var(--xac-text);font-weight:800}
 #xac-root .pipeline-desc{font-size:11px;color:var(--xac-muted);line-height:1.35}
 #xac-root .pipeline-grid{display:grid;grid-template-columns:repeat(${VIEW.isOptions ? '3' : '2'},minmax(0,1fr));gap:8px}
-#xac-root .pipeline-item{border:1px solid var(--xac-border);border-radius:9px;background:var(--xac-bg-soft);padding:7px;display:grid;gap:4px}
+#xac-root .pipeline-item{border:1px solid rgba(93,214,44,.15);border-radius:9px;background:rgba(32,32,32,.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:7px;display:grid;gap:4px}
 #xac-root .pipeline-item .title{display:flex;align-items:flex-start;justify-content:space-between;gap:6px;font-size:11px;color:#d0e3d7;font-weight:700;line-height:1.3}
 #xac-root .pipeline-item .meta{font-size:10px;color:var(--xac-muted);line-height:1.35}
 #xac-root .group-advanced{grid-column:${VIEW.isOptions ? '1 / -1' : 'auto'}}
@@ -1867,7 +1940,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
 #xac-root .hlabel label,#xac-root .hlabel .mini{font-size:11px;color:var(--xac-muted)}
 #xac-root .subh{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-top:6px;margin-top:2px;border-top:1px dashed var(--xac-border);font-size:11px;color:#8ea89a}
 #xac-root .subh.first{border-top:0;padding-top:0}
-#xac-root .card{border:1px solid var(--xac-border);background:var(--xac-bg-soft);border-radius:10px;padding:8px 9px;display:grid;gap:3px}
+#xac-root .card{border:1px solid rgba(93,214,44,.15);background:rgba(32,32,32,.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border-radius:10px;padding:8px 9px;display:grid;gap:3px}
 #xac-root .card.schedule-runtime{gap:5px}
 #xac-root .summary-compact{gap:4px}
 #xac-root .meta{font-size:11px;color:#a5bfae}
@@ -1878,53 +1951,90 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
 #xac-root .actions-secondary{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 #xac-root .actions-tertiary{display:grid;grid-template-columns:1fr;gap:6px}
 #xac-root .or-row{display:grid;grid-template-columns:minmax(0,1fr) auto minmax(0,1fr);gap:8px;align-items:center}
-#xac-root .or-tag{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--xac-border-strong);border-radius:999px;padding:4px 10px;min-height:28px;font-size:11px;color:#a8c6b3;background:var(--xac-bg-soft);white-space:nowrap}
+#xac-root .or-tag{display:inline-flex;align-items:center;justify-content:center;border:1px solid var(--xac-border-strong);border-radius:999px;padding:4px 10px;min-height:28px;font-size:11px;color:#a8c6b3;background:#171717;white-space:nowrap}
 #xac-root .profile-row{grid-template-columns:minmax(0,1.7fr) minmax(88px,1fr) minmax(88px,1fr)}
 #xac-root label{font-size:11px;color:#9bb1a3}
 #xac-root select,#xac-root input,#xac-root textarea,#xac-root button{border-radius:8px}
-#xac-root select,#xac-root input,#xac-root textarea{width:100%;box-sizing:border-box;border:1px solid var(--xac-border);background:var(--xac-bg-input);color:var(--xac-text);padding:7px 9px;font-size:12px;outline:none}
+#xac-root select,#xac-root input,#xac-root textarea{width:100%;box-sizing:border-box;border:1px solid #202020;background:#0f0f0f;color:var(--xac-text);padding:7px 9px;font-size:12px;outline:none;box-shadow:inset 0 2px 6px rgba(0,0,0,.6)}
 #xac-root textarea{min-height:52px;resize:vertical}
 #xac-root #xac-debug-output{min-height:72px}
-#xac-root button{border:1px solid var(--xac-border-strong);background:var(--xac-bg-soft);color:var(--xac-text);font-size:12px;padding:8px 10px;cursor:pointer}
+#xac-root button{border:1px solid var(--xac-border-strong);background:#171717;color:var(--xac-text);font-size:12px;padding:8px 10px;cursor:pointer}
 #xac-root button.secondary{border-color:var(--xac-border);background:transparent;color:#bdd0c5}
 #xac-root button.tertiary{border-color:var(--xac-border);border-style:dashed;background:transparent;color:#99aea2;font-size:11px;padding:7px 9px}
 #xac-root .profile-act{font-size:13px;font-weight:700;color:var(--xac-text)}
 #xac-root button:disabled{opacity:.58;cursor:not-allowed;filter:saturate(.65)}
-#xac-root button.p{border-color:var(--xac-accent-soft);background:var(--xac-accent-bg);color:#cce9d8;font-weight:700}
-#xac-root button.hint{width:19px;min-width:19px;height:19px;padding:0;border-radius:999px;border:1px solid var(--xac-border-strong);background:var(--xac-bg-soft);color:#a6c8b3;font-size:11px;font-weight:800;line-height:1;text-align:center}
+#xac-root button.p{border-color:#28a745;background:#28a745;color:#f3fff2;font-weight:700;box-shadow:0 0 12px rgba(93,214,44,.4)}
+#xac-root button.p:hover{background:#5dd62c;border-color:#5dd62c;animation:breathing 2s ease-in-out infinite}
+#xac-root button.hint{width:19px;min-width:19px;height:19px;padding:0;border-radius:999px;border:1px solid var(--xac-border-strong);background:#171717;color:#a6c8b3;font-size:11px;font-weight:800;line-height:1;text-align:center}
 #xac-root button.hint:hover{border-color:var(--xac-accent-soft);color:#cae2d4}
 #xac-root .chip-group{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
 #xac-root .chip-group.mode{grid-template-columns:repeat(3,minmax(0,1fr))}
 #xac-root .chip-group.days{grid-template-columns:repeat(7,minmax(0,1fr))}
-#xac-root .chip{border:1px solid var(--xac-border);background:var(--xac-bg-soft);color:#c4d8cc;font-size:12px;padding:8px 6px;text-align:center}
+#xac-root .chip{border:1px solid var(--xac-border);background:#171717;color:#c4d8cc;font-size:12px;padding:8px 6px;text-align:center}
 #xac-root .chip.small{padding:6px 4px;font-size:11px}
-#xac-root .chip.active{border-color:var(--xac-accent-soft);background:var(--xac-accent-bg);color:#b6e0c8;font-weight:700}
+#xac-root .chip.active{border-color:var(--xac-accent-soft);background:#2c5f1f;color:var(--xac-accent);font-weight:700}
 #xac-root .status{font-size:11px;color:#a6bfae}
-#xac-root .switch{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--xac-border-strong);border-radius:9px;padding:8px 10px;background:var(--xac-bg-soft);min-height:40px}
+#xac-root .switch{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--xac-border-strong);border-radius:9px;padding:8px 10px;background:rgba(32,32,32,.7);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);min-height:40px}
 #xac-root .switch span{color:var(--xac-text) !important;font-weight:650;font-size:13px;letter-spacing:.1px}
 #xac-root .switch input{width:34px;height:18px;appearance:none;background:#2d4438;border-radius:999px;position:relative;outline:none;border:1px solid #3a5848;cursor:pointer;padding:0}
 #xac-root .switch input::after{content:'';position:absolute;left:2px;top:1px;width:13px;height:13px;border-radius:50%;background:#cfddd4;transition:all .15s ease}
 #xac-root .switch input:checked{background:var(--xac-accent-soft)}
 #xac-root .switch input:checked::after{left:17px;background:#0c140f}
 #xac-root .modal{position:fixed;inset:0;z-index:2147483647;background:rgba(0,0,0,.58);display:flex;align-items:center;justify-content:center;padding:14px}
-#xac-root .modal-card{width:min(96vw,350px);max-height:86vh;overflow:auto;border:1px solid var(--xac-border-strong);border-radius:12px;background:var(--xac-bg-panel);padding:12px;display:grid;gap:8px}
+#xac-root .modal-card{width:min(96vw,350px);max-height:86vh;overflow:auto;border:1px solid var(--xac-border-strong);border-radius:12px;background:rgba(32,32,32,.78);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);padding:12px;display:grid;gap:8px}
 #xac-root .modal-h{display:flex;justify-content:space-between;align-items:center;color:var(--xac-text);font-size:15px;font-weight:800}
 #xac-root .modal-h button{width:auto;padding:5px 9px}
 #xac-root .label-row{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .xac-inline-host{margin-top:8px;width:100%}
-.xac-inline-btn{display:block;width:100%;border:1px solid var(--xac-accent-soft);background:var(--xac-accent-bg);color:#cde7d9;border-radius:8px;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;transition:all .15s ease;text-align:left}
-.xac-inline-btn.w{border-color:var(--xac-border-strong);background:var(--xac-bg-soft);color:#c2d3c9}
-.xac-inline-btn.o{border-color:var(--xac-accent-soft);background:var(--xac-accent-bg);color:#b7dfca}
-.xac-inline-btn.f{border-color:#705252;background:#241b1b;color:#ceb0b0}
+.xac-inline-btn{display:block;width:100%;border:1px solid #28a745;background:#28a745;color:#f3fff2;border-radius:8px;font-size:12px;font-weight:800;padding:8px 12px;cursor:pointer;transition:all .15s ease;text-align:left;box-shadow:0 0 12px rgba(93,214,44,.4)}
+.xac-inline-btn:hover{background:#5dd62c;border-color:#5dd62c;animation:breathing 2s ease-in-out infinite}
+.xac-inline-btn.w{border-color:var(--xac-border-strong);background:#171717;color:#c2d3c9;box-shadow:none}
+.xac-inline-btn.o{border-color:var(--xac-accent-soft);background:#2c5f1f;color:var(--xac-accent)}
+.xac-inline-btn.f{border-color:#2f8452;background:#0f0f0f;color:#9fe2bc;box-shadow:none}
 .xac-toast{position:fixed;left:50%;bottom:16px;transform:translate(-50%,8px);background:var(--xac-bg-soft);border:1px solid var(--xac-border-strong);color:var(--xac-text);font-size:12px;border-radius:8px;padding:8px 12px;z-index:2147483647;opacity:0;transition:all .2s ease;pointer-events:none;max-width:min(92vw,520px);line-height:1.4;white-space:normal}
-.xac-toast.warn{border-color:#6f6454;color:#d0c5b2}.xac-toast.ok{border-color:var(--xac-accent-soft);color:#c6e5d3}
-#xac-ind{position:fixed;left:14px;top:14px;z-index:2147483646;background:var(--xac-bg-soft);border:1px solid var(--xac-border-strong);color:var(--xac-text);border-radius:10px;padding:7px 10px;display:none;align-items:center;gap:8px;font-size:12px;box-shadow:0 10px 28px rgba(0,0,0,.38)}
-#xac-ind.show{display:inline-flex}#xac-ind .d{width:8px;height:8px;border-radius:50%;background:var(--xac-accent);box-shadow:none}
-#xac-ind .s{border:1px solid #855858;background:#2f2020;color:#e2b8b8;border-radius:6px;font-size:10px;padding:3px 7px;cursor:pointer}
-#xac-root .pro{border-color:var(--xac-border-strong);background:var(--xac-bg-soft);color:#c1d5c8}
+.xac-toast.warn{border-color:#2f8452;color:#9fe2bc}.xac-toast.ok{border-color:var(--xac-accent-soft);color:#c6e5d3}
+#xac-ind{position:fixed;left:14px;top:14px;z-index:2147483646;background:rgba(32,32,32,.72);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--xac-border-strong);color:var(--xac-text);border-radius:10px;padding:7px 10px;display:none;align-items:center;gap:8px;font-size:12px;box-shadow:0 10px 28px rgba(0,0,0,.38)}
+#xac-ind.show{display:inline-flex}#xac-ind .d{width:8px;height:8px;border-radius:50%;background:#00e676;box-shadow:0 0 8px rgba(0,230,118,.8)}
+#xac-ind .s{border:1px solid #2f8452;background:#171717;color:#9fe2bc;border-radius:6px;font-size:10px;padding:3px 7px;cursor:pointer}
+#xac-root .pro{border-color:var(--xac-border-strong);background:#171717;color:#c1d5c8}
 @media (max-width:900px){#xac-root .body{grid-template-columns:1fr}#xac-root .guide-banner,#xac-root .group-advanced,#xac-root .pipeline-board{grid-column:auto}#xac-root .pipeline-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media (max-width:620px){#xac-root .pipeline-grid{grid-template-columns:1fr}}
-@media (max-width:520px){#xac-root{right:${VIEW.isExtensionPage ? 'auto' : '8px'};bottom:${VIEW.isExtensionPage ? 'auto' : '10px'};width:calc(100vw - 16px);max-width:calc(100vw - 16px);min-width:0}}`
+@media (max-width:520px){#xac-root{right:${VIEW.isExtensionPage ? 'auto' : '8px'};bottom:${VIEW.isExtensionPage ? 'auto' : '10px'};width:calc(100vw - 16px);max-width:calc(100vw - 16px);min-width:0}}
+
+/* GasGx-UI-v4.0 locked overrides */
+:root{--bg-main:#0f0f0f;--bg-card:#202020;--text-primary:#e0e0e0;--text-secondary:#888888;--border-line:#333333;--accent-aurora:#5dd62c;--primary-green:#28a745;--aux-bright:#00e676;--gradient-dark:#337418;--status-success:#28a745;--status-warning:#ff9900;--status-danger:#ff3366;--status-info:#00a3ff;--accent-aurora-rgb:93,214,44}
+body.xac-theme-light{--bg-main:#f5f7fa;--bg-card:#ffffff;--text-primary:#1a1a1a;--text-secondary:#666666;--border-line:#ebeef5;--accent-aurora:#00b853;--primary-green:#00b853;--aux-bright:#00e676;--gradient-dark:#e8f5e9;--accent-aurora-rgb:0,184,83}
+#xac-root{--xac-bg-app:var(--bg-main);--xac-bg-shell:var(--bg-card);--xac-bg-panel:rgba(32,32,32,.7);--xac-bg-input:var(--bg-main);--xac-bg-soft:#171717;--xac-border:rgba(var(--accent-aurora-rgb),.15);--xac-border-strong:rgba(var(--accent-aurora-rgb),.22);--xac-text:var(--text-primary);--xac-muted:var(--text-secondary);--xac-accent:var(--accent-aurora);--xac-accent-soft:var(--primary-green);--xac-accent-bg:var(--gradient-dark);--xac-danger:var(--status-danger);--xac-warning:var(--status-warning);--xac-info:var(--status-info);--xac-success:var(--status-success);font-family:'Inter','PingFang SC','Microsoft YaHei','Helvetica Neue',Arial,sans-serif}
+body.xac-theme-light #xac-root{--xac-bg-panel:rgba(255,255,255,.7);--xac-bg-soft:#f2f5f9;--xac-border:rgba(0,184,83,.1);--xac-border-strong:rgba(0,184,83,.2)}
+#xac-root .shell,#xac-root .group,#xac-root .guide-banner,#xac-root .pipeline-board,#xac-root .pipeline-item,#xac-root .card,#xac-root .switch,#xac-root .modal-card{background:var(--xac-bg-panel);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);border:1px solid var(--xac-border);border-radius:8px}
+#xac-root .shell{border-radius:8px}
+#xac-root .body,#xac-root .group,#xac-root .actions-main,#xac-root .actions-secondary,#xac-root .r2,#xac-root .r3,#xac-root .pipeline-grid,#xac-root .chip-group,#xac-root .mini-row,#xac-root .label-row{gap:8px}
+#xac-root .group,#xac-root .card,#xac-root .guide-banner,#xac-root .pipeline-board,#xac-root .pipeline-item{padding:8px}
+#xac-root .quota{background:linear-gradient(135deg,var(--bg-card),var(--gradient-dark));border:1px solid var(--xac-border);color:var(--accent-aurora);text-shadow:0 0 8px rgba(var(--accent-aurora-rgb),.45)}
+#xac-root select,#xac-root input,#xac-root textarea{border-radius:4px;border:1px solid var(--border-line);background:var(--xac-bg-input);color:var(--xac-text)}
+#xac-root select,#xac-root input,#xac-root textarea{box-shadow:inset 0 2px 6px rgba(0,0,0,.6)}
+body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.xac-theme-light #xac-root textarea{box-shadow:inset 0 1px 2px rgba(0,0,0,.12)}
+#xac-root select:focus,#xac-root input:focus,#xac-root textarea:focus{border-color:var(--xac-accent);box-shadow:inset 0 2px 6px rgba(0,0,0,.6),0 0 0 2px rgba(var(--accent-aurora-rgb),.2)}
+#xac-root button,#xac-root .chip,#xac-root .or-tag{border-radius:4px}
+#xac-root button.p,.xac-inline-btn{background:var(--primary-green);border-color:var(--primary-green);color:#fff;box-shadow:0 0 12px rgba(var(--accent-aurora-rgb),.4)}
+#xac-root button.p:hover,.xac-inline-btn:hover{background:var(--accent-aurora);border-color:var(--accent-aurora);animation:breathing 2s ease-in-out infinite}
+#xac-root .chip.active,#xac-root .switch input:checked{background:rgba(var(--accent-aurora-rgb),.18);color:var(--accent-aurora);border-color:var(--xac-accent)}
+#xac-root .switch{display:flex;align-items:center;gap:8px;min-height:40px}
+#xac-root .switch span{flex:1;font-size:13px;color:var(--xac-text)!important}
+#xac-root .switch input{width:40px!important;height:20px!important;min-width:40px!important;min-height:20px!important;flex-shrink:0!important;box-sizing:border-box;border-radius:10px}
+#xac-root .switch input::after{width:16px;height:16px;left:1px;top:1px}
+#xac-root .switch input:checked::after{left:23px}
+#xac-root select option{background:var(--bg-card);color:var(--text-primary)}
+#xac-root select option:checked{background:rgba(var(--accent-aurora-rgb),.15);color:var(--accent-aurora)}
+#xac-root .custom-dropdown-menu{background:var(--bg-card);border:1px solid rgba(var(--accent-aurora-rgb),.2);box-shadow:0 8px 24px rgba(0,0,0,.8);border-radius:4px}
+#xac-root .custom-dropdown-item{background:transparent;color:var(--text-primary)!important;transition:all .2s ease;padding:8px 12px}
+#xac-root .custom-dropdown-item:hover,#xac-root .custom-dropdown-item:focus,#xac-root .custom-dropdown-item.is-selected{background:rgba(var(--accent-aurora-rgb),.15)!important;color:var(--accent-aurora)!important;border-left:2px solid var(--accent-aurora)}
+#xac-root .custom-checkbox-inner,#xac-root .custom-radio-inner,#xac-root .custom-select-arrow svg{width:16px!important;height:16px!important;flex-shrink:0!important;box-sizing:border-box}
+#xac-root .form-item-wrapper{display:flex;align-items:center;gap:8px}
+#xac-root .custom-switch{min-width:40px!important;height:20px!important;border-radius:10px}
+#xac-ind{background:var(--xac-bg-panel);border:1px solid var(--xac-border);border-radius:8px}
+#xac-ind .d{background:var(--aux-bright);box-shadow:0 0 8px rgba(0,230,118,.8)}
+`
     document.documentElement.appendChild(st)
   }
   function context(article) {
@@ -1988,10 +2098,69 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     return Boolean(u && u === me)
   }
 
-  async function openEditor(article) {
-    const dialogEditor = Array.from(document.querySelectorAll('div[role="dialog"] div[contenteditable="true"][role="textbox"], div[role="dialog"] div[contenteditable="true"][data-testid^="tweetTextarea"]'))
-      .find((e) => e instanceof HTMLElement && e.offsetParent !== null)
-    if (dialogEditor) return dialogEditor
+  function getVisibleDialogs() {
+    return Array.from(document.querySelectorAll('div[role="dialog"]'))
+      .filter((node) => node instanceof HTMLElement && node.offsetParent !== null)
+  }
+
+  function findVisibleButtonByText(root, matcher) {
+    const buttons = Array.from(root.querySelectorAll('button, [role="button"]'))
+      .filter((node) => node instanceof HTMLElement && node.offsetParent !== null)
+    return buttons.find((node) => matcher.test(String(node.innerText || node.getAttribute?.('aria-label') || '').trim())) || null
+  }
+
+  async function dismissUnsavedDraftPrompt(timeoutMs = 1600) {
+    const deadline = Date.now() + Math.max(200, Math.round(n(timeoutMs, 0)))
+    while (Date.now() < deadline) {
+      const dialogs = getVisibleDialogs()
+      for (const dialog of dialogs) {
+        const text = String(dialog.innerText || '').toLowerCase()
+        const looksLikeDraftPrompt =
+          /保存帖子|保存贴子|save post|save this post|draft|草稿/.test(text)
+        if (!looksLikeDraftPrompt) continue
+        const discardBtn =
+          findVisibleButtonByText(dialog, /^(放弃|discard|don't save|dont save)$/i) ||
+          findVisibleButtonByText(dialog, /(放弃|discard|don't save|dont save|删除草稿)/i)
+        if (discardBtn instanceof HTMLElement) {
+          discardBtn.click()
+          await sleep(150)
+          return true
+        }
+      }
+      await sleep(80)
+    }
+    return false
+  }
+
+  async function closeVisibleReplyDialog() {
+    const dialog = getVisibleDialogs()[0]
+    if (!dialog) return false
+    const closeBtn = dialog.querySelector('button[data-testid="app-bar-close"], button[aria-label="Close"], button[aria-label="关闭"]')
+    if (closeBtn instanceof HTMLElement) {
+      closeBtn.click()
+      await sleep(180)
+      await dismissUnsavedDraftPrompt()
+      return true
+    }
+    try {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
+      await sleep(180)
+      await dismissUnsavedDraftPrompt()
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  async function openEditor(article, options = {}) {
+    const forceTarget = Boolean(options.forceTarget)
+    if (!forceTarget) {
+      const dialogEditor = Array.from(document.querySelectorAll('div[role="dialog"] div[contenteditable="true"][role="textbox"], div[role="dialog"] div[contenteditable="true"][data-testid^="tweetTextarea"]'))
+        .find((e) => e instanceof HTMLElement && e.offsetParent !== null)
+      if (dialogEditor) return dialogEditor
+    } else {
+      await closeVisibleReplyDialog()
+    }
 
     const rb = article?.querySelector('button[data-testid="reply"], div[data-testid="reply"]')
     if (!rb) return null
@@ -2028,6 +2197,32 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
   function sendButton() {
     const bs = Array.from(document.querySelectorAll('button[data-testid="tweetButtonInline"], button[data-testid="tweetButton"]'))
     return bs.find((b) => b instanceof HTMLButtonElement && !b.disabled && b.offsetParent !== null) || null
+  }
+
+  function getVisibleComposerEditor() {
+    return Array.from(document.querySelectorAll('div[role="dialog"] div[contenteditable="true"][role="textbox"], div[role="dialog"] div[contenteditable="true"][data-testid^="tweetTextarea"]'))
+      .find((node) => node instanceof HTMLElement && node.offsetParent !== null) || null
+  }
+
+  async function tryAutoPostReply() {
+    const sendDeadline = Date.now() + 3000
+    let sb = sendButton()
+    while ((!sb || sb.disabled) && Date.now() < sendDeadline) {
+      await sleep(120)
+      sb = sendButton()
+    }
+    if (!sb || sb.disabled) return false
+    sb.click()
+
+    const postedDeadline = Date.now() + 3200
+    while (Date.now() < postedDeadline) {
+      const editor = getVisibleComposerEditor()
+      if (!editor) return true
+      const text = String(editor.innerText || '').trim()
+      if (!text) return true
+      await sleep(120)
+    }
+    return false
   }
 
   function pickReplyRuleImage(rule) {
@@ -2407,7 +2602,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         followedByPreAction = clickFollow(article)
         if (followedByPreAction) await sleep(cfg.actionDelayMs)
       }
-      const ed = await openEditor(article)
+      const ed = await openEditor(article, { forceTarget: fromAuto })
       if (!ed) { btnState(btn, 'f', t('fail')); toast(t('editorMissing'), 'warn'); return false }
       const r = await send('xac:spark-complete', { messages: messages(ctx, triggeredRule), timeoutMs: 70000 })
       if (!r.ok || !s(r.text, '')) {
@@ -2415,7 +2610,8 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         btnState(btn, 'f', t('fail')); toast(`${t('fail')}: ${reason}`, 'warn')
         return false
       }
-      const ruledText = applyReplyRule(s(r.text, ''), triggeredRule, { ...ctx, followed: followedByPreAction })
+      const cleanedReply = sanitizeGeneratedReply(s(r.text, ''), ctx)
+      const ruledText = applyReplyRule(cleanedReply, triggeredRule, { ...ctx, followed: followedByPreAction })
       const limited = trimToXLimit(ruledText, X_NON_PREMIUM_MAX_LENGTH)
       if (!limited.text) {
         btnState(btn, 'f', t('fail')); toast(`${t('fail')}: ${t('emptyModelOutput')}`, 'warn')
@@ -2439,7 +2635,14 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         if (btn.dataset.busy === '1') return
         btnState(btn, '', t('reply'))
       }, fromAuto ? 900 : 1600)
-      if (S.autoPost) { const sb = sendButton(); if (sb) { await sleep(450); sb.click() } }
+      if (S.autoPost) {
+        const posted = await tryAutoPostReply()
+        if (!posted) {
+          btnState(btn, 'f', t('fail'))
+          toast(t('autoPostNotSent'), 'warn')
+          return false
+        }
+      }
       await runPostActions(article, { skipFollow: followedByPreAction }).catch(() => {})
       return true
     } catch (e) {
@@ -2463,10 +2666,16 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     host.appendChild(b); g.parentElement?.appendChild(host); return b
   }
 
+  function isTopLevelPrimaryTweet(article) {
+    if (!(article instanceof HTMLElement)) return false
+    if (!article.closest('div[data-testid="primaryColumn"]')) return false
+    return !article.parentElement?.closest('article[data-testid="tweet"]')
+  }
+
   function scanNow() {
     detectMyHandle()
     document.querySelectorAll('article[data-testid="tweet"]').forEach((a) => {
-      if (!(a instanceof HTMLElement)) return
+      if (!isTopLevelPrimaryTweet(a)) return
       if (a.dataset.xacBound === '1') return
       a.dataset.xacBound = '1'
       if (a.closest('div[role="dialog"]')) return
@@ -2484,7 +2693,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     const cfg = normalizeAdvanced(S.advanced)
     const all = Array.from(document.querySelectorAll('article[data-testid="tweet"]'))
     for (const a of all) {
-      if (!(a instanceof HTMLElement) || a.closest('div[role="dialog"]') || isOwn(a)) continue
+      if (!isTopLevelPrimaryTweet(a) || a.closest('div[role="dialog"]') || isOwn(a)) continue
       let b = a.parentElement?.querySelector('.xac-inline-btn'); if (!b) b = makeBtn(a)
       if (!b || b.dataset.autoDone === '1' || b.dataset.busy === '1') continue
       if (b.classList.contains('o')) { b.dataset.autoDone = '1'; continue }
@@ -2535,6 +2744,12 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
 
   async function startAuto(max) {
     if (S.auto.active) return
+    if (!S.autoPost) {
+      toast(t('autoPostRequiredForAuto'), 'warn')
+      setStatus(t('stopped'))
+      render()
+      return
+    }
     S.auto.active = true; S.auto.count = 0; S.auto.max = Math.max(0, Math.round(n(max, 0))); S.idle = 0
     setStatus(t('run')); ind(true)
     render()
@@ -2599,12 +2814,29 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     }
   }
 
-  function openDetailedOptionsPage() {
-    const target = chrome.runtime.getURL('options.html')
+  function openDetailedOptionsPage(anchorId = '') {
+    const safeAnchor = String(anchorId || '').trim().replace(/[^a-z0-9_-]/ig, '')
+    const target = `${chrome.runtime.getURL('options.html')}${safeAnchor ? `#${safeAnchor}` : ''}`
     window.open(target, '_blank')
   }
 
+  function focusOptionsAnchorByHash() {
+    if (!VIEW.isOptions) return
+    const hash = String(window.location.hash || '').replace(/^#/, '').trim()
+    if (!hash || S.optionsHashApplied === hash) return
+    const anchor = document.getElementById(hash)
+    if (!anchor) return
+    S.optionsHashApplied = hash
+    anchor.classList.add('flash')
+    anchor.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    setTimeout(() => anchor.classList.remove('flash'), 1300)
+  }
+
   function openPanelAndFocusAdvanced() {
+    if (VIEW.isContentPage && !ENABLE_CONTENT_SIDEBAR) {
+      openDetailedOptionsPage('xac-execution-anchor')
+      return
+    }
     S.open = true
     render()
     setTimeout(() => {
@@ -2795,13 +3027,34 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     const autoPostSummary = S.autoPost ? (S.lang === 'zh' ? '开' : 'On') : (S.lang === 'zh' ? '关' : 'Off')
     const maxSummary = Math.max(0, Math.round(n(S.auto.max, 0)))
     const sparkStatusSummary = formatSparkMissingMessage(S.sparkPublic)
-    const popupGuideToggleLabel = S.lang === 'zh'
-      ? (S.popupGuideExpanded ? '收起说明' : '查看说明')
-      : (S.popupGuideExpanded ? 'Hide Notes' : 'View Notes')
+    const isSparkReady = sparkStatusSummary === t('sparkReady')
+    const popupCurrentStepKey = (!S.signedIn || !isSparkReady) ? 'stepAccount' : 'stepExecution'
+    const optionsHash = String(window.location.hash || '').replace(/^#/, '').trim()
+    const optionsStepByHash = {
+      'xac-account-anchor': 'stepAccount',
+      'xac-ai-anchor': 'stepAi',
+      'xac-profile-anchor': 'stepProfile',
+      'xac-strategy-anchor': 'stepStrategy',
+      'xac-content-anchor': 'stepContent',
+      'xac-execution-anchor': 'stepExecution',
+      'xac-advanced-anchor': 'stepAdvanced',
+      'xac-search-anchor': 'stepAdvanced'
+    }
+    const optionsCurrentStepKey = optionsStepByHash[optionsHash] || 'stepAccount'
     const d = S.editor?.draft || emptyProfileDraft()
     const hintBtn = (key) => `<button class="hint" type="button" data-help="${esc(key)}">?</button>`
     const hintLabel = (text, key) => `<div class="hlabel"><label>${esc(text)}</label>${key ? hintBtn(key) : ''}</div>`
-    const stepHead = (titleKey, descKey, anchorId = '', helpKey = '') => `<div class="step"><div class="step-hlabel"><div class="step-title"${anchorId ? ` id="${esc(anchorId)}"` : ''}>${esc(t(titleKey))}</div>${helpKey ? hintBtn(helpKey) : ''}</div><div class="step-desc">${esc(t(descKey))}</div></div>`
+    const renderStepTitle = (titleText, anchorId = '') => {
+      const raw = String(titleText || '').trim()
+      const parts = raw.split('·')
+      const head = String(parts[0] || '').trim()
+      const tail = String(parts.slice(1).join('·') || '').trim()
+      if (head && tail) {
+        return `<div class="step-title"${anchorId ? ` id="${esc(anchorId)}"` : ''}><span class="step-badge">${esc(head)}</span><span class="step-label">${esc(tail)}</span></div>`
+      }
+      return `<div class="step-title"${anchorId ? ` id="${esc(anchorId)}"` : ''}><span class="step-label">${esc(raw)}</span></div>`
+    }
+    const stepHead = (titleKey, descKey, anchorId = '', helpKey = '', isCurrent = false) => `<div class="step ${isCurrent ? 'current' : ''}"><div class="step-hlabel">${renderStepTitle(t(titleKey), anchorId)}${helpKey ? hintBtn(helpKey) : ''}</div><div class="step-desc">${esc(t(descKey))}</div></div>`
     const pipelineSteps = [
       { titleKey: 'stepAccount', descKey: 'stepAccountDesc', helpKey: 'accountStep' },
       { titleKey: 'stepAi', descKey: 'stepAiDesc', helpKey: 'aiStep' },
@@ -2825,7 +3078,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           </div>
 
           <div class="group">
-            ${stepHead('stepExecution', 'stepExecutionDesc', '', 'executionStep')}
+            ${stepHead('stepExecution', 'stepExecutionDesc', '', 'executionStep', true)}
             <div class="hlabel"><span class="mini">${esc(t('autoPost'))}</span>${hintBtn('autoPost')}</div>
             <div class="switch"><span>${esc(t('autoPost'))}</span><input id="xac-ap" type="checkbox" ${S.autoPost ? 'checked' : ''}/></div>
             ${hintLabel(t('max'), 'max')}
@@ -2855,9 +3108,15 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         S.autoPost = !!e.target.checked
         await set({ [K.autoPost]: S.autoPost })
       })
-      document.getElementById('xac-max')?.addEventListener('change', (e) => {
-        S.auto.max = Math.max(0, Math.round(n(e.target.value, 0)))
-      })
+      const maxInput = document.getElementById('xac-max')
+      const onAutoMaxInput = (e) => {
+        const next = clampNum(e.target.value, 0, 200, 0)
+        S.auto.max = next
+        if (e?.target) e.target.value = String(next)
+        debounceRun('auto-run-max', () => set({ [K.autoRunMax]: S.auto.max }))
+      }
+      maxInput?.addEventListener('input', onAutoMaxInput)
+      maxInput?.addEventListener('change', onAutoMaxInput)
       document.getElementById('xac-open-options')?.addEventListener('click', openDetailedOptionsPage)
       document.getElementById('xac-open-search')?.addEventListener('click', async () => {
         const query = syncSearchQueryFromControls(true)
@@ -2884,16 +3143,12 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
       </button>
       <div class="body">
         <div class="guide-banner">
-          <div class="meta">• ${esc(S.lang === 'zh' ? '弹窗仅保留常用必选项，避免与完整配置页重复。' : 'Popup keeps only essential controls to avoid duplicate setup.')}</div>
-          <button class="tertiary guide-toggle" id="xac-popup-guide-toggle">${esc(popupGuideToggleLabel)}</button>
-          ${S.popupGuideExpanded ? `
-            <div class="meta">• ${esc(S.lang === 'zh' ? '全部高级设置请使用“打开完整配置页”。' : 'Use "Open Full Config" for all advanced settings.')}</div>
-            <div class="meta">• ${esc(S.lang === 'zh' ? '建议先确认账号与 AI 状态，再执行自动回复。' : 'Confirm account and AI status first, then run auto reply.')}</div>
-          ` : ''}
+          <div class="meta">• ${esc(S.lang === 'zh' ? '弹窗只保留执行必选项；其余配置统一在完整配置页。' : 'Popup keeps execution essentials only; all other settings live in Full Config.')}</div>
+          <div class="meta">• ${esc(S.lang === 'zh' ? '先确认账号与 AI 状态，再开始自动回复。' : 'Confirm account + AI status first, then start auto reply.')}</div>
         </div>
 
         <div class="group">
-          ${stepHead('stepAccount', 'stepAccountDesc', '', 'accountStep')}
+          ${stepHead('stepAccount', 'stepAccountDesc', 'xac-account-anchor', 'accountStep', popupCurrentStepKey === 'stepAccount')}
           <div class="card summary-compact">
             <div class="meta xac-account-email">${esc(accountEmail)}</div>
             <div class="key-item">${esc(S.lang === 'zh' ? `账号状态: ${S.signedIn ? '已登录' : '未登录'}` : `Account: ${S.signedIn ? 'Signed in' : 'Signed out'}`)}</div>
@@ -2913,12 +3168,8 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepProfile', 'stepProfileDesc', '', 'profileStep')}
-          <select id="xac-p" ${isBusy ? 'disabled' : ''}>${ps.map((x) => { const pz = localizePresetProfile(x, S.lang); return `<option value="${esc(x.id)}" ${x.id === S.profile.activeProfileId ? 'selected' : ''}>${esc(`${pz.emoji} ${pz.name}`)}</option>` }).join('')}</select>
-        </div>
-
-        <div class="group">
-          ${stepHead('stepStrategy', 'stepStrategyDesc', '', 'strategyStep')}
+          ${stepHead('stepStrategy', 'stepStrategyDesc', '', 'strategyStep', popupCurrentStepKey === 'stepStrategy')}
+          <div class="meta">${esc(S.lang === 'zh' ? '人设选择已迁移到“完整配置页”，弹窗仅保留执行相关策略。' : 'Profile selection moved to Full Config. Popup keeps execution-oriented strategy only.')}</div>
           ${hintLabel(t('mode'), 'mode')}
           <div class="chip-group mode">
             ${modeOptions.map((item) => `<button class="chip ${q.engagementMode === item.id ? 'active' : ''}" data-mode="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
@@ -2934,7 +3185,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepExecution', 'stepExecutionDesc', '', 'executionStep')}
+          ${stepHead('stepExecution', 'stepExecutionDesc', '', 'executionStep', popupCurrentStepKey === 'stepExecution')}
           <div class="hlabel"><span class="mini">${esc(t('autoPost'))}</span>${hintBtn('autoPost')}</div>
           <div class="switch"><span>${esc(t('autoPost'))}</span><input id="xac-ap" type="checkbox" ${S.autoPost ? 'checked' : ''}/></div>
           ${hintLabel(t('max'), 'max')}
@@ -2946,19 +3197,11 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
             <button class="secondary" id="xac-open-search">${esc(t('openSearch'))}</button>
             <button class="secondary" id="xac-open-options">${esc(t('openDetailedOptions'))}</button>
           </div>
-          <div class="actions-tertiary">
-            <button class="tertiary" id="xac-open-advanced-panel">${esc(t('openAdvancedPanel'))}</button>
-          </div>
           <div class="card key-config">
-            <div class="meta">${esc(S.lang === 'zh' ? '搜索关键配置（在完整配置页修改）' : 'Search key config (edit in Full Config)')}</div>
-            <div class="key-item">${esc(S.lang === 'zh' ? `包含词: ${searchIncludeSummary}` : `Include: ${searchIncludeSummary}`)}</div>
-            <div class="key-item">${esc(S.lang === 'zh' ? `排除词: ${searchExcludeSummary}` : `Exclude: ${searchExcludeSummary}`)}</div>
-            <div class="key-item">${esc(S.lang === 'zh' ? `最小评论数: ${searchMinReplies}` : `Min comments: ${searchMinReplies}`)}</div>
-            <div class="key-item">${esc(S.lang === 'zh' ? `排除回复流: ${searchExcludeRepliesSummary}` : `Exclude replies feed: ${searchExcludeRepliesSummary}`)}</div>
-            <div class="meta">${esc(S.lang === 'zh' ? '自动回复关键配置' : 'Auto-reply key config')}</div>
-            <div class="key-item">${esc(S.lang === 'zh' ? `模式/目标/长度: ${modeLabel} / ${goalLabel} / ${lengthLabel}` : `Mode/Goal/Length: ${modeLabel} / ${goalLabel} / ${lengthLabel}`)}</div>
-            <div class="key-item">${esc(S.lang === 'zh' ? `自动发送: ${autoPostSummary}，单次上限: ${maxSummary}` : `Auto-send: ${autoPostSummary}, max/run: ${maxSummary}`)}</div>
-            <div class="key-item">${esc(S.lang === 'zh' ? '执行开关: 开始/停止自动回复按钮' : 'Run switch: Start/Stop Auto Reply button')}</div>
+            <div class="meta">${esc(S.lang === 'zh' ? `搜索: ${searchIncludeSummary} | -${searchExcludeSummary} | 评论≥${searchMinReplies} | 去回复流:${searchExcludeRepliesSummary}` : `Search: ${searchIncludeSummary} | -${searchExcludeSummary} | comments>=${searchMinReplies} | no replies feed:${searchExcludeRepliesSummary}`)}</div>
+            <button class="tertiary" id="xac-jump-search-config">${esc(S.lang === 'zh' ? '跳转到搜索配置' : 'Go to Search Config')}</button>
+            <div class="meta">${esc(S.lang === 'zh' ? `自动回复: ${modeLabel}/${goalLabel}/${lengthLabel} | 自动发送:${autoPostSummary} | 上限:${maxSummary}` : `Auto-reply: ${modeLabel}/${goalLabel}/${lengthLabel} | auto-send:${autoPostSummary} | max:${maxSummary}`)}</div>
+            <button class="tertiary" id="xac-jump-auto-config">${esc(S.lang === 'zh' ? '跳转到自动回复配置' : 'Go to Auto-Reply Config')}</button>
           </div>
           <div class="status" id="xac-status">${esc(S.status || t('idle'))}</div>
         </div>
@@ -2996,7 +3239,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         ` : ''}
 
         <div class="group">
-          ${stepHead('stepAccount', 'stepAccountDesc', '', 'accountStep')}
+          ${stepHead('stepAccount', 'stepAccountDesc', '', 'accountStep', optionsCurrentStepKey === 'stepAccount')}
           <div class="card">
             <div class="meta">${esc(t('planLine'))}</div>
             <div class="meta">${esc(t('remainLine'))}</div>
@@ -3014,7 +3257,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepAi', 'stepAiDesc', '', 'aiStep')}
+          ${stepHead('stepAi', 'stepAiDesc', 'xac-ai-anchor', 'aiStep', optionsCurrentStepKey === 'stepAi')}
           <div class="card">
             <div class="meta">${esc(t('sparkStatus'))}: ${esc(formatSparkMissingMessage(S.sparkPublic))}</div>
           </div>
@@ -3040,7 +3283,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepProfile', 'stepProfileDesc', '', 'profileStep')}
+          ${stepHead('stepProfile', 'stepProfileDesc', 'xac-profile-anchor', 'profileStep', optionsCurrentStepKey === 'stepProfile')}
           <div class="r3 profile-row">
             <select id="xac-p" ${isBusy ? 'disabled' : ''}>${ps.map((x) => { const pz = localizePresetProfile(x, S.lang); return `<option value="${esc(x.id)}" ${x.id === S.profile.activeProfileId ? 'selected' : ''}>${esc(`${pz.emoji} ${pz.name}`)}</option>` }).join('')}</select>
             <button class="profile-act" id="xac-p-e" ${isBusy ? 'disabled' : ''}>${esc(t('editP'))}</button>
@@ -3049,7 +3292,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepStrategy', 'stepStrategyDesc', '', 'strategyStep')}
+          ${stepHead('stepStrategy', 'stepStrategyDesc', 'xac-strategy-anchor', 'strategyStep', optionsCurrentStepKey === 'stepStrategy')}
           ${hintLabel(t('mode'), 'mode')}
           <div class="chip-group mode">
             ${modeOptions.map((item) => `<button class="chip ${q.engagementMode === item.id ? 'active' : ''}" data-mode="${item.id}" ${isBusy ? 'disabled' : ''}>${esc(item.label)}</button>`).join('')}
@@ -3065,7 +3308,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepContent', 'stepContentDesc', '', 'contentStep')}
+          ${stepHead('stepContent', 'stepContentDesc', 'xac-content-anchor', 'contentStep', optionsCurrentStepKey === 'stepContent')}
           ${hintLabel(t('ci'), 'ci')}
           <textarea id="xac-ci">${esc(q.customInstructions || p.instructions || '')}</textarea>
           ${hintLabel(t('persona'), 'persona')}
@@ -3073,7 +3316,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group">
-          ${stepHead('stepExecution', 'stepExecutionDesc', '', 'executionStep')}
+          ${stepHead('stepExecution', 'stepExecutionDesc', 'xac-execution-anchor', 'executionStep', optionsCurrentStepKey === 'stepExecution')}
           <div class="hlabel"><span class="mini">${esc(t('autoPost'))}</span>${hintBtn('autoPost')}</div>
           <div class="switch"><span>${esc(t('autoPost'))}</span><input id="xac-ap" type="checkbox" ${S.autoPost ? 'checked' : ''}/></div>
           ${hintLabel(t('max'), 'max')}
@@ -3085,7 +3328,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
         </div>
 
         <div class="group group-advanced">
-          ${stepHead('stepAdvanced', 'stepAdvancedDesc', 'xac-advanced-anchor', 'advancedStep')}
+          ${stepHead('stepAdvanced', 'stepAdvancedDesc', 'xac-advanced-anchor', 'advancedStep', optionsCurrentStepKey === 'stepAdvanced')}
           <div class="card">
             <div class="meta">${esc(S.lang === 'zh' ? '阶段 A（动作与风控基础）' : 'Phase A (Actions and core risk controls)')}</div>
             <div class="meta">${esc(S.lang === 'zh' ? '先完成 5.1~5.7，再做过滤和调度，避免参数互相冲突。' : 'Finish 5.1~5.7 first, then continue to filtering and scheduling to avoid conflicting parameters.')}</div>
@@ -3148,7 +3391,7 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
             <div class="meta">${esc(S.lang === 'zh' ? '阶段 B（内容过滤与搜索建模）' : 'Phase B (Filtering and search modeling)')}</div>
             <div class="meta">${esc(S.lang === 'zh' ? '先定义过滤边界，再组装搜索表达式，最后用“打开搜索”验证。' : 'Define filter boundaries first, then build query terms, and validate via Open Search.')}</div>
           </div>
-          <div class="subh"><span>${esc(`${S.lang === 'zh' ? '5.8 · ' : '5.8 · '}${t('sectionFilter')}`)}</span>${hintBtn('filter')}</div>
+          <div class="subh"><span id="xac-search-anchor">${esc(`${S.lang === 'zh' ? '5.8 · ' : '5.8 · '}${t('sectionFilter')}`)}</span>${hintBtn('filter')}</div>
           <label>${esc(t('minTweetChars'))}</label><input id="xac-min-chars" type="number" min="0" max="1000" step="10" value="${esc(String(S.advanced.minTweetChars))}"/>
           <div class="switch"><span>${esc(t('skipIfContainsLinks'))}</span><input id="xac-skip-links" type="checkbox" ${S.advanced.skipIfContainsLinks ? 'checked' : ''}/></div>
           <div class="switch"><span>${esc(t('skipIfContainsImages'))}</span><input id="xac-skip-images" type="checkbox" ${S.advanced.skipIfContainsImages ? 'checked' : ''}/></div>
@@ -3346,11 +3589,6 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     }
 
     document.getElementById('xac-t')?.addEventListener('click', () => { S.open = !S.open; render() })
-    document.getElementById('xac-popup-guide-toggle')?.addEventListener('click', (event) => {
-      event.preventDefault()
-      S.popupGuideExpanded = !S.popupGuideExpanded
-      render()
-    })
     document.getElementById('xac-login')?.addEventListener('click', async () => {
       if (S.signedIn) {
         await runPendingAction('logout', t('working'), async () => { await send('xac:google-sign-out'); S.signedIn = false; toast(t('signedOut'), 'ok') })
@@ -3973,6 +4211,8 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
       openPanelAndFocusAdvanced()
     })
     document.getElementById('xac-open-options')?.addEventListener('click', openDetailedOptionsPage)
+    document.getElementById('xac-jump-search-config')?.addEventListener('click', () => openDetailedOptionsPage('xac-search-anchor'))
+    document.getElementById('xac-jump-auto-config')?.addEventListener('click', () => openDetailedOptionsPage('xac-execution-anchor'))
     document.getElementById('xac-open-search')?.addEventListener('click', async () => {
       const query = syncSearchQueryFromControls(true)
       await saveAdvanced(true)
@@ -4005,7 +4245,15 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
       }
     })
     document.getElementById('xac-ap')?.addEventListener('change', async (e) => { S.autoPost = !!e.target.checked; await set({ [K.autoPost]: S.autoPost }) })
-    document.getElementById('xac-max')?.addEventListener('change', (e) => { S.auto.max = Math.max(0, Math.round(n(e.target.value, 0))) })
+    const maxInputShared = document.getElementById('xac-max')
+    const onAutoMaxInputShared = (e) => {
+      const next = clampNum(e.target.value, 0, 200, 0)
+      S.auto.max = next
+      if (e?.target) e.target.value = String(next)
+      debounceRun('auto-run-max', () => set({ [K.autoRunMax]: S.auto.max }))
+    }
+    maxInputShared?.addEventListener('input', onAutoMaxInputShared)
+    maxInputShared?.addEventListener('change', onAutoMaxInputShared)
     document.getElementById('xac-run-toggle')?.addEventListener('click', async () => {
       const m = Math.max(0, Math.round(n(document.getElementById('xac-max')?.value, 0)))
       if (VIEW.isExtensionPage) {
@@ -4057,9 +4305,11 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
     }
 
     restorePanelUiState(uiState)
+    focusOptionsAnchorByHash()
   }
 
   function mount() {
+    if (VIEW.isContentPage && !ENABLE_CONTENT_SIDEBAR) return
     if (document.getElementById('xac-root')) return
     const root = document.createElement('div'); root.id = 'xac-root'; root.className = S.open ? '' : 'collapsed'; (document.body || document.documentElement).appendChild(root)
     render()
@@ -4108,13 +4358,17 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           return
         }
         if (message.xacAction === 'xac:content-start-auto') {
+          let started = false
           if (!S.auto.active) {
             const maxValue = Math.max(0, Math.round(n(message.max, 0)))
             startAuto(maxValue).catch((error) => {
               console.error('[XAC] remote start failed', error)
             })
+            started = !!S.auto.active
+          } else {
+            started = true
           }
-          sendResponse({ started: true, state: runtimeStateSnapshot() })
+          sendResponse({ started, state: runtimeStateSnapshot() })
           return
         }
         if (message.xacAction === 'xac:content-stop-auto') {
@@ -4135,6 +4389,12 @@ ${VIEW.isExtensionPage ? `html,body{width:100%;max-width:100%;min-width:${VIEW.i
           schedule()
         }
         if (ch[K.autoPost]) { S.autoPost = b(ch[K.autoPost].newValue, false); render() }
+        if (ch[K.autoRunMax]) {
+          S.auto.max = clampNum(ch[K.autoRunMax].newValue, 0, 200, S.auto.max || 0)
+          const ae = document.activeElement
+          const editingMax = ae instanceof HTMLElement && ae.id === 'xac-max'
+          if (!editingMax) render()
+        }
         if (ch[K.googleSession]) {
           S.googleSession = ch[K.googleSession].newValue || null
           S.signedIn = !!(S.googleSession && S.googleSession.accessToken)

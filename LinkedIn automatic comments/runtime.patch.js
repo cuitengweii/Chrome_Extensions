@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
   "use strict";
 
   const ACCOUNT_KEY = "account";
@@ -11,13 +11,734 @@
   const AUTO_SEND_ENABLED_KEY = "ce_auto_send_enabled";
   const DELAY_MIN_SEC_KEY = "ce_auto_send_delay_min_sec";
   const DELAY_MAX_SEC_KEY = "ce_auto_send_delay_max_sec";
+  const RANDOM_TONE_ENABLED_KEY = "ce_random_tone_enabled";
+  const RANDOM_LENGTH_ENABLED_KEY = "ce_random_length_enabled";
+  const REPLY_PROMPT_HINT_KEY = "ce_reply_prompt_hint";
   const DEFAULT_AUTO_SEND_ENABLED = true;
   const DEFAULT_DELAY_MIN_SEC = 2;
   const DEFAULT_DELAY_MAX_SEC = 7;
+  const DEFAULT_RANDOM_TONE_ENABLED = false;
+  const DEFAULT_RANDOM_LENGTH_ENABLED = false;
+  const DEFAULT_REPLY_PROMPT_HINT = "";
+  const SPARK_SETTINGS_KEY = "ce.sparkSettings";
+  const SPARK_CONFIG_RESOURCE_PATH = "config/spark.gasgx.json";
+  const SPARK_DEFAULT_SETTINGS = Object.freeze({
+    enabled: true,
+    url: "https://spark-api.xf-yun.com/v3.5/chat",
+    app_id: "",
+    api_key: "",
+    api_secret: "",
+    domain: "generalv3.5",
+    temperature: 0.3,
+    max_tokens: 512
+  });
+  const SPARK_DEFAULT_ENV_KEYS = Object.freeze({
+    enabled: "XFYUN_SPARK_ENABLED",
+    url: "XFYUN_SPARK_URL",
+    app_id: "XFYUN_SPARK_APP_ID",
+    api_key: "XFYUN_SPARK_API_KEY",
+    api_secret: "XFYUN_SPARK_API_SECRET",
+    domain: "XFYUN_SPARK_DOMAIN",
+    temperature: "XFYUN_SPARK_TEMPERATURE",
+    max_tokens: "XFYUN_SPARK_MAX_TOKENS"
+  });
+  const SPARK_REQUIRED_FIELDS = Object.freeze(["url", "app_id", "api_key", "api_secret"]);
+  const TEST_SUBSCRIBER_ID = "000000000000000000000000";
+  const GATE_TEXT_PATTERN = /(free\s*trial|max(?:imum)?\s*usage|maximum\s*usage\s*allowed|upgrade|subscribe|already\s*a\s*subscriber|reached\s*the\s*maximum\s*usage|active\s*commentron\s*subscription|you\s*don.?t\s*have\s*an\s*active\s*commentron\s*subscription|sign-?in\s+using\s+the\s+extension\s+window|newer\s*commentron\s*version|please\s*update\s*commentron|update\s*commentron)/i;
 
   let autoSendEnabled = DEFAULT_AUTO_SEND_ENABLED;
   let autoSendDelayMinSec = DEFAULT_DELAY_MIN_SEC;
   let autoSendDelayMaxSec = DEFAULT_DELAY_MAX_SEC;
+  let randomToneEnabled = DEFAULT_RANDOM_TONE_ENABLED;
+  let randomLengthEnabled = DEFAULT_RANDOM_LENGTH_ENABLED;
+  let replyPromptHint = DEFAULT_REPLY_PROMPT_HINT;
+  let sparkConfigPromise = null;
+
+  function sparkIsPlainObject(value) {
+    return !!value && typeof value === "object" && !Array.isArray(value);
+  }
+
+  function sparkToString(value, fallback = "") {
+    if (value === undefined || value === null) return fallback;
+    return String(value);
+  }
+
+  function sparkToNumber(value, fallback = 0) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : fallback;
+  }
+
+  function sparkToBoolean(value, fallback = false) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
+      const lowered = value.trim().toLowerCase();
+      if (["1", "true", "yes", "y", "on"].includes(lowered)) return true;
+      if (["0", "false", "no", "n", "off"].includes(lowered)) return false;
+    }
+    return fallback;
+  }
+
+  function sparkClamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function sparkHasOwn(obj, key) {
+    return Object.prototype.hasOwnProperty.call(obj, key);
+  }
+
+  function normalizeSparkSettings(input, fallback = SPARK_DEFAULT_SETTINGS) {
+    const base = { ...fallback };
+    if (!sparkIsPlainObject(input)) return base;
+    return {
+      enabled: sparkToBoolean(input.enabled, base.enabled),
+      url: sparkToString(input.url, base.url).trim(),
+      app_id: sparkToString(input.app_id, base.app_id).trim(),
+      api_key: sparkToString(input.api_key, base.api_key).trim(),
+      api_secret: sparkToString(input.api_secret, base.api_secret).trim(),
+      domain: sparkToString(input.domain, base.domain).trim() || base.domain,
+      temperature: sparkClamp(sparkToNumber(input.temperature, base.temperature), 0, 1),
+      max_tokens: sparkClamp(Math.round(sparkToNumber(input.max_tokens, base.max_tokens)), 128, 4096)
+    };
+  }
+
+  function getMissingSparkFields(settings) {
+    const normalized = normalizeSparkSettings(settings, SPARK_DEFAULT_SETTINGS);
+    return SPARK_REQUIRED_FIELDS.filter((field) => !sparkToString(normalized[field], "").trim());
+  }
+
+  function mergeSparkSettings(base, partial) {
+    const next = normalizeSparkSettings(base, SPARK_DEFAULT_SETTINGS);
+    if (!sparkIsPlainObject(partial)) return next;
+
+    if (sparkHasOwn(partial, "enabled")) {
+      next.enabled = sparkToBoolean(partial.enabled, next.enabled);
+    }
+
+    const mergeTextField = (field) => {
+      const value = sparkToString(partial[field], "").trim();
+      if (value) next[field] = value;
+    };
+
+    mergeTextField("url");
+    mergeTextField("app_id");
+    mergeTextField("api_key");
+    mergeTextField("api_secret");
+    mergeTextField("domain");
+
+    if (sparkHasOwn(partial, "temperature")) {
+      const raw = sparkToString(partial.temperature, "").trim();
+      if (raw !== "") {
+        next.temperature = sparkClamp(sparkToNumber(partial.temperature, next.temperature), 0, 1);
+      }
+    }
+
+    if (sparkHasOwn(partial, "max_tokens")) {
+      const raw = sparkToString(partial.max_tokens, "").trim();
+      if (raw !== "") {
+        next.max_tokens = sparkClamp(Math.round(sparkToNumber(partial.max_tokens, next.max_tokens)), 128, 4096);
+      }
+    }
+
+    return next;
+  }
+
+  function resolveSparkEnvKeyMap(rawMap) {
+    const source = sparkIsPlainObject(rawMap) ? rawMap : {};
+    const out = {};
+    for (const key of Object.keys(SPARK_DEFAULT_ENV_KEYS)) {
+      const fallback = SPARK_DEFAULT_ENV_KEYS[key];
+      const value = sparkToString(source[key], fallback).trim();
+      out[key] = value || fallback;
+    }
+    return out;
+  }
+
+  function readSparkEnvLike(envKeyMap) {
+    const out = {};
+    for (const key of Object.keys(SPARK_DEFAULT_ENV_KEYS)) {
+      const storageKey = sparkToString(envKeyMap?.[key], "").trim();
+      if (!storageKey) {
+        out[key] = null;
+        continue;
+      }
+      try {
+        out[key] = localStorage.getItem(storageKey);
+      } catch (_err) {
+        out[key] = null;
+      }
+    }
+    return out;
+  }
+
+  async function loadSparkConfigFromFile() {
+    if (sparkConfigPromise) return sparkConfigPromise;
+    sparkConfigPromise = (async () => {
+      try {
+        const url = chrome?.runtime?.getURL?.(SPARK_CONFIG_RESOURCE_PATH);
+        if (!url) return null;
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) return null;
+        const payload = await response.json();
+        return sparkIsPlainObject(payload) ? payload : null;
+      } catch (_err) {
+        return null;
+      }
+    })();
+    return await sparkConfigPromise;
+  }
+
+  function arrayBufferToBase64(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = "";
+    const chunk = 0x8000;
+    for (let i = 0; i < bytes.length; i += chunk) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
+    }
+    return btoa(binary);
+  }
+
+  async function hmacSha256Base64(secret, text) {
+    const encoder = new TextEncoder();
+    const key = await crypto.subtle.importKey(
+      "raw",
+      encoder.encode(secret),
+      { name: "HMAC", hash: "SHA-256" },
+      false,
+      ["sign"]
+    );
+    const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(text));
+    return arrayBufferToBase64(signature);
+  }
+
+  async function getSparkSettings() {
+    const localSettings = await new Promise((resolve) => {
+      try {
+        chrome?.storage?.local?.get?.([SPARK_SETTINGS_KEY], (items) => {
+          resolve(items?.[SPARK_SETTINGS_KEY] || null);
+        });
+      } catch (_err) {
+        resolve(null);
+      }
+    });
+
+    const configFromFile = await loadSparkConfigFromFile();
+    const envKeyMap = resolveSparkEnvKeyMap(configFromFile?.envKeys);
+    const envLike = readSparkEnvLike(envKeyMap);
+
+    const withLocal = normalizeSparkSettings(localSettings, SPARK_DEFAULT_SETTINGS);
+    const withConfig = mergeSparkSettings(withLocal, configFromFile?.settings);
+    const merged = mergeSparkSettings(withConfig, envLike);
+    return merged;
+  }
+
+  async function createSparkAuthorizedUrl(settings) {
+    const endpoint = new URL(settings.url);
+    if (endpoint.protocol === "https:") endpoint.protocol = "wss:";
+    if (endpoint.protocol === "http:") endpoint.protocol = "ws:";
+    const host = endpoint.host;
+    const path = endpoint.pathname || "/";
+    const date = new Date().toUTCString();
+    const signatureOrigin = `host: ${host}\ndate: ${date}\nGET ${path} HTTP/1.1`;
+    const signatureBase64 = await hmacSha256Base64(settings.api_secret, signatureOrigin);
+    const authorizationOrigin = `api_key="${settings.api_key}", algorithm="hmac-sha256", headers="host date request-line", signature="${signatureBase64}"`;
+    const authorization = btoa(authorizationOrigin);
+
+    endpoint.searchParams.set("authorization", authorization);
+    endpoint.searchParams.set("date", date);
+    endpoint.searchParams.set("host", host);
+    return endpoint.toString();
+  }
+
+  function buildSparkPayload(settings, requestPayload) {
+    const messageList = [];
+
+    if (Array.isArray(requestPayload.messages) && requestPayload.messages.length > 0) {
+      requestPayload.messages.forEach((item) => {
+        if (!sparkIsPlainObject(item)) return;
+        const role = sparkToString(item.role, "user");
+        const content = sparkToString(item.content, "");
+        if (content.trim()) {
+          messageList.push({ role, content });
+        }
+      });
+    }
+
+    if (messageList.length === 0) {
+      const systemPrompt = sparkToString(requestPayload.systemPrompt, "");
+      const prompt = sparkToString(requestPayload.prompt, "");
+      if (systemPrompt.trim()) {
+        messageList.push({ role: "system", content: systemPrompt.trim() });
+      }
+      if (prompt.trim()) {
+        messageList.push({ role: "user", content: prompt.trim() });
+      }
+    }
+
+    if (messageList.length === 0) {
+      throw new Error("Spark prompt is empty.");
+    }
+
+    return {
+      header: {
+        app_id: settings.app_id,
+        uid: crypto.randomUUID ? crypto.randomUUID() : "linkedin-spark"
+      },
+      parameter: {
+        chat: {
+          domain: settings.domain,
+          temperature: settings.temperature,
+          max_tokens: settings.max_tokens
+        }
+      },
+      payload: {
+        message: {
+          text: messageList
+        }
+      }
+    };
+  }
+
+  async function callSparkModel(requestPayload) {
+    const storedSettings = await getSparkSettings();
+    const mergedSettings = normalizeSparkSettings(requestPayload.settings, storedSettings);
+    if (!mergedSettings.enabled) {
+      throw new Error("Spark model is disabled in settings.");
+    }
+    const missing = getMissingSparkFields(mergedSettings);
+    if (missing.length > 0) {
+      throw new Error(`Spark settings incomplete: ${missing.join(", ")}`);
+    }
+
+    const websocketUrl = await createSparkAuthorizedUrl(mergedSettings);
+    const payload = buildSparkPayload(mergedSettings, requestPayload);
+    const timeoutMs = Math.max(5000, Math.round(sparkToNumber(requestPayload.timeoutMs, 30000)));
+
+    return await new Promise((resolve, reject) => {
+      let ws = null;
+      let done = false;
+      let output = "";
+
+      const finish = (handler, value) => {
+        if (done) return;
+        done = true;
+        clearTimeout(timer);
+        try {
+          if (ws && ws.readyState === WebSocket.OPEN) {
+            ws.close(1000, "completed");
+          }
+        } catch (_ignored) {
+          // Ignore close errors.
+        }
+        handler(value);
+      };
+
+      const timer = setTimeout(() => {
+        finish(reject, new Error("Spark request timed out."));
+      }, timeoutMs);
+
+      try {
+        ws = new WebSocket(websocketUrl);
+      } catch (error) {
+        finish(reject, error);
+        return;
+      }
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify(payload));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(String(event.data || "{}"));
+          const headerCode = Number(data?.header?.code || 0);
+          if (headerCode !== 0) {
+            const headerMessage = sparkToString(data?.header?.message, `Spark error code ${headerCode}`);
+            finish(reject, new Error(headerMessage));
+            return;
+          }
+          const textList = data?.payload?.choices?.text;
+          if (Array.isArray(textList) && textList.length > 0) {
+            output += sparkToString(textList[0]?.content, "");
+          }
+          const status = Number(data?.payload?.choices?.status ?? 2);
+          if (status === 2) {
+            finish(resolve, output.trim());
+          }
+        } catch (error) {
+          finish(reject, error);
+        }
+      };
+
+      ws.onerror = () => {
+        finish(reject, new Error("Spark websocket connection failed."));
+      };
+
+      ws.onclose = (event) => {
+        if (done) return;
+        if (output.trim()) {
+          finish(resolve, output.trim());
+        } else {
+          finish(reject, new Error(`Spark websocket closed: code=${event.code}`));
+        }
+      };
+    });
+  }
+
+  function resolveCommentLength(preferences) {
+    const raw = preferences?.commentLength;
+    if (typeof raw === "number") return raw;
+    if (typeof raw === "string") {
+      if (/super\s*short|supershort/i.test(raw)) return 1;
+      if (/brief/i.test(raw)) return 2;
+      if (/concise|in-?length|inlength|in\s*length/i.test(raw)) return 3;
+      if (/multi|detailed/i.test(raw)) return 5;
+    }
+    return 3;
+  }
+
+  function pickRandomItem(list, fallback) {
+    if (!Array.isArray(list) || list.length === 0) return fallback;
+    const idx = Math.floor(Math.random() * list.length);
+    return list[idx] ?? fallback;
+  }
+
+  function resolveCommentTone(preferences) {
+    const pref = sparkIsPlainObject(preferences) ? preferences : {};
+    const current = sparkToString(pref.commentTone, "Professional").trim() || "Professional";
+    if (!randomToneEnabled) return current;
+    const tonePool = [
+      "Supportive",
+      "Gracious",
+      "Witty",
+      "Polite",
+      "Professional",
+      "Friendly",
+      "Formal",
+      "Direct"
+    ];
+    return pickRandomItem(tonePool, current);
+  }
+
+  function resolveEffectiveCommentLength(preferences) {
+    const current = resolveCommentLength(preferences);
+    if (!randomLengthEnabled) return current;
+    return pickRandomItem([1, 2, 3, 4, 5], current);
+  }
+
+  function resolveCommentGenerationProfile(preferences) {
+    const pref = sparkIsPlainObject(preferences) ? preferences : {};
+    return {
+      tone: resolveCommentTone(pref),
+      length: resolveEffectiveCommentLength(pref)
+    };
+  }
+
+  function normalizeSparkOutput(text) {
+    return sparkToString(text, "")
+      .replace(/^\s*```(?:json|text)?/i, "")
+      .replace(/```\s*$/i, "")
+      .replace(/\r\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function isEnabledLike(value) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
+      const lowered = value.trim().toLowerCase();
+      return ["1", "true", "yes", "y", "on"].includes(lowered);
+    }
+    return false;
+  }
+
+  function isEmojiPreferenceEnabled(pref) {
+    if (!sparkIsPlainObject(pref)) return false;
+    return (
+      isEnabledLike(pref.commentUseEmojis) ||
+      isEnabledLike(pref.commentUseEmoji) ||
+      isEnabledLike(pref.useEmojis) ||
+      isEnabledLike(pref.useEmoji)
+    );
+  }
+
+  function containsEmoji(text) {
+    if (!text) return false;
+    return /[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/u.test(text);
+  }
+
+  function tokenizeWords(text) {
+    return sparkToString(text, "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .split(" ")
+      .filter(Boolean);
+  }
+
+  function truncateToWords(text, maxWords) {
+    const words = tokenizeWords(text);
+    if (!Number.isFinite(maxWords) || maxWords <= 0 || words.length <= maxWords) {
+      return sparkToString(text, "").trim();
+    }
+    return words.slice(0, maxWords).join(" ").trim();
+  }
+
+  function ensureQuestionEnding(text) {
+    const normalized = sparkToString(text, "").trim();
+    if (!normalized) return normalized;
+    if (/[?？]\s*$/.test(normalized)) return normalized;
+    return `${normalized}?`;
+  }
+
+  function ensureMentionPrefix(text, author) {
+    const normalized = sparkToString(text, "").trim();
+    const name = sparkToString(author, "").trim();
+    if (!normalized || !name) return normalized;
+    const mention = `@${name}`;
+    if (normalized.includes(mention)) return normalized;
+    return `${mention} ${normalized}`.trim();
+  }
+
+  function resolveCommentWordLimit(preferences) {
+    const level = resolveCommentLength(preferences);
+    if (level <= 1) return 18;
+    if (level === 2) return 30;
+    if (level === 3) return 45;
+    if (level === 4) return 70;
+    return 120;
+  }
+
+  function resolveReplyWordLimit(preferences) {
+    const pref = sparkIsPlainObject(preferences) ? preferences : {};
+    const keepShort = pref.replyKeepItShort !== false;
+    if (keepShort) return 40;
+    return 80;
+  }
+
+  function countEmoji(text) {
+    const source = sparkToString(text, "");
+    const matches = source.match(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu);
+    return matches ? matches.length : 0;
+  }
+
+  function ensureMultiEmoji(text, minCount = 2) {
+    const normalized = normalizeSparkOutput(text);
+    if (!normalized) return normalized;
+    let out = normalized;
+    const target = Math.max(1, Math.round(minCount));
+    const palette = ["\u{1F642}", "\u{1F44D}", "\u{1F680}", "\u{1F4A1}"];
+    let index = 0;
+    while (countEmoji(out) < target) {
+      const emoji = palette[index % palette.length];
+      out = `${out} ${emoji}`.trim();
+      index += 1;
+    }
+    return out;
+  }
+
+  function splitSentences(text) {
+    const normalized = sparkToString(text, "").replace(/\s+/g, " ").trim();
+    if (!normalized) return [];
+    return normalized
+      .split(/(?<=[.!?。！？])\s+/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+  }
+
+  function ensureThreeParagraphs(text) {
+    const normalized = normalizeSparkOutput(text);
+    if (!normalized) return normalized;
+    const existing = normalized.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
+    if (existing.length >= 3) return existing.join("\n\n");
+
+    const sentences = splitSentences(normalized);
+    if (sentences.length >= 3) {
+      return [sentences[0], sentences[1], sentences.slice(2).join(" ")].filter(Boolean).join("\n\n");
+    }
+
+    const base = normalized.replace(/\n+/g, " ").trim();
+    return [base, "I especially appreciate the practical execution details.", "Looking forward to the next milestone updates."].join("\n\n");
+  }
+
+  function enforceEmojiByPreference(text, pref) {
+    const normalized = normalizeSparkOutput(text);
+    if (!normalized) return normalized;
+    if (!isEmojiPreferenceEnabled(pref)) return normalized;
+    return ensureMultiEmoji(normalized, 2);
+  }
+
+  function enforceCommentByPreference(text, input) {
+    const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
+    const author = sparkToString(input?.postAuthor, "").trim();
+    const length = Number(input?.__ceEffectiveLength) || resolveCommentLength(pref);
+    let out = normalizeSparkOutput(text);
+    if (!out) return out;
+
+    const commentWordLimit = resolveCommentWordLimit(pref);
+    out = truncateToWords(out, commentWordLimit);
+
+    if (isEnabledLike(pref.commentMentionPostAuthor)) {
+      out = ensureMentionPrefix(out, author);
+    }
+
+    out = enforceEmojiByPreference(out, pref);
+    if (isEmojiPreferenceEnabled(pref) && length >= 5) {
+      out = ensureThreeParagraphs(out);
+      out = ensureMultiEmoji(out, 3);
+    }
+
+    if (isEnabledLike(pref.commentEndWithQuestion)) {
+      out = ensureQuestionEnding(out);
+    }
+
+    return normalizeSparkOutput(out);
+  }
+
+  function enforceReplyByPreference(text, input) {
+    const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
+    let out = normalizeSparkOutput(text);
+    if (!out) return out;
+
+    const replyWordLimit = resolveReplyWordLimit(pref);
+    out = truncateToWords(out, replyWordLimit);
+
+    if (isEnabledLike(pref.replyEndWithQuestion)) {
+      out = ensureQuestionEnding(out);
+    }
+
+    return normalizeSparkOutput(out);
+  }
+
+  function buildCommentPrompt(input) {
+    const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
+    const profile = sparkIsPlainObject(input?.__ceGenerationProfile) ? input.__ceGenerationProfile : {};
+    const length = Number(profile.length) || resolveEffectiveCommentLength(pref);
+    const useEnglish = !!pref.engageInEnglish;
+    const mentionAuthor = !!pref.commentMentionPostAuthor;
+    const useEmoji = !!pref.commentUseEmojis;
+    const endQuestion = !!pref.commentEndWithQuestion;
+    const tone = sparkToString(profile.tone, resolveCommentTone(pref));
+    const author = sparkToString(input?.postAuthor, "").trim();
+    const postText = sparkToString(input?.postText, "").trim();
+
+    const lengthGuide = length >= 5
+      ? "Write at least 3 short paragraphs with meaningful details."
+      : length >= 4
+        ? "Write one medium-length paragraph with concrete points."
+        : length <= 2
+          ? "Write a short but specific comment in 1-2 sentences."
+          : "Write a concise comment in about 2-3 sentences.";
+
+    const languageGuide = useEnglish
+      ? "Use English."
+      : "Use the same language as the original post.";
+
+    return {
+      systemPrompt: "You are an expert LinkedIn engagement writer. Return only the final comment text.",
+      prompt:
+`Write a high-quality LinkedIn comment.
+Rules:
+- Be specific and insightful, avoid generic filler.
+- Do not copy the original post sentence by sentence.
+- No markdown code blocks, no quotes, no explanations.
+- Tone: ${tone}.
+- ${lengthGuide}
+- ${languageGuide}
+- ${mentionAuthor && author ? `Start with @${author} naturally.` : "Do not force @mentions."}
+- ${useEmoji ? (length >= 5 ? "Use emojis in multiple places across the comment (at least 3 total)." : "Use emojis in multiple places (at least 2 total).") : "Do not use emoji."}
+- ${endQuestion ? "End with one natural question." : "Do not force a question ending."}
+
+Post author: ${author || "(unknown)"}
+Post content:
+${postText || "(empty)"}`
+    };
+  }
+
+  function buildReplyPrompt(input) {
+    const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
+    const useEnglish = !!pref.engageInEnglish;
+    const keepShort = pref.replyKeepItShort !== false;
+    const endQuestion = !!pref.replyEndWithQuestion;
+    const ackMyPost = !!pref.replyAckIfMyPost;
+    const tone = sparkToString(pref.commentTone, "Professional");
+    const postAuthor = sparkToString(input?.postAuthor, "").trim();
+    const postText = sparkToString(input?.postText, "").trim();
+    const commentText = sparkToString(input?.commentText, "").trim();
+    const me = sparkToString(input?.me, "").trim();
+
+    const languageGuide = useEnglish
+      ? "Use English."
+      : "Use the same language as the thread.";
+
+    return {
+      systemPrompt: "You are an expert LinkedIn conversation assistant. Return only the final reply text.",
+      prompt:
+`Write a LinkedIn reply to an existing comment.
+Rules:
+- Keep the reply natural and context-aware.
+- Do not repeat the same sentence patterns.
+- No markdown code blocks, no quotes, no explanations.
+- Tone: ${tone}.
+- ${keepShort ? "Keep it brief (<= 40 words)." : "You may use up to 80 words."}
+- ${languageGuide}
+- ${endQuestion ? "End with one natural question." : "No forced question ending."}
+- ${ackMyPost ? "If this is my own post context, prioritize acknowledgment first." : "Do not over-emphasize acknowledgment."}
+
+My name: ${me || "(unknown)"}
+Post author: ${postAuthor || "(unknown)"}
+Post content:
+${postText || "(empty)"}
+
+Comment to reply:
+${commentText || "(empty)"}
+`
+    };
+  }
+
+  function setupSparkRuntime() {
+    window.__ceGetSparkSettings = async () => await getSparkSettings();
+    window.__ceSetSparkSettings = async (partial) => {
+      const current = await getSparkSettings();
+      const next = normalizeSparkSettings(partial, current);
+      await new Promise((resolve) => {
+        try {
+          chrome?.storage?.local?.set?.({ [SPARK_SETTINGS_KEY]: next }, () => resolve());
+        } catch (_err) {
+          resolve();
+        }
+      });
+      return next;
+    };
+    window.__ceSparkComplete = async (requestPayload) => {
+      const text = await callSparkModel(requestPayload || {});
+      return normalizeSparkOutput(text);
+    };
+    window.__ceSparkGenerateComment = async (input) => {
+      const safeInput = input || {};
+      const profile = resolveCommentGenerationProfile(safeInput.preferences);
+      const prompt = buildCommentPrompt({
+        ...safeInput,
+        __ceGenerationProfile: profile
+      });
+      const text = await callSparkModel({
+        ...prompt,
+        timeoutMs: 35000
+      });
+      return enforceCommentByPreference(text, {
+        ...safeInput,
+        __ceEffectiveLength: profile.length
+      });
+    };
+    window.__ceSparkGenerateReply = async (input) => {
+      const prompt = buildReplyPrompt(input || {});
+      const text = await callSparkModel({
+        ...prompt,
+        timeoutMs: 35000
+      });
+      return enforceReplyByPreference(text, input || {});
+    };
+  }
 
   function patchGlobalJsonParse() {
     try {
@@ -152,7 +873,7 @@
   }
 
   const DEFAULT_ACCOUNT = {
-    subscriberId: undefined,
+    subscriberId: TEST_SUBSCRIBER_ID,
     email: "",
     password: "",
     plan: "Advanced",
@@ -169,63 +890,11 @@
     ["Sign in", "登录"],
     ["Sign out", "退出登录"],
     ["Sign up", "注册"],
-    ["Confused?", "不清楚怎么用？"],
-    ["Watch tutorial", "查看教程"],
-    ["Licensed to:", "授权给："],
     ["Plan:", "套餐："],
     ["Length:", "长度："],
-    ["Tone", "语气"],
-    ["Open Ended", "开放式结尾"],
     ["Use Emojis", "使用表情"],
-    ["Comment/Reply in English", "评论/回复使用英文"],
-    ["Keep Replies Short", "保持简短回复"],
-    ["On My Own Posts — Reply Only with Ack", "我的帖子仅确认式回复"],
-    ["Voice Gender", "语气性别"],
-    ["Not Specified", "未指定"],
-    ["Male", "男性"],
-    ["Female", "女性"],
-    ["Enable/disable CommenTron", "启用/禁用 CommenTron"],
-    ["Extension enabled", "扩展已启用"],
-    ["Extension disabled", "扩展已禁用"],
-    ["Commenting in English", "已切换为英文评论"],
-    ["Commenting in post language", "已按帖子语言评论"],
     ["Using emojis", "已启用表情"],
-    ["Not using emojis", "已关闭表情"],
-    ["Ending comments with a question", "评论将以问题结尾"],
-    ["Ending comments natively", "评论结尾恢复默认"],
-    ["Replying with acknowledge", "回复将以确认式表达"],
-    ["Replying natively", "回复恢复默认"],
-    ["Disabled on short comments", "短评论模式下不可用"],
-    ["Reset CommenTron Seats", "重置 CommenTron 配额"],
-    ["Works only on", "仅支持"],
-    ["Click here", "点击这里"],
-    ["to update, then follow the steps shown below:", "完成更新后按下图步骤操作："],
-    ["A new version is available ✨", "发现新版本 ✨"],
-    ["Write us a review", "给我们评分"],
-    ["Free trial ended 😥", "付费功能已全部放开"],
-    ["Subscribe", "已放开"],
-    ["to enjoy this amazing tool.", "无需订阅，可直接使用。"],
-    ["Early bird mode — use without login.", "免登录模式已启用。"],
-    ["Email", "邮箱"],
-    ["Password", "密码"],
-    ["Version:", "版本："],
-    ["Environment: production", "环境：production"],
-    ["Seat:", "席位："],
-    ["Comment/reply in English, regardless of the post language.", "无论帖子语言如何，评论/回复都使用英文。"],
-    ["Use emojis as part of the comment.", "在评论中使用表情符号。"],
-    ["Ask a question at the end of the comment to encourage further engagement.", "评论末尾使用问题以提高互动。"],
-    ["Control the length of comments.", "控制评论长度。"],
-    ["Set the tone for the comments that are generated.", "设置生成评论的语气。"],
-    ["Set the voice gender for the comments and replies that are generated.", "设置生成评论与回复的语气性别。"],
-    ["Up to 10 words on a reply.", "回复最多 10 个单词。"],
-    ["Sign up to CommenTron.", "注册 CommenTron。"],
-    ["Sign in to CommenTron.", "登录 CommenTron。"],
-    ["Same email you used to register with RocketPod.", "请输入你注册 RocketPod 时使用的邮箱。"],
-    ["Same password you used to register with RocketPod. Forgot password?", "请输入你注册 RocketPod 时使用的密码。忘记密码？"],
-    ["<span>Same password you used to register with RocketPod. <br /> <a style='color: white' href='https://rocket-pod.ai/my-account/lost-password' target='_blank'>Forgot password?</a></span>", "<span>请输入你注册 RocketPod 时使用的密码。<br /> <a style='color: white' href='https://rocket-pod.ai/my-account/lost-password' target='_blank'>忘记密码？</a></span>"],
-    ["On my own posts — do not get involved too much in the context and just acknowledge by showing appreciation for the comment.", "在我的帖子下，不要过多介入上下文，仅通过感谢进行确认回复。"],
-    ["On my own posts - do not get involved too much in the context and just acknowledge by showing appreciation for the comment.", "在我的帖子下，不要过多介入上下文，仅通过感谢进行确认回复。"],
-    ["On my own posts ? do not get involved too much in the context and just acknowledge by showing appreciation for the comment.", "在我的帖子下，不要过多介入上下文，仅通过感谢进行确认回复。"]
+    ["Not using emojis", "已关闭表情"]
   ];
 
   const enToZh = new Map(DICT);
@@ -248,7 +917,7 @@
     ["Use Emojis", "\u4f7f\u7528\u8868\u60c5"],
     ["Comment/Reply in English", "\u8bc4\u8bba/\u56de\u590d\u4f7f\u7528\u82f1\u6587"],
     ["Keep Replies Short", "\u4fdd\u6301\u7b80\u77ed\u56de\u590d"],
-    ["On My Own Posts — Reply Only with Ack", "\u6211\u7684\u5e16\u5b50\u4ec5\u786e\u8ba4\u5f0f\u56de\u590d"],
+    ["On My Own Posts 鈥?Reply Only with Ack", "\u6211\u7684\u5e16\u5b50\u4ec5\u786e\u8ba4\u5f0f\u56de\u590d"],
     ["On My Own Posts - Reply Only with Ack", "\u6211\u7684\u5e16\u5b50\u4ec5\u786e\u8ba4\u5f0f\u56de\u590d"],
     ["Extension enabled", "\u6269\u5c55\u5df2\u542f\u7528"],
     ["Extension disabled", "\u6269\u5c55\u5df2\u7981\u7528"],
@@ -427,6 +1096,22 @@
     return DEFAULT_AUTO_SEND_ENABLED;
   }
 
+  function normalizeFeatureToggle(value, fallback = false) {
+    if (typeof value === "boolean") return value;
+    if (typeof value === "number") return value !== 0;
+    if (typeof value === "string") {
+      const lowered = value.trim().toLowerCase();
+      if (["1", "true", "yes", "y", "on"].includes(lowered)) return true;
+      if (["0", "false", "no", "n", "off"].includes(lowered)) return false;
+    }
+    return fallback;
+  }
+
+  function normalizeReplyPromptHint(value) {
+    if (typeof value !== "string") return DEFAULT_REPLY_PROMPT_HINT;
+    return value.replace(/\s+/g, " ").trim().slice(0, 240);
+  }
+
   function persistAutoSendDelayRange() {
     const storage = chrome?.storage?.local;
     if (!storage?.set) return Promise.resolve();
@@ -514,6 +1199,115 @@
     }, 15_000);
   }
 
+  function persistRandomStrategySettings() {
+    const storage = chrome?.storage?.local;
+    if (!storage?.set) return Promise.resolve();
+    randomToneEnabled = normalizeFeatureToggle(randomToneEnabled, DEFAULT_RANDOM_TONE_ENABLED);
+    randomLengthEnabled = normalizeFeatureToggle(randomLengthEnabled, DEFAULT_RANDOM_LENGTH_ENABLED);
+    return new Promise((resolve) => {
+      try {
+        storage.set(
+          {
+            [RANDOM_TONE_ENABLED_KEY]: randomToneEnabled,
+            [RANDOM_LENGTH_ENABLED_KEY]: randomLengthEnabled
+          },
+          () => resolve()
+        );
+      } catch (_err) {
+        resolve();
+      }
+    });
+  }
+
+  function loadRandomStrategySettings() {
+    const storage = chrome?.storage?.local;
+    if (!storage?.get) {
+      randomToneEnabled = DEFAULT_RANDOM_TONE_ENABLED;
+      randomLengthEnabled = DEFAULT_RANDOM_LENGTH_ENABLED;
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      try {
+        storage.get(
+          {
+            [RANDOM_TONE_ENABLED_KEY]: DEFAULT_RANDOM_TONE_ENABLED,
+            [RANDOM_LENGTH_ENABLED_KEY]: DEFAULT_RANDOM_LENGTH_ENABLED
+          },
+          (obj) => {
+            randomToneEnabled = normalizeFeatureToggle(obj?.[RANDOM_TONE_ENABLED_KEY], DEFAULT_RANDOM_TONE_ENABLED);
+            randomLengthEnabled = normalizeFeatureToggle(obj?.[RANDOM_LENGTH_ENABLED_KEY], DEFAULT_RANDOM_LENGTH_ENABLED);
+            resolve();
+          }
+        );
+      } catch (_err) {
+        randomToneEnabled = DEFAULT_RANDOM_TONE_ENABLED;
+        randomLengthEnabled = DEFAULT_RANDOM_LENGTH_ENABLED;
+        resolve();
+      }
+    });
+  }
+
+  function setupRandomStrategyRuntime() {
+    window.__ceIsRandomToneEnabled = () => !!randomToneEnabled;
+    window.__ceIsRandomLengthEnabled = () => !!randomLengthEnabled;
+    void loadRandomStrategySettings();
+    setInterval(() => {
+      void loadRandomStrategySettings();
+    }, 15_000);
+  }
+
+  function persistReplyPromptHint() {
+    const storage = chrome?.storage?.local;
+    if (!storage?.set) return Promise.resolve();
+    replyPromptHint = normalizeReplyPromptHint(replyPromptHint);
+    return new Promise((resolve) => {
+      try {
+        storage.set(
+          {
+            [REPLY_PROMPT_HINT_KEY]: replyPromptHint
+          },
+          () => resolve()
+        );
+      } catch (_err) {
+        resolve();
+      }
+    });
+  }
+
+  function loadReplyPromptHint() {
+    const storage = chrome?.storage?.local;
+    if (!storage?.get) {
+      replyPromptHint = DEFAULT_REPLY_PROMPT_HINT;
+      return Promise.resolve();
+    }
+
+    return new Promise((resolve) => {
+      try {
+        storage.get(
+          {
+            [REPLY_PROMPT_HINT_KEY]: DEFAULT_REPLY_PROMPT_HINT
+          },
+          (obj) => {
+            replyPromptHint = normalizeReplyPromptHint(obj?.[REPLY_PROMPT_HINT_KEY]);
+            resolve();
+          }
+        );
+      } catch (_err) {
+        replyPromptHint = DEFAULT_REPLY_PROMPT_HINT;
+        resolve();
+      }
+    });
+  }
+
+  function setupReplyPromptHintRuntime() {
+    window.__ceGetReplyPromptHint = () => replyPromptHint || "";
+    void loadReplyPromptHint();
+    setInterval(() => {
+      void loadReplyPromptHint();
+    }, 15_000);
+  }
+
   function getStorageValue(area, key) {
     return new Promise((resolve) => {
       try {
@@ -544,6 +1338,7 @@
       const merged = {
         ...DEFAULT_ACCOUNT,
         ...existing,
+        subscriberId: TEST_SUBSCRIBER_ID,
         plan: "Advanced",
         isTrialEligible: true
       };
@@ -597,45 +1392,6 @@
 
     const fallbackMap = lang === "zh-CN" ? enToZh : zhToEn;
     if (fallbackMap.has(text)) return fallbackMap.get(text);
-
-    if (lang === "zh-CN") {
-      const ackTip = text.match(/^On my own posts\s*[\u2014\-\?]\s*do not get involved too much in the context and just acknowledge by showing appreciation for the comment\.$/i);
-      if (ackTip) return "在我的帖子下，不要过多介入上下文，仅通过感谢进行确认回复。";
-
-      const m1 = text.match(/^Free trial ended, upgrade to '(.+)' plan to access this feature$/);
-      if (m1) return `免费试用已结束，请升级到“${translateOptionLabel(m1[1], "zh-CN")}”套餐后使用该功能`;
-
-      const m2 = text.match(/^Upgrade to '(.+)' plan to access this feature$/);
-      if (m2) return `请升级到“${translateOptionLabel(m2[1], "zh-CN")}”套餐后使用该功能`;
-
-      const m3 = text.match(/^Plan:\s*(.+)$/);
-      if (m3) return `套餐：${translateOptionLabel(m3[1].trim(), "zh-CN")}`;
-
-      const m4 = text.match(/^Length:\s*'?(.*?)'?$/);
-      if (m4) return `长度：${translateOptionLabel(m4[1].trim(), "zh-CN")}`;
-
-      const m5 = text.match(/^Tone:\s*'?(.*?)'?$/);
-      if (m5) return `语气：${translateOptionLabel(m5[1].trim(), "zh-CN")}`;
-    } else {
-      if (/^\u5728\u6211\u7684\u5e16\u5b50\u4e0b\uff0c\u4e0d\u8981\u8fc7\u591a\u4ecb\u5165\u4e0a\u4e0b\u6587\uff0c\u4ec5\u901a\u8fc7\u611f\u8c22\u8fdb\u884c\u786e\u8ba4\u56de\u590d\u3002$/u.test(text)) {
-        return "On my own posts — do not get involved too much in the context and just acknowledge by showing appreciation for the comment.";
-      }
-
-      const m1 = text.match(/^\u514d\u8d39\u8bd5\u7528\u5df2\u7ed3\u675f\uff0c\u8bf7\u5347\u7ea7\u5230\u201c(.+)\u201d\u5957\u9910\u540e\u4f7f\u7528\u8be5\u529f\u80fd$/u);
-      if (m1) return `Free trial ended, upgrade to '${translateOptionLabel(m1[1], "en")}' plan to access this feature`;
-
-      const m2 = text.match(/^\u8bf7\u5347\u7ea7\u5230\u201c(.+)\u201d\u5957\u9910\u540e\u4f7f\u7528\u8be5\u529f\u80fd$/u);
-      if (m2) return `Upgrade to '${translateOptionLabel(m2[1], "en")}' plan to access this feature`;
-
-      const m3 = text.match(/^\u5957\u9910\uff1a\s*(.+)$/u);
-      if (m3) return `Plan: ${translateOptionLabel(m3[1].trim(), "en")}`;
-
-      const m4 = text.match(/^\u957f\u5ea6\uff1a\s*(.+)$/u);
-      if (m4) return `Length: '${translateOptionLabel(m4[1].trim(), "en")}'`;
-
-      const m5 = text.match(/^\u8bed\u6c14\uff1a\s*(.+)$/u);
-      if (m5) return `Tone: '${translateOptionLabel(m5[1].trim(), "en")}'`;
-    }
 
     return text;
   }
@@ -742,8 +1498,12 @@
       overlay.style.transform = "translate(-50%, -50%)";
       overlay.style.pointerEvents = "none";
       overlay.style.whiteSpace = "nowrap";
+      overlay.style.maxWidth = "calc(100% - 116px)";
+      overlay.style.overflow = "hidden";
+      overlay.style.textOverflow = "ellipsis";
+      overlay.style.textAlign = "center";
       overlay.style.fontWeight = "700";
-      overlay.style.fontSize = "34px";
+      overlay.style.fontSize = "16px";
       overlay.style.lineHeight = "1";
       overlay.style.textShadow = "0 4px 4px rgba(0,0,0,.25)";
       overlay.style.color = "inherit";
@@ -801,15 +1561,77 @@
     }
   }
 
+  function isGateText(text) {
+    return !!(text && GATE_TEXT_PATTERN.test(text));
+  }
+
+  function isGateToastPayload(payload) {
+    if (!payload) return false;
+    if (typeof payload === "string") return isGateText(payload);
+    if (typeof payload !== "object") return false;
+
+    const candidates = [
+      payload.message,
+      payload.msg,
+      payload.title,
+      payload.text,
+      payload.body,
+      payload.description,
+      payload?.response?.data?.message,
+      payload?.response?.data?.error?.message
+    ];
+
+    return candidates.some((item) => typeof item === "string" && isGateText(item));
+  }
+
+  function suppressGateToastApis() {
+    if (window.__ceGateToastPatched) return;
+
+    const patchMethods = (obj) => {
+      if (!obj || typeof obj !== "object") return;
+
+      for (const method of ["show", "info", "success", "warning", "error"]) {
+        const original = obj[method];
+        if (typeof original !== "function" || original.__ceGateWrapped) continue;
+
+        const wrapped = function patchedGateToast(...args) {
+          if (args.some(isGateToastPayload)) return;
+          return original.apply(this, args);
+        };
+        wrapped.__ceGateWrapped = true;
+        obj[method] = wrapped;
+      }
+    };
+
+    try {
+      patchMethods(window.iziToast);
+    } catch (_err) {
+      // Ignore missing iziToast.
+    }
+
+    try {
+      patchMethods(window.toast);
+    } catch (_err) {
+      // Ignore missing toast adapter.
+    }
+
+    try {
+      Object.defineProperty(window, "__ceGateToastPatched", {
+        value: true,
+        configurable: true
+      });
+    } catch (_err) {
+      window.__ceGateToastPatched = true;
+    }
+  }
+
   function hideGateToasts() {
     if (!document.body) return;
-
-    const gatePattern = /(free\s*trial|max(?:imum)?\s*usage|maximum\s*usage\s*allowed|upgrade|subscribe|already\s*a\s*subscriber|reached\s*the\s*maximum\s*usage)/i;
 
     const removeNodeIfGate = (node) => {
       if (!node) return;
       const text = (node.textContent || "").trim();
-      if (!text || !gatePattern.test(text)) return;
+      if (!isGateText(text)) return;
 
       const host = node.closest(".iziToast, [id^='iziToast'], .Toastify__toast, [role='alert'], [aria-live], div");
       const target = host || node;
@@ -829,13 +1651,73 @@
     for (const el of candidates) removeNodeIfGate(el);
   }
 
+  function setSliderValueByClientX(root, clientX) {
+    if (!root) return;
+    const input = root.querySelector("input[type='range']");
+    if (!input) return;
+
+    const rect = root.getBoundingClientRect();
+    if (!rect || !rect.width) return;
+
+    const min = Number(input.min || "0");
+    const max = Number(input.max || "100");
+    const step = Number(input.step || "1") || 1;
+    const ratio = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+    const raw = min + (max - min) * ratio;
+    const snapped = Math.round(raw / step) * step;
+    const next = String(Math.max(min, Math.min(max, snapped)));
+
+    try {
+      const valueSetter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value")?.set;
+      if (valueSetter) valueSetter.call(input, next);
+      else input.value = next;
+    } catch (_err) {
+      input.value = next;
+    }
+
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+
+  function ensureSliderInteractive(root) {
+    if (!root || root.__ceSliderPatched) return;
+    root.__ceSliderPatched = true;
+
+    root.style.pointerEvents = "auto";
+    root.style.touchAction = "none";
+
+    root.addEventListener("click", (ev) => {
+      if (!Number.isFinite(ev.clientX)) return;
+      setSliderValueByClientX(root, ev.clientX);
+    });
+
+    root.addEventListener("pointerdown", (ev) => {
+      if (ev.button !== 0) return;
+      setSliderValueByClientX(root, ev.clientX);
+      const onMove = (moveEv) => setSliderValueByClientX(root, moveEv.clientX);
+      const onUp = () => {
+        window.removeEventListener("pointermove", onMove);
+      };
+      window.addEventListener("pointermove", onMove);
+      window.addEventListener("pointerup", onUp, { once: true });
+    });
+  }
+
+  function ensurePopupSlidersInteractive() {
+    const sliders = document.querySelectorAll(".MuiSlider-root");
+    for (const slider of sliders) ensureSliderInteractive(slider);
+  }
+
   function applyRuntimeLayers() {
     applyLanguageToDom();
     unlockDisabledControls();
     enforceBrandTitle();
-    hideBottomRightLogo();
-    hideGateToasts();
     mountPreferencesAutoSendControls();
+    ensurePopupSlidersInteractive();
+    mountReplyPromptHintControl();
+    hideBottomRightLogo();
+    suppressGateToastApis();
+    hideGateToasts();
   }
 
   function queueApplyRuntime() {
@@ -852,10 +1734,16 @@
     const langBtn = document.getElementById("ce-lang-toggle");
     const autoToggle = document.getElementById("ce-pref-auto-send-toggle");
     const autoToggleText = document.getElementById("ce-pref-auto-send-text");
+    const randomToneToggle = document.getElementById("ce-pref-random-tone-toggle");
+    const randomToneText = document.getElementById("ce-pref-random-tone-text");
+    const randomLengthToggle = document.getElementById("ce-pref-random-length-toggle");
+    const randomLengthText = document.getElementById("ce-pref-random-length-text");
     const delayCaption = document.getElementById("ce-pref-delay-caption");
     const delayLabel = document.getElementById("ce-pref-delay-label");
     const minInput = document.getElementById("ce-pref-delay-min");
     const maxInput = document.getElementById("ce-pref-delay-max");
+    const replyHintLabel = document.getElementById("ce-reply-prompt-hint-label");
+    const replyHintInput = document.getElementById("ce-reply-prompt-hint-input");
     if (!modeBtn || !langBtn) return;
     modeBtn.classList.add("toggle-group-btn");
     langBtn.classList.add("toggle-group-btn");
@@ -866,48 +1754,93 @@
 
     modeBtn.textContent = currentMode === "dark" ? "L" : "D";
     modeBtn.title = currentLang === "zh-CN"
-      ? (currentMode === "dark" ? "切换到浅色模式" : "切换到深色模式")
+      ? (currentMode === "dark"
+        ? "\u5207\u6362\u5230\u6d45\u8272\u6a21\u5f0f"
+        : "\u5207\u6362\u5230\u6df1\u8272\u6a21\u5f0f")
       : (currentMode === "dark" ? "Switch to light mode" : "Switch to dark mode");
 
-    langBtn.textContent = currentLang === "zh-CN" ? "EN" : "中";
-    langBtn.title = currentLang === "zh-CN" ? "切换到英文" : "Switch to Chinese";
+    langBtn.textContent = currentLang === "zh-CN" ? "EN" : "ZH";
+    langBtn.title = currentLang === "zh-CN" ? "\u5207\u6362\u5230\u82f1\u6587" : "Switch to Chinese";
 
     if (autoToggle) {
       autoToggle.checked = !!autoSendEnabled;
       autoToggle.title = currentLang === "zh-CN"
-        ? "生成评论后自动点击发送"
+        ? "\u751f\u6210\u8bc4\u8bba\u540e\u81ea\u52a8\u70b9\u51fb\u53d1\u9001"
         : "Auto click comment send after generation";
     }
 
     if (autoToggleText) {
       autoToggleText.textContent = currentLang === "zh-CN"
-        ? "自动点击评论发送"
+        ? "\u81ea\u52a8\u70b9\u51fb\u8bc4\u8bba\u53d1\u9001"
         : "Auto click comment send";
+    }
+
+    if (randomToneToggle) {
+      randomToneToggle.checked = !!randomToneEnabled;
+      randomToneToggle.title = currentLang === "zh-CN"
+        ? "\u6bcf\u6b21\u751f\u6210\u8bc4\u8bba\u65f6\uff0c\u968f\u673a\u4f7f\u7528\u4e00\u79cd\u8bed\u6c14"
+        : "Randomly choose one tone for each generated comment";
+    }
+
+    if (randomToneText) {
+      randomToneText.textContent = currentLang === "zh-CN"
+        ? "\u968f\u673a\u8bed\u6c14"
+        : "Random tone";
+    }
+
+    if (randomLengthToggle) {
+      randomLengthToggle.checked = !!randomLengthEnabled;
+      randomLengthToggle.title = currentLang === "zh-CN"
+        ? "\u6bcf\u6b21\u751f\u6210\u8bc4\u8bba\u65f6\uff0c\u968f\u673a\u4f7f\u7528\u4e00\u4e2a\u957f\u5ea6\u6863\u4f4d"
+        : "Randomly choose one length level for each generated comment";
+    }
+
+    if (randomLengthText) {
+      randomLengthText.textContent = currentLang === "zh-CN"
+        ? "\u968f\u673a\u957f\u5ea6"
+        : "Random length";
     }
 
     if (delayCaption) {
       delayCaption.textContent = currentLang === "zh-CN"
-        ? "随机延时(秒)"
-        : "Random delay (s)";
+        ? "\u5ef6\u65f6\u53d1\u5e03"
+        : "Delayed publish";
     }
 
     if (delayLabel) {
       delayLabel.textContent = `${autoSendDelayMinSec}~${autoSendDelayMaxSec}s`;
       delayLabel.title = currentLang === "zh-CN"
-        ? "自动发送随机延时"
+        ? "\u81ea\u52a8\u53d1\u9001\u968f\u673a\u5ef6\u65f6"
         : "Auto-send random delay";
     }
 
     if (minInput) {
       minInput.value = String(autoSendDelayMinSec);
       minInput.disabled = !autoSendEnabled;
-      minInput.title = currentLang === "zh-CN" ? "最小秒数" : "Min seconds";
+      minInput.title = currentLang === "zh-CN" ? "\u6700\u5c0f\u79d2\u6570" : "Min seconds";
     }
 
     if (maxInput) {
       maxInput.value = String(autoSendDelayMaxSec);
       maxInput.disabled = !autoSendEnabled;
-      maxInput.title = currentLang === "zh-CN" ? "最大秒数" : "Max seconds";
+      maxInput.title = currentLang === "zh-CN" ? "\u6700\u5927\u79d2\u6570" : "Max seconds";
+    }
+
+    if (replyHintLabel) {
+      replyHintLabel.textContent = currentLang === "zh-CN"
+        ? "\u56de\u590d\u63d0\u793a\u8bed:"
+        : "Reply Prompt Hint:";
+    }
+
+    if (replyHintInput) {
+      const normalized = normalizeReplyPromptHint(replyPromptHint);
+      if (replyHintInput.value !== normalized) replyHintInput.value = normalized;
+      replyHintInput.placeholder = currentLang === "zh-CN"
+        ? "\u4f8b\u5982\uff1a\u5148\u8ba4\u53ef\u89c2\u70b9\uff0c\u518d\u8865\u5145\u4e00\u4e2a\u5177\u4f53\u89c1\u89e3\uff08\u6700\u591a240\u5b57\uff09"
+        : "Example: acknowledge first, then add one concrete insight (max 240 chars)";
+      replyHintInput.title = currentLang === "zh-CN"
+        ? "\u751f\u6210\u56de\u590d\u65f6\u4f1a\u9644\u52a0\u8be5\u63d0\u793a\u8bed"
+        : "This hint will be appended when generating replies";
     }
   }
 
@@ -938,7 +1871,14 @@
 
     controls.appendChild(modeBtn);
     controls.appendChild(langBtn);
-    document.body.appendChild(controls);
+
+    const header = document.querySelector(".header");
+    if (header) {
+      header.style.position = "relative";
+      header.appendChild(controls);
+    } else {
+      document.body.appendChild(controls);
+    }
     updateControls();
   }
 
@@ -947,16 +1887,18 @@
     for (const el of labels) {
       const text = (el.textContent || "").trim();
       if (!text) continue;
+      const normalized = text.toLowerCase();
       if (
-        text === "Comment/Reply in English" ||
-        text === "评论/回复使用英文" ||
-        text === "Use Emojis" ||
-        text === "使用表情"
+        normalized.includes("comment/reply in english") ||
+        normalized.includes("use emojis") ||
+        text.includes("评论/回复使用英文") ||
+        text.includes("使用表情")
       ) {
         return el.closest(".info-flex") || el.closest("div");
       }
     }
-    return null;
+    const fallback = document.querySelector(".tab-content,.tabs-content,.accordion,.content,main,body");
+    return fallback && fallback !== document.body ? fallback : null;
   }
 
   function mountPreferencesAutoSendControls() {
@@ -968,7 +1910,7 @@
 
     const root = document.createElement("div");
     root.id = "ce-preferences-auto-send-root";
-    root.className = "info-flex ce-preferences-auto-send";
+    root.className = "ce-preferences-auto-send";
 
     const toggleRow = document.createElement("div");
     toggleRow.className = "ce-pref-row";
@@ -987,6 +1929,42 @@
     toggleLabel.appendChild(autoToggle);
     toggleLabel.appendChild(autoToggleText);
     toggleRow.appendChild(toggleLabel);
+
+    const randomToneRow = document.createElement("div");
+    randomToneRow.className = "ce-pref-row";
+    const randomToneLabel = document.createElement("label");
+    randomToneLabel.className = "ce-pref-toggle";
+    const randomToneToggle = document.createElement("input");
+    randomToneToggle.id = "ce-pref-random-tone-toggle";
+    randomToneToggle.type = "checkbox";
+    randomToneToggle.addEventListener("change", async () => {
+      randomToneEnabled = !!randomToneToggle.checked;
+      await persistRandomStrategySettings();
+      updateControls();
+    });
+    const randomToneText = document.createElement("span");
+    randomToneText.id = "ce-pref-random-tone-text";
+    randomToneLabel.appendChild(randomToneToggle);
+    randomToneLabel.appendChild(randomToneText);
+    randomToneRow.appendChild(randomToneLabel);
+
+    const randomLengthRow = document.createElement("div");
+    randomLengthRow.className = "ce-pref-row";
+    const randomLengthLabel = document.createElement("label");
+    randomLengthLabel.className = "ce-pref-toggle";
+    const randomLengthToggle = document.createElement("input");
+    randomLengthToggle.id = "ce-pref-random-length-toggle";
+    randomLengthToggle.type = "checkbox";
+    randomLengthToggle.addEventListener("change", async () => {
+      randomLengthEnabled = !!randomLengthToggle.checked;
+      await persistRandomStrategySettings();
+      updateControls();
+    });
+    const randomLengthText = document.createElement("span");
+    randomLengthText.id = "ce-pref-random-length-text";
+    randomLengthLabel.appendChild(randomLengthToggle);
+    randomLengthLabel.appendChild(randomLengthText);
+    randomLengthRow.appendChild(randomLengthLabel);
 
     const delayRow = document.createElement("div");
     delayRow.className = "ce-pref-row ce-pref-delay-row";
@@ -1028,15 +2006,88 @@
     delayRow.appendChild(maxInput);
 
     root.appendChild(toggleRow);
+    root.appendChild(randomToneRow);
+    root.appendChild(randomLengthRow);
     root.appendChild(delayRow);
 
     anchorRow.insertAdjacentElement("afterend", root);
+    void loadRandomStrategySettings().then(() => updateControls());
+    updateControls();
+  }
+
+  function mountReplyPromptHintControl() {
+    const settingsRoot = document.getElementById("ce-preferences-auto-send-root");
+    if (!settingsRoot) return;
+    if (document.getElementById("ce-reply-prompt-hint-root")) return;
+
+    const root = document.createElement("div");
+    root.id = "ce-reply-prompt-hint-root";
+
+    const label = document.createElement("label");
+    label.id = "ce-reply-prompt-hint-label";
+    label.setAttribute("for", "ce-reply-prompt-hint-input");
+
+    const input = document.createElement("input");
+    input.id = "ce-reply-prompt-hint-input";
+    input.type = "text";
+    input.maxLength = 240;
+    input.spellcheck = false;
+    input.autocomplete = "off";
+
+    input.addEventListener("input", () => {
+      const raw = typeof input.value === "string" ? input.value : "";
+      const clipped = raw.slice(0, 240);
+      if (clipped !== raw) input.value = clipped;
+      replyPromptHint = clipped;
+    });
+
+    input.addEventListener("change", async () => {
+      replyPromptHint = normalizeReplyPromptHint(input.value);
+      input.value = replyPromptHint;
+      await persistReplyPromptHint();
+      updateControls();
+    });
+
+    input.addEventListener("blur", async () => {
+      replyPromptHint = normalizeReplyPromptHint(input.value);
+      input.value = replyPromptHint;
+      await persistReplyPromptHint();
+      updateControls();
+    });
+
+    input.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter") return;
+      event.preventDefault();
+      input.blur();
+    });
+
+    root.appendChild(label);
+    root.appendChild(input);
+    settingsRoot.appendChild(root);
     updateControls();
   }
   function initContentContext() {
-    // Avoid mutating LinkedIn feed DOM from runtime patch logic.
-    // Content-side gate toast sweeping can click unrelated buttons and break page rendering.
-    return;
+    const run = () => {
+      try {
+        suppressGateToastApis();
+        hideGateToasts();
+      } catch (_err) {
+        // Keep content script resilient.
+      }
+    };
+
+    run();
+
+    if (document.body) {
+      const observer = new MutationObserver(run);
+      observer.observe(document.body, {
+        childList: true,
+        subtree: true,
+        characterData: true
+      });
+    }
+
+    setInterval(run, 600);
   }
 
   function initPopupContext() {
@@ -1062,6 +2113,9 @@
   }, 5_000);
 
   setupAutoSendDelayRuntime();
+  setupRandomStrategyRuntime();
+  setupReplyPromptHintRuntime();
+  setupSparkRuntime();
 
   if (!isPopupContext()) {
     if (document.readyState === "loading") {
@@ -1078,3 +2132,11 @@
     initPopupContext();
   }
 })();
+
+
+
+
+
+
+
+

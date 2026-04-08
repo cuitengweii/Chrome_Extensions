@@ -20,6 +20,7 @@
     lang: 'xac.language',
     autoPost: 'xac.autoPostEnabled',
     autoRunMax: 'xac.autoRunMax',
+    autoRepliedHistory: 'xac.autoRepliedHistory',
     googleSession: 'xac.googleSession',
     profileMeta: 'xac.profileMeta',
     advanced: 'xac.advancedSettings',
@@ -119,6 +120,7 @@
     replyDelayMaxMs: 8000,
     actionDelayMs: 220,
     maxIdleLoops: 6,
+    followTargetLanguage: true,
     minTweetChars: 0,
     skipIfContainsLinks: false,
     skipIfContainsImages: false,
@@ -206,6 +208,7 @@
       insertFailed: 'Failed to insert text into editor',
       autoPostRequiredForAuto: 'Auto run requires "Auto-post after generate" enabled.',
       autoPostNotSent: 'Reply was generated but not sent. Skipped this item.',
+      replyRestrictedSkip: 'Reply is restricted for this post. Skipped and recorded.',
       guideSec: 'Usage Guide',
       guideLine1: 'Prompt + Output is debug mode for manual one-off generation.',
       guideLine2: 'Custom instructions are short-term task constraints for this run.',
@@ -220,6 +223,7 @@
       replyDelayMaxMs: 'Reply delay max (ms)',
       actionDelayMs: 'Action delay (ms)',
       maxIdleLoops: 'Max idle loops',
+      followTargetLanguage: 'Follow target tweet language (ZH/EN)',
       minTweetChars: 'Min tweet chars',
       skipIfContainsLinks: 'Skip posts with links',
       skipIfContainsImages: 'Skip posts with images',
@@ -246,7 +250,7 @@
       savedAdvanced: 'Advanced settings saved',
       stepProfile: 'Step 1 · Choose Profile',
       stepProfileDesc: 'Select and edit who this account sounds like before generating anything.',
-      stepAccount: 'Step 0 · Account',
+      stepAccount: 'Step 1 · Account',
       stepAccountDesc: 'Confirm login status and language first to avoid misconfigured runs.',
       stepStrategy: 'Step 2 · Set Strategy',
       stepStrategyDesc: 'Choose interaction intensity, objective, and target reply length.',
@@ -493,6 +497,7 @@
       insertFailed: '写入回复框失败',
       autoPostRequiredForAuto: '自动运行前请开启“生成后自动发送”。',
       autoPostNotSent: '已生成回复但未成功发送，已跳过该条。',
+      replyRestrictedSkip: '该帖子限制回复，已跳过并记录。',
       guideSec: '功能说明',
       guideLine1: '提示词 + 输出是调试模式，用于手动单次生成。',
       guideLine2: '自定义指令是本轮任务约束，影响当前回复策略。',
@@ -507,6 +512,7 @@
       replyDelayMaxMs: '回复间隔最大值（ms）',
       actionDelayMs: '动作间隔（ms）',
       maxIdleLoops: '最大空转次数',
+      followTargetLanguage: '跟随目标推文语言（中/英）',
       minTweetChars: '推文字数下限',
       skipIfContainsLinks: '跳过含链接推文',
       skipIfContainsImages: '跳过含图片推文',
@@ -533,7 +539,7 @@
       savedAdvanced: '高级设置已保存',
       stepProfile: '步骤1 · 选择人设',
       stepProfileDesc: '先选定账号“说话的人设”，再进行后续生成。',
-      stepAccount: '步骤0 · 账号',
+      stepAccount: '步骤1 · 账号',
       stepAccountDesc: '先确认登录状态与语言，避免后续配置错位。',
       stepStrategy: '步骤2 · 设置策略',
       stepStrategyDesc: '确定互动强度、目标和回复长度预期。',
@@ -753,6 +759,7 @@
     scheduledStarts: [],
     scheduleRuntime: { updatedAt: 0, lastSyncAt: 0, entries: {} },
     cloudSyncStatus: { lastSyncedAt: 0, lastPulledAt: 0, lastError: '' },
+    autoRepliedHistory: {},
     replyRuleBulkText: '',
     editor: { open: false, mode: 'new', targetId: '', draft: null },
     autoPost: false,
@@ -1210,6 +1217,7 @@
       replyDelayMaxMs: clampNum(source.replyDelayMaxMs, 500, 60000, DEFAULT_ADVANCED.replyDelayMaxMs),
       actionDelayMs: clampNum(source.actionDelayMs, 100, 5000, DEFAULT_ADVANCED.actionDelayMs),
       maxIdleLoops: clampNum(source.maxIdleLoops, 1, 50, DEFAULT_ADVANCED.maxIdleLoops),
+      followTargetLanguage: b(source.followTargetLanguage ?? source.FollowTargetLanguage, DEFAULT_ADVANCED.followTargetLanguage),
       minTweetChars: clampNum(source.minTweetChars, 0, 1000, DEFAULT_ADVANCED.minTweetChars),
       skipIfContainsLinks: b(source.skipIfContainsLinks, DEFAULT_ADVANCED.skipIfContainsLinks),
       skipIfContainsImages: b(source.skipIfContainsImages, DEFAULT_ADVANCED.skipIfContainsImages),
@@ -1310,6 +1318,8 @@
   const X_NON_PREMIUM_MAX_LENGTH = 280
   const X_URL_WEIGHT = 23
   const URL_RE = /(?:https?:\/\/|www\.)\S+/gi
+  const AUTO_REPLIED_HISTORY_MAX = 3000
+  const AUTO_REPLIED_HISTORY_TTL_MS = 14 * 24 * 60 * 60 * 1000
   let notifiedInvalidContext = false
 
   const send = (a, p = {}) => new Promise((resolve) => {
@@ -1522,6 +1532,20 @@
     return out.trim()
   }
 
+  function detectContextLanguage(ctx, fallbackLang = 'en') {
+    const fallback = normLang(fallbackLang)
+    const corpus = `${ctx?.tweetText || ''}\n${ctx?.quoteText || ''}\n${ctx?.threadText || ''}`
+    if (!corpus.trim()) return fallback
+    const zhCount = (corpus.match(/[\u3400-\u9fff]/g) || []).length
+    const enCount = (corpus.match(/[A-Za-z]/g) || []).length
+    if (!zhCount && !enCount) return fallback
+    if (zhCount > 0 && enCount === 0) return 'zh'
+    if (enCount > 0 && zhCount === 0) return 'en'
+    if (zhCount >= Math.max(6, enCount * 0.45)) return 'zh'
+    if (enCount >= Math.max(12, zhCount * 1.2)) return 'en'
+    return fallback
+  }
+
   function setStatus(x) { S.status = x; const e = document.getElementById('xac-status'); if (e) e.textContent = x || '' }
 
   async function runPendingAction(action, statusText, task, restoreIdle = true) {
@@ -1654,6 +1678,61 @@
     }
   }
 
+  function normalizeAutoRepliedHistory(raw) {
+    const source = raw && typeof raw === 'object' ? raw : {}
+    const now = Date.now()
+    const minTs = now - AUTO_REPLIED_HISTORY_TTL_MS
+    const pairs = Object.entries(source)
+      .map(([key, ts]) => [String(key || '').trim(), Math.max(0, Math.round(n(ts, 0)))])
+      .filter(([key, ts]) => key && ts >= minTs)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, AUTO_REPLIED_HISTORY_MAX)
+    return Object.fromEntries(pairs)
+  }
+
+  function persistAutoRepliedHistory() {
+    const normalized = normalizeAutoRepliedHistory(S.autoRepliedHistory)
+    S.autoRepliedHistory = normalized
+    set({ [K.autoRepliedHistory]: normalized }).catch(() => {})
+  }
+
+  function getTweetHistoryKey(article) {
+    if (!(article instanceof HTMLElement)) return ''
+    const timedAnchor = article.querySelector('a[href*="/status/"] time')?.closest('a[href*="/status/"]')
+    if (timedAnchor instanceof HTMLAnchorElement && timedAnchor.closest('article[data-testid="tweet"]') === article) {
+      const href = String(timedAnchor.getAttribute('href') || '')
+      const m = href.match(/\/status\/(\d+)/i)
+      if (m?.[1]) return `tweet:${m[1]}`
+    }
+    const anchors = Array.from(article.querySelectorAll('a[href*="/status/"]'))
+    for (const anchor of anchors) {
+      if (!(anchor instanceof HTMLAnchorElement)) continue
+      if (anchor.closest('article[data-testid="tweet"]') !== article) continue
+      const href = String(anchor.getAttribute('href') || '')
+      const m = href.match(/\/status\/(\d+)/i)
+      if (m?.[1]) return `tweet:${m[1]}`
+    }
+    return ''
+  }
+
+  function wasAutoRepliedRecently(article) {
+    const key = getTweetHistoryKey(article)
+    if (!key) return false
+    const ts = Math.max(0, Math.round(n(S.autoRepliedHistory?.[key], 0)))
+    if (!ts) return false
+    return (Date.now() - ts) <= AUTO_REPLIED_HISTORY_TTL_MS
+  }
+
+  function markAutoReplied(article) {
+    const key = getTweetHistoryKey(article)
+    if (!key) return
+    S.autoRepliedHistory = {
+      ...(S.autoRepliedHistory || {}),
+      [key]: Date.now()
+    }
+    persistAutoRepliedHistory()
+  }
+
   async function loadState() {
     const rs = await send('xac:get-state')
     if (rs.ok && rs.state) {
@@ -1685,6 +1764,7 @@
     const local = await g([
       K.autoPost,
       K.autoRunMax,
+      K.autoRepliedHistory,
       K.profileMeta,
       K.advanced,
       K.replyRules,
@@ -1699,6 +1779,7 @@
     const hasCurrentRules = Array.isArray(local[K.replyRules]) && local[K.replyRules].length > 0
     S.autoPost = b(local[K.autoPost], false)
     S.auto.max = clampNum(local[K.autoRunMax], 0, 200, Math.max(0, Math.round(n(S.auto.max, 0))))
+    S.autoRepliedHistory = normalizeAutoRepliedHistory(local[K.autoRepliedHistory])
     S.profileMeta = local[K.profileMeta] && typeof local[K.profileMeta] === 'object' ? local[K.profileMeta] : {}
     S.advanced = normalizeAdvanced(hasCurrentAdvanced ? local[K.advanced] : legacySettings)
     const legacyRules = convertLegacyMessagesToRules(local.messages || legacySettings?.messages || [])
@@ -2132,6 +2213,51 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
     return false
   }
 
+  function isReplyRestrictedDialog(dialog) {
+    if (!(dialog instanceof HTMLElement)) return false
+    const text = String(dialog.innerText || '').toLowerCase()
+    return (
+      /who can reply\??/.test(text) ||
+      /only (?:some|certain|specific|selected )?(?:people|accounts?).{0,90}can reply/.test(text) ||
+      /only people.{0,90}can reply/.test(text) ||
+      /只有部分账号可以回复/.test(text) ||
+      /谁可以回复/.test(text) ||
+      /只有.{0,40}可以回复/.test(text)
+    )
+  }
+
+  async function dismissReplyRestrictedDialog(timeoutMs = 1200) {
+    const deadline = Date.now() + Math.max(200, Math.round(n(timeoutMs, 0)))
+    while (Date.now() < deadline) {
+      const dialog = getVisibleDialogs().find((node) => isReplyRestrictedDialog(node))
+      if (!dialog) {
+        await sleep(80)
+        continue
+      }
+      const gotItBtn =
+        findVisibleButtonByText(dialog, /^(知道了|got it|ok|okay)$/i) ||
+        findVisibleButtonByText(dialog, /(知道了|got it|close|关闭)/i)
+      if (gotItBtn instanceof HTMLElement) {
+        gotItBtn.click()
+        await sleep(120)
+        return true
+      }
+      const closeBtn = dialog.querySelector('button[data-testid="app-bar-close"], button[aria-label="Close"], button[aria-label="关闭"]')
+      if (closeBtn instanceof HTMLElement) {
+        closeBtn.click()
+        await sleep(120)
+        return true
+      }
+      try {
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }))
+        await sleep(120)
+        return true
+      } catch {}
+      await sleep(80)
+    }
+    return false
+  }
+
   async function closeVisibleReplyDialog() {
     const dialog = getVisibleDialogs()[0]
     if (!dialog) return false
@@ -2157,22 +2283,30 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
     if (!forceTarget) {
       const dialogEditor = Array.from(document.querySelectorAll('div[role="dialog"] div[contenteditable="true"][role="textbox"], div[role="dialog"] div[contenteditable="true"][data-testid^="tweetTextarea"]'))
         .find((e) => e instanceof HTMLElement && e.offsetParent !== null)
-      if (dialogEditor) return dialogEditor
+      if (dialogEditor) return { editor: dialogEditor, blocked: '' }
     } else {
       await closeVisibleReplyDialog()
     }
 
     const rb = article?.querySelector('button[data-testid="reply"], div[data-testid="reply"]')
-    if (!rb) return null
+    if (!rb) return { editor: null, blocked: 'no_reply_button' }
     rb.click()
     const start = Date.now()
     while (Date.now() - start < 7000) {
       const c = Array.from(document.querySelectorAll('div[role="textbox"][data-testid^="tweetTextarea"], div[contenteditable="true"][role="textbox"], div[contenteditable="true"][data-testid^="tweetTextarea"]'))
       const t = c.find((e) => e instanceof HTMLElement && e.offsetParent !== null)
-      if (t) return t
+      if (t) return { editor: t, blocked: '' }
+      if (getVisibleDialogs().some((node) => isReplyRestrictedDialog(node))) {
+        await dismissReplyRestrictedDialog(900)
+        return { editor: null, blocked: 'reply_restricted' }
+      }
       await sleep(100)
     }
-    return null
+    if (getVisibleDialogs().some((node) => isReplyRestrictedDialog(node))) {
+      await dismissReplyRestrictedDialog(600)
+      return { editor: null, blocked: 'reply_restricted' }
+    }
+    return { editor: null, blocked: 'timeout' }
   }
 
   function putText(editor, text) {
@@ -2541,6 +2675,10 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
 
   function messages(ctx, triggeredRule = null) {
     const p = promptSettings()
+    const cfg = normalizeAdvanced(S.advanced)
+    const replyLang = cfg.followTargetLanguage
+      ? detectContextLanguage(ctx, p.language)
+      : normLang(p.language)
     const ctaRuleZh = p.includeCta ? '结尾添加简短行动号召（例如提问或邀请互动）。' : ''
     const ctaRuleEn = p.includeCta ? 'End with a short CTA (question or invite to respond).' : ''
     const ruleHintZh = triggeredRule
@@ -2553,10 +2691,10 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
           ? `Triggered rule: ${triggeredRule.name}. Output body text only. Do not repeat the rule start/end templates.`
           : `Triggered rule: ${triggeredRule.name}. Keep the reply naturally aligned with the matched keyword context.`)
       : ''
-    const sys = p.language === 'zh'
+    const sys = replyLang === 'zh'
       ? ['你是X平台评论助手。', `语气: ${p.tone}`, `目标: ${p.goal}`, `长度: ${p.length}`, `互动强度: ${p.engagementMode}`, p.persona ? `人设: ${p.persona}` : '', p.instructions ? `额外约束: ${p.instructions}` : '', ctaRuleZh, ruleHintZh, '必须适配 X 普通账号限制：按字符权重总长度不超过 280，优先控制在 240 以内。', '只输出一条可直接发布的中文回复，不要解释。'].filter(Boolean).join('\n')
       : ['You are an assistant for generating X/Twitter replies.', `Tone: ${p.tone}`, `Goal: ${p.goal}`, `Length: ${p.length}`, `Engagement mode: ${p.engagementMode}`, p.persona ? `Persona: ${p.persona}` : '', p.instructions ? `Extra rules: ${p.instructions}` : '', ctaRuleEn, ruleHintEn, 'Must fit X non-premium limits: weighted length <= 280, preferably <= 240.', 'Return one post-ready reply only. No explanation.'].filter(Boolean).join('\n')
-    const usr = p.language === 'zh'
+    const usr = replyLang === 'zh'
       ? ['下面是上下文，请基于它写一条回复:', `主推文:\n${ctx.tweetText || '(无)'}`, `引用推文:\n${ctx.quoteText || '(无)'}`, `线程上文:\n${ctx.threadText || '(无)'}`, `图片链接:\n${ctx.images.length ? ctx.images.join('\n') : '(无)'}`].join('\n\n')
       : ['Context for one reply:', `Main tweet:\n${ctx.tweetText || '(none)'}`, `Quoted tweet:\n${ctx.quoteText || '(none)'}`, `Thread parent:\n${ctx.threadText || '(none)'}`, `Image URLs:\n${ctx.images.length ? ctx.images.join('\n') : '(none)'}`].join('\n\n')
     return [{ role: 'system', content: sys }, { role: 'user', content: usr }]
@@ -2602,8 +2740,16 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
         followedByPreAction = clickFollow(article)
         if (followedByPreAction) await sleep(cfg.actionDelayMs)
       }
-      const ed = await openEditor(article, { forceTarget: fromAuto })
-      if (!ed) { btnState(btn, 'f', t('fail')); toast(t('editorMissing'), 'warn'); return false }
+      const editorResult = await openEditor(article, { forceTarget: fromAuto })
+      const ed = editorResult?.editor || null
+      if (!ed) {
+        if (editorResult?.blocked === 'reply_restricted') {
+          markAutoReplied(article)
+          if (!fromAuto) toast(t('replyRestrictedSkip'), 'warn')
+          return false
+        }
+        btnState(btn, 'f', t('fail')); toast(t('editorMissing'), 'warn'); return false
+      }
       const r = await send('xac:spark-complete', { messages: messages(ctx, triggeredRule), timeoutMs: 70000 })
       if (!r.ok || !s(r.text, '')) {
         const reason = formatUserError(s(r.error, t('emptyModelOutput')))
@@ -2644,6 +2790,7 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
         }
       }
       await runPostActions(article, { skipFollow: followedByPreAction }).catch(() => {})
+      markAutoReplied(article)
       return true
     } catch (e) {
       console.error('[XAC] generate failed', e)
@@ -2697,6 +2844,7 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
       let b = a.parentElement?.querySelector('.xac-inline-btn'); if (!b) b = makeBtn(a)
       if (!b || b.dataset.autoDone === '1' || b.dataset.busy === '1') continue
       if (b.classList.contains('o')) { b.dataset.autoDone = '1'; continue }
+      if (wasAutoRepliedRecently(a)) { b.dataset.autoDone = '1'; continue }
       if (!passesAdvancedFilter(a)) { b.dataset.autoFiltered = '1'; continue }
       if (cfg.randomSkips > 0 && Math.random() * 100 < cfg.randomSkips) {
         b.dataset.autoSkipped = '1'
@@ -3215,29 +3363,6 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
         <span class="quota">● ${esc(t('quotaLeft').replace('{count}', String(quotaNum)))}</span>
       </button>
       <div class="body">
-        <div class="guide-banner">
-          <div class="meta">• ${esc(S.lang === 'zh' ? '本页是“完整配置中心”：负责策略、规则、模板、风控与定时。' : 'This page is the full configuration center: strategy, rules, templates, risk controls, and schedules.')}</div>
-          <div class="meta">• ${esc(S.lang === 'zh' ? '弹窗只保留“执行入口与必要选项”，避免两边重复配置。' : 'Popup keeps only execution entry and essential options to avoid duplicated setup.')}</div>
-          <div class="meta">• ${esc(S.lang === 'zh' ? '建议先按流水线完成配置，再回弹窗启动自动回复。' : 'Complete setup in pipeline order here, then return to popup to run automation.')}</div>
-        </div>
-        ${VIEW.isOptions ? `
-          <div class="pipeline-board">
-            <div class="pipeline-head">${esc(t('pipelineTitle'))}</div>
-            <div class="pipeline-desc">${esc(t('pipelineDesc'))}</div>
-            <div class="pipeline-grid">
-              ${pipelineSteps.map((item) => `
-                <div class="pipeline-item">
-                  <div class="title">
-                    <span>${esc(t(item.titleKey))}</span>
-                    ${hintBtn(item.helpKey)}
-                  </div>
-                  <div class="meta">${esc(t(item.descKey))}</div>
-                </div>
-              `).join('')}
-            </div>
-          </div>
-        ` : ''}
-
         <div class="group">
           ${stepHead('stepAccount', 'stepAccountDesc', '', 'accountStep', optionsCurrentStepKey === 'stepAccount')}
           <div class="card">
@@ -3254,32 +3379,6 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
             <button class="mini-btn chip ${S.lang === 'en' ? 'active' : ''}" id="xac-l-en" ${isBusy ? 'disabled' : ''}>EN</button>
             <button class="mini-btn chip ${S.lang === 'zh' ? 'active' : ''}" id="xac-l-zh" ${isBusy ? 'disabled' : ''}>中文</button>
           </div>
-        </div>
-
-        <div class="group">
-          ${stepHead('stepAi', 'stepAiDesc', 'xac-ai-anchor', 'aiStep', optionsCurrentStepKey === 'stepAi')}
-          <div class="card">
-            <div class="meta">${esc(t('sparkStatus'))}: ${esc(formatSparkMissingMessage(S.sparkPublic))}</div>
-          </div>
-          <label>${esc(t('sparkUrl'))}</label><input id="xac-spark-url" type="text" value="${esc(S.sparkDraft.url || '')}" placeholder="${esc(t('sparkUrl'))}"/>
-          <div class="r2">
-            <div><label>${esc(t('sparkAppId'))}</label><input id="xac-spark-app-id" type="text" value="" placeholder="${esc(t('sparkAppId'))}"/></div>
-            <div><label>${esc(t('sparkDomain'))}</label><input id="xac-spark-domain" type="text" value="${esc(String(S.sparkDraft.domain || 'generalv3.5'))}" placeholder="${esc(t('sparkDomain'))}"/></div>
-          </div>
-          <div class="r2">
-            <div><label>${esc(t('sparkApiKey'))}</label><input id="xac-spark-api-key" type="text" value="" placeholder="${esc(t('sparkApiKey'))}"/></div>
-            <div><label>${esc(t('sparkApiSecret'))}</label><input id="xac-spark-api-secret" type="text" value="" placeholder="${esc(t('sparkApiSecret'))}"/></div>
-          </div>
-          <div class="r2">
-            <div><label>${esc(t('sparkTemp'))}</label><input id="xac-spark-temp" type="number" min="0" max="1" step="0.01" value="${esc(String(S.sparkDraft.temperature))}" placeholder="${esc(t('sparkTemp'))}"/></div>
-            <div><label>${esc(t('sparkTokens'))}</label><input id="xac-spark-max-tokens" type="number" min="128" max="4096" step="1" value="${esc(String(S.sparkDraft.max_tokens))}" placeholder="${esc(t('sparkTokens'))}"/></div>
-          </div>
-          <div class="r2">
-            <button id="xac-save-spark" ${isBusy ? 'disabled' : ''}>${esc(t('saveSpark'))}</button>
-            <button id="xac-sync-spark" ${isBusy ? 'disabled' : ''}>${esc(t('syncSpark'))}</button>
-          </div>
-          <div class="meta">${esc(t('saveSparkTip'))}</div>
-          <div class="meta">${esc(t('sparkHint'))}</div>
         </div>
 
         <div class="group">
@@ -3392,6 +3491,7 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
             <div class="meta">${esc(S.lang === 'zh' ? '先定义过滤边界，再组装搜索表达式，最后用“打开搜索”验证。' : 'Define filter boundaries first, then build query terms, and validate via Open Search.')}</div>
           </div>
           <div class="subh"><span id="xac-search-anchor">${esc(`${S.lang === 'zh' ? '5.8 · ' : '5.8 · '}${t('sectionFilter')}`)}</span>${hintBtn('filter')}</div>
+          <div class="switch"><span>${esc(t('followTargetLanguage'))}</span><input id="xac-follow-target-language" type="checkbox" ${S.advanced.followTargetLanguage ? 'checked' : ''}/></div>
           <label>${esc(t('minTweetChars'))}</label><input id="xac-min-chars" type="number" min="0" max="1000" step="10" value="${esc(String(S.advanced.minTweetChars))}"/>
           <div class="switch"><span>${esc(t('skipIfContainsLinks'))}</span><input id="xac-skip-links" type="checkbox" ${S.advanced.skipIfContainsLinks ? 'checked' : ''}/></div>
           <div class="switch"><span>${esc(t('skipIfContainsImages'))}</span><input id="xac-skip-images" type="checkbox" ${S.advanced.skipIfContainsImages ? 'checked' : ''}/></div>
@@ -3840,6 +3940,7 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
       e.target.value = String(S.advanced.maxIdleLoops)
       await saveAdvanced(true)
     })
+    document.getElementById('xac-follow-target-language')?.addEventListener('change', async (e) => { S.advanced.followTargetLanguage = !!e.target.checked; await saveAdvanced(true) })
     document.getElementById('xac-min-chars')?.addEventListener('change', async (e) => {
       S.advanced.minTweetChars = clampNum(e.target.value, 0, 1000, DEFAULT_ADVANCED.minTweetChars)
       e.target.value = String(S.advanced.minTweetChars)
@@ -4394,6 +4495,9 @@ body.xac-theme-light #xac-root select,body.xac-theme-light #xac-root input,body.
           const ae = document.activeElement
           const editingMax = ae instanceof HTMLElement && ae.id === 'xac-max'
           if (!editingMax) render()
+        }
+        if (ch[K.autoRepliedHistory]) {
+          S.autoRepliedHistory = normalizeAutoRepliedHistory(ch[K.autoRepliedHistory].newValue)
         }
         if (ch[K.googleSession]) {
           S.googleSession = ch[K.googleSession].newValue || null

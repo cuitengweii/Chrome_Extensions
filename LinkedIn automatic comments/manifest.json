@@ -29,7 +29,8 @@
     "scripting"
   ],
   "host_permissions": [
-    "https://www.linkedin.com/*"
+    "https://www.linkedin.com/*",
+    "https://spark-api.xf-yun.com/*"
   ],
   "content_scripts": [
     {
@@ -57,7 +58,8 @@
         "https://www.linkedin.com/*"
       ],
       "resources": [
-        "assets/*"
+        "assets/*",
+        "config/*.json"
       ]
     }
   ]

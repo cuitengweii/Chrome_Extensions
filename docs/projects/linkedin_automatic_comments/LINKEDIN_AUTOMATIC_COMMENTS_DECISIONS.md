@@ -166,3 +166,27 @@
 ### Trade-off
 - This is a client-side preference patch; server-side policy constraints are unchanged.
 - Full behavior confidence still requires real LinkedIn UI runtime validation after popup reload.
+
+## 2026-04-05 | Popup Layout & Length-Control Stabilization
+
+### Decision
+- Keep top-right theme/language toggles inside header container (absolute-in-header), not fixed on body.
+- Disable runtime-injected auto-send preference panel in popup render pass to avoid overlapping existing bundled settings layout.
+- Add explicit slider interaction hardening:
+  - CSS pointer-event/touch-action fixes for `.MuiSlider-root`
+  - runtime pointer patch that writes to slider `<input type='range'>` and dispatches `input/change`.
+- Add post-generation length normalization in content pipeline based on `preferences.commentLength` so output length follows selected level even on fallback/unstable responses.
+
+### Why
+- Fixed-position runtime controls and injected panel caused visible overlap and blocked user interactions.
+- In specific popup states, bundled slider interaction could become unreliable; runtime hardening restores direct drag/click behavior.
+- User-observed output length drift required a deterministic local safeguard independent of backend variance.
+
+### Stable Defaults
+- Comment length local caps after cleanup:
+  - level 1: `56` chars
+  - level 2: `88` chars
+  - level 3: `132` chars
+  - level 4: `188` chars
+  - level 5: `320` chars
+- Prefix/suffix cleanup remains active (`Great point:` head and trailing `...` removed before paste).

@@ -173,3 +173,20 @@
   - toggle on/off truly controls auto-send execution path
   - min/max delay values persist after popup reopen and browser restart
   - zh-CN/en labels for new controls remain consistent with current language toggle
+
+## 2026-04-05 | Popup Interaction Fix Pack (v5 follow-up)
+
+### Status
+- Fixed top-right segmented controls overlap: controls now mount in header container instead of fixed body layer.
+- Removed runtime injected `ce-preferences-auto-send-root` panel from active popup render pass to stop lower-section overlap.
+- Added slider interaction hardening (CSS pointer/touch + runtime pointer patch) for `.MuiSlider-root`.
+- Added local output-length normalization by `commentLength` before paste to keep generated comment length aligned with selected setting.
+
+### Landed Output
+- `D:\\code\\Chrome_Extensions\\LinkedIn automatic comments\\runtime.patch.js`
+- `D:\\code\\Chrome_Extensions\\LinkedIn automatic comments\\popup-custom.css`
+- `D:\\code\\Chrome_Extensions\\LinkedIn automatic comments\\contents.f6a134c0.js`
+
+### Validation
+- `node --check D:\\code\\Chrome_Extensions\\LinkedIn automatic comments\\runtime.patch.js` passed.
+- `node --check D:\\code\\Chrome_Extensions\\LinkedIn automatic comments\\contents.f6a134c0.js` passed.

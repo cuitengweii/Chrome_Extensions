@@ -20,11 +20,11 @@
                 },
     "settings":  {
                      "enabled":  true,
-                     "url":  "https://spark-api.xf-yun.com/v3.5/chat",
+                     "url":  "https://spark-api.xf-yun.com/v1.1/chat",
                      "app_id":  "d22d765a",
                      "api_key":  "a9f75f66c849c8199fe2b481f6f3805d",
                      "api_secret":  "OTY1ZWU3NzlmM2FkNzA0NTczNzg3ZjZi",
-                     "domain":  "generalv3.5",
+                     "domain":  "lite",
                      "temperature":  0.3,
                      "max_tokens":  512
                  }

@@ -24,11 +24,11 @@
   const SPARK_CONFIG_RESOURCE_PATH = "config/spark.gasgx.json";
   const SPARK_DEFAULT_SETTINGS = Object.freeze({
     enabled: true,
-    url: "https://spark-api.xf-yun.com/v3.5/chat",
+    url: "https://spark-api.xf-yun.com/v1.1/chat",
     app_id: "",
     api_key: "",
     api_secret: "",
-    domain: "generalv3.5",
+    domain: "lite",
     temperature: 0.3,
     max_tokens: 512
   });
@@ -43,6 +43,13 @@
     max_tokens: "XFYUN_SPARK_MAX_TOKENS"
   });
   const SPARK_REQUIRED_FIELDS = Object.freeze(["url", "app_id", "api_key", "api_secret"]);
+  const SPARK_FALLBACK_ROUTES = Object.freeze([
+    { path: "/v1.1/chat", domain: "lite" },
+    { path: "/v1.1/chat", domain: "general" },
+    { path: "/v2.1/chat", domain: "generalv2" },
+    { path: "/v3.1/chat", domain: "generalv3" },
+    { path: "/v3.5/chat", domain: "generalv3.5" }
+  ]);
   const TEST_SUBSCRIBER_ID = "000000000000000000000000";
   const GATE_TEXT_PATTERN = /(free\s*trial|max(?:imum)?\s*usage|maximum\s*usage\s*allowed|upgrade|subscribe|already\s*a\s*subscriber|reached\s*the\s*maximum\s*usage|active\s*commentron\s*subscription|you\s*don.?t\s*have\s*an\s*active\s*commentron\s*subscription|sign-?in\s+using\s+the\s+extension\s+window|newer\s*commentron\s*version|please\s*update\s*commentron|update\s*commentron)/i;
 
@@ -250,6 +257,64 @@
     return endpoint.toString();
   }
 
+  function buildSparkRouteCandidates(settings) {
+    let endpoint = null;
+    try {
+      endpoint = new URL(settings?.url || "");
+    } catch (_err) {
+      endpoint = null;
+    }
+
+    const protocol = endpoint?.protocol && /https?:/i.test(endpoint.protocol)
+      ? endpoint.protocol
+      : "https:";
+    const host = sparkToString(endpoint?.host, "spark-api.xf-yun.com").trim() || "spark-api.xf-yun.com";
+    const origin = `${protocol}//${host}`;
+    const currentPath = sparkToString(endpoint?.pathname, "").trim() || "/v1.1/chat";
+    const currentDomain = sparkToString(settings?.domain, "").trim() || "lite";
+
+    const raw = [
+      { url: `${origin}${currentPath}`, domain: currentDomain },
+      ...SPARK_FALLBACK_ROUTES.map((item) => ({
+        url: `${origin}${item.path}`,
+        domain: item.domain
+      }))
+    ];
+
+    const dedup = [];
+    const seen = new Set();
+    raw.forEach((item) => {
+      const url = sparkToString(item?.url, "").trim();
+      const domain = sparkToString(item?.domain, "").trim();
+      if (!url || !domain) return;
+      const key = `${url}@@${domain}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      dedup.push({ url, domain });
+    });
+    return dedup;
+  }
+
+  function isSparkAuthRouteError(error) {
+    const msg = sparkToString(error?.message || error, "").toLowerCase();
+    return /appidnoautherror|appid\s*no\s*auth|app\s*id\s*no\s*auth|no\s*auth|unauthori[sz]ed|service\s*not\s*open|domain\s*not\s*(support|open)|invalid\s*app.?id/.test(msg);
+  }
+
+  function persistSparkWorkingRoute(baseSettings, route) {
+    try {
+      const storage = chrome?.storage?.local;
+      if (!storage?.set) return;
+      const next = normalizeSparkSettings({
+        ...baseSettings,
+        url: route?.url,
+        domain: route?.domain
+      }, SPARK_DEFAULT_SETTINGS);
+      storage.set({ [SPARK_SETTINGS_KEY]: next }, () => void 0);
+    } catch (_err) {
+      // Best effort only.
+    }
+  }
+
   function buildSparkPayload(settings, requestPayload) {
     const messageList = [];
 
@@ -299,20 +364,10 @@
     };
   }
 
-  async function callSparkModel(requestPayload) {
-    const storedSettings = await getSparkSettings();
-    const mergedSettings = normalizeSparkSettings(requestPayload.settings, storedSettings);
-    if (!mergedSettings.enabled) {
-      throw new Error("Spark model is disabled in settings.");
-    }
-    const missing = getMissingSparkFields(mergedSettings);
-    if (missing.length > 0) {
-      throw new Error(`Spark settings incomplete: ${missing.join(", ")}`);
-    }
-
-    const websocketUrl = await createSparkAuthorizedUrl(mergedSettings);
-    const payload = buildSparkPayload(mergedSettings, requestPayload);
-    const timeoutMs = Math.max(5000, Math.round(sparkToNumber(requestPayload.timeoutMs, 30000)));
+  async function callSparkModelOnce(settings, requestPayload) {
+    const websocketUrl = await createSparkAuthorizedUrl(settings);
+    const payload = buildSparkPayload(settings, requestPayload);
+    const timeoutMs = Math.max(5000, Math.round(sparkToNumber(requestPayload?.timeoutMs, 30000)));
 
     return await new Promise((resolve, reject) => {
       let ws = null;
@@ -353,7 +408,7 @@
           const data = JSON.parse(String(event.data || "{}"));
           const headerCode = Number(data?.header?.code || 0);
           if (headerCode !== 0) {
-            const headerMessage = sparkToString(data?.header?.message, `Spark error code ${headerCode}`);
+            const headerMessage = sparkToString(data?.header?.message, "Spark request failed");
             finish(reject, new Error(headerMessage));
             return;
           }
@@ -383,6 +438,45 @@
         }
       };
     });
+  }
+
+  async function callSparkModel(requestPayload) {
+    const storedSettings = await getSparkSettings();
+    const mergedSettings = normalizeSparkSettings(requestPayload.settings, storedSettings);
+    if (!mergedSettings.enabled) {
+      throw new Error("Spark model is disabled in settings.");
+    }
+    const missing = getMissingSparkFields(mergedSettings);
+    if (missing.length > 0) {
+      throw new Error(`Spark settings incomplete: ${missing.join(", ")}`);
+    }
+
+    const candidates = buildSparkRouteCandidates(mergedSettings);
+    let lastError = null;
+
+    for (let i = 0; i < candidates.length; i += 1) {
+      const route = candidates[i];
+      const attemptSettings = normalizeSparkSettings({
+        ...mergedSettings,
+        url: route.url,
+        domain: route.domain
+      }, mergedSettings);
+      try {
+        const text = await callSparkModelOnce(attemptSettings, requestPayload);
+        if (i > 0) {
+          persistSparkWorkingRoute(mergedSettings, route);
+        }
+        return text;
+      } catch (error) {
+        lastError = error;
+        const canRetry = isSparkAuthRouteError(error) && i < candidates.length - 1;
+        if (!canRetry) {
+          throw error;
+        }
+      }
+    }
+
+    throw lastError || new Error("Spark request failed.");
   }
 
   function resolveCommentLength(preferences) {
@@ -696,6 +790,44 @@ ${commentText || "(empty)"}
     };
   }
 
+  function buildCommentFallbackText(input, profile) {
+    const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
+    const useEnglish = !!pref.engageInEnglish;
+    const author = sparkToString(input?.postAuthor, "").trim();
+    const mention = isEnabledLike(pref.commentMentionPostAuthor) && author ? `@${author} ` : "";
+    const length = Number(profile?.length) || resolveEffectiveCommentLength(pref);
+
+    if (useEnglish) {
+      const p1 = `${mention}Thanks for sharing this update. I appreciate the clear perspective.`;
+      const p2 = "One valuable takeaway is how this can be translated into practical, day-to-day execution.";
+      const p3 = "Would love to see one concrete follow-up example in your next update.";
+      if (length >= 5) return `${p1}\n\n${p2}\n\n${p3}`;
+      if (length <= 2) return `${p1}`;
+      return `${p1} ${p2}`;
+    }
+
+    const p1 = `${mention}感谢你的分享，这个观点很有启发。`;
+    const p2 = "我很认同其中强调的实践价值，落地层面也很有参考意义。";
+    const p3 = "如果方便的话，也期待你后续补充一个更具体的案例。";
+    if (length >= 5) return `${p1}\n\n${p2}\n\n${p3}`;
+    if (length <= 2) return `${p1}`;
+    return `${p1}${p2}`;
+  }
+
+  function buildReplyFallbackText(input) {
+    const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
+    const useEnglish = !!pref.engageInEnglish;
+    const keepShort = pref.replyKeepItShort !== false;
+    if (useEnglish) {
+      return keepShort
+        ? "Thanks for your thoughtful comment. Really appreciate your perspective."
+        : "Thanks for your thoughtful comment. I really appreciate your perspective and the constructive angle you added here.";
+    }
+    return keepShort
+      ? "感谢你的评论，很有价值。"
+      : "感谢你的评论，很有价值，也给了我新的思考角度。";
+  }
+
   function setupSparkRuntime() {
     window.__ceGetSparkSettings = async () => await getSparkSettings();
     window.__ceSetSparkSettings = async (partial) => {
@@ -721,10 +853,15 @@ ${commentText || "(empty)"}
         ...safeInput,
         __ceGenerationProfile: profile
       });
-      const text = await callSparkModel({
-        ...prompt,
-        timeoutMs: 35000
-      });
+      let text = "";
+      try {
+        text = await callSparkModel({
+          ...prompt,
+          timeoutMs: 35000
+        });
+      } catch (_err) {
+        text = buildCommentFallbackText(safeInput, profile);
+      }
       return enforceCommentByPreference(text, {
         ...safeInput,
         __ceEffectiveLength: profile.length
@@ -732,10 +869,15 @@ ${commentText || "(empty)"}
     };
     window.__ceSparkGenerateReply = async (input) => {
       const prompt = buildReplyPrompt(input || {});
-      const text = await callSparkModel({
-        ...prompt,
-        timeoutMs: 35000
-      });
+      let text = "";
+      try {
+        text = await callSparkModel({
+          ...prompt,
+          timeoutMs: 35000
+        });
+      } catch (_err) {
+        text = buildReplyFallbackText(input || {});
+      }
       return enforceReplyByPreference(text, input || {});
     };
   }

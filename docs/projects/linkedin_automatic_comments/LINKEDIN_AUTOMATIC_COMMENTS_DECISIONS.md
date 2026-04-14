@@ -91,7 +91,7 @@
   - reply: `Reply` + `回复`
 
 ### Why
-- Original bundle only scanned `Comment/Reply` text, which fails on Chinese LinkedIn UI and causes “clicking comment does nothing”.
+- Original bundle only scanned `Comment/Reply` text, which fails on Chinese LinkedIn UI and causes “clicking comment does nothing�?
 - Keeping text-based dual-language match is the smallest safe fix for packaged-output project without source rebuild.
 
 ### Stable Defaults
@@ -190,3 +190,24 @@
   - level 4: `188` chars
   - level 5: `320` chars
 - Prefix/suffix cleanup remains active (`Great point:` head and trailing `...` removed before paste).
+
+## 2026-04-15 | Composer-Guarded Triggering and Stable Extension Icon
+
+### Decision
+- Keep comment trigger discovery on a strict whitelist: only buttons inside feed post/article action bars can be registered for `createComment`.
+- Keep an explicit composer blacklist in both discovery and click-time guard (`share.post`, `share-box`, publish/topic/create-post entry points).
+- Disable scripted avatar click in popup seat bootstrap path (`getSeatByNavbarImage`) and rely on passive profile-link discovery.
+- Keep extension action icon fixed and do not switch by active tab/window focus.
+
+### Why
+- Broad selector matching in bundled output can still capture composer-adjacent buttons on localized LinkedIn UI and open the publish modal unexpectedly.
+- Popup and content bundles each have seat/trigger logic; fixing only one path is insufficient.
+- Dynamic icon switching caused visible logo changes that conflict with current single-brand requirement.
+
+### Stable Defaults
+- Comment trigger must satisfy both conditions:
+  - inside post container (`article` / activity container)
+  - inside social action bar container
+- Composer-related controls are always excluded from registration and from click-time execution.
+- Popup profile-seat bootstrap never performs scripted click on navbar avatar.
+- `chrome.action.setIcon` uses a fixed icon set (`icon16/32/48/64/128.plasmo.*.png`) regardless of page focus state.

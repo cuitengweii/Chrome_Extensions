@@ -130,3 +130,16 @@
   - style selector ID/class
   - storage key + normalization rule
 - Before handoff, always run syntax checks plus ID/wiring verification for patched bundle projects.
+## 2026-04-15 | Composer Popup Reopened from Popup Bundle Path
+
+### Pitfall
+- We previously hardened content-side trigger guards, but popup bundle still contained a scripted avatar click in `getSeatByNavbarImage`; opening the extension popup could still trigger LinkedIn composer modal.
+
+### What Worked
+- Auditing both bundled paths (`contents.*.js` and `popup.*.js`) and removing scripted avatar click from popup bootstrap closed the residual composer popup path.
+- Tightening comment trigger to article-action-bar whitelist plus click-time blacklist eliminated composer misfire during auto-comment flow.
+- Freezing background action icon removed the visible "logo changes after click" side effect.
+
+### Avoid Next Time
+- For packaged/minified extension projects, treat popup/content/background as separate runtime surfaces and verify all of them before declaring a UI trigger bug closed.
+- For social feed automation, prefer positive structure constraints (post container + action bar) over broad text matches.

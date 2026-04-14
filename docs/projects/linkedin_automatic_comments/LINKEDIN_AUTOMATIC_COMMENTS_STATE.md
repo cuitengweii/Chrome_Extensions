@@ -1,7 +1,7 @@
 # LINKEDIN_AUTOMATIC_COMMENTS_STATE
 
 ## Last Updated
-- 2026-03-29
+- 2026-04-15
 
 ## Current Status
 - `LinkedIn automatic comments` has a runtime-level UI patch landed without changing the existing layout structure.
@@ -12,8 +12,7 @@
 - Extension display name is now unified as `LinkedIn automatic comments`.
 - Popup startup crash (`"[object Object] is not valid JSON"`) was fixed in runtime patch.
 - Popup bundle parser now has in-bundle fallback for legacy object/string payloads to prevent repeat crash.
-- LinkedIn 中文界面评论流程可触发性已修复（评论/回复按钮注册支持中英文）。
-- Content trigger matcher now avoids terminal encoding issues by using unicode escapes and attribute fallback selectors.
+- LinkedIn 中文界面评论流程可触发性已修复（评�?回复按钮注册支持中英文）�?- Content trigger matcher now avoids terminal encoding issues by using unicode escapes and attribute fallback selectors.
 
 ## Landed Output
 - Added runtime patch script:
@@ -190,3 +189,29 @@
 ### Validation
 - `node --check D:\\code\\Chrome_Extensions\\LinkedIn automatic comments\\runtime.patch.js` passed.
 - `node --check D:\\code\\Chrome_Extensions\\LinkedIn automatic comments\\contents.f6a134c0.js` passed.
+
+## 2026-04-15 | Composer Popup Misfire Closure + Icon Stability
+
+### Status
+- Closed the recurring "topic publish composer pops up during/after extension interaction" issue on both paths:
+  - content trigger path (`contents.f6a134c0.js`)
+  - popup profile-seat bootstrap path (`popup.bce84c5a.js`)
+- Comment button registration is now narrowed to feed post action bars inside post/article containers, with additional composer-entry guard checks before invoking `createComment`.
+- Popup bundle no longer performs scripted avatar click during seat detection; this removes the direct trigger that opened LinkedIn composer modal on popup open.
+- Background icon behavior is now stabilized to a fixed icon set; no runtime active/inactive icon switching when tab/window focus changes.
+
+### Landed Output
+- `D:\code\Chrome_Extensions\LinkedIn automatic comments\contents.f6a134c0.js`
+- `D:\code\Chrome_Extensions\LinkedIn automatic comments\popup.bce84c5a.js`
+- `D:\code\Chrome_Extensions\LinkedIn automatic comments\static\background\index.js`
+
+### Validation
+- `node --check D:\code\Chrome_Extensions\LinkedIn automatic comments\contents.f6a134c0.js` passed.
+- `node --check D:\code\Chrome_Extensions\LinkedIn automatic comments\popup.bce84c5a.js` passed.
+- `node --check D:\code\Chrome_Extensions\LinkedIn automatic comments\static\background\index.js` passed.
+
+### Next Step
+- Run real-browser regression after extension reload:
+  - opening extension popup should not open LinkedIn composer modal.
+  - comment generation + auto-send should remain on post/comment workflow only.
+  - extension toolbar icon should remain visually stable before/after popup open and tab activation.

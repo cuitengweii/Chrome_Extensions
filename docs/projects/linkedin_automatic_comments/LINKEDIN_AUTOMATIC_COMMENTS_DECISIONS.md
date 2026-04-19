@@ -211,3 +211,40 @@
 - Composer-related controls are always excluded from registration and from click-time execution.
 - Popup profile-seat bootstrap never performs scripted click on navbar avatar.
 - `chrome.action.setIcon` uses a fixed icon set (`icon16/32/48/64/128.plasmo.*.png`) regardless of page focus state.
+## 2026-04-19 | GasGx Popup Runtime Compatibility Boundary
+
+### Decision
+- Treat GasGx as the canonical popup account system for this extension.
+- Keep legacy RocketPod popup bootstrap alive only through runtime compatibility shims inside `runtime.patch.js`, not through continued dependence on remote RocketPod account logic.
+- Keep comment/reply generation on Spark runtime entrypoints rather than old popup bootstrap endpoints.
+
+### Why
+- The shipped project is still packaged/minified output, so a runtime integration boundary remains the lowest-risk way to migrate auth/account behavior without rebuilding source modules.
+- Popup boot still depends on legacy storage shapes and old bootstrap expectations; removing them outright would break startup before a source-level replacement exists.
+- The user requirement is to use GasGx accountÌåÏµ while keeping the rest of the extension usable.
+
+### Stable Defaults
+- Extension display name: `GasGx To Linkedin`
+- Popup title brand: `GasGx To Linkedin`
+- Canonical popup auth source: persisted GasGx auth snapshot in runtime patch
+- Legacy popup storage object keys must remain compatible with bundled `@rocket/storage` expectations (double-serialized object payloads where required)
+- Comment/reply generation path remains Spark-based
+
+### Trade-off
+- This keeps the old bundled popup alive behind compatibility shims.
+- Preferences persistence is still not stable enough to call solved; future fixes should target the bundled `PreferencesModel.load/save` boundary or replace the legacy preferences UI entirely.
+
+## 2026-04-19 | Popup Storage Write Discipline
+
+### Decision
+- Do not mutate Chrome storage on popup read path.
+- Only write storage when values actually changed, and keep first-run markers in legacy-compatible serialized form.
+
+### Why
+- Popup read-time normalization caused repeated writes and hit Chrome `MAX_WRITE_OPERATIONS_PER_HOUR` quota.
+- The legacy popup reads first-run flags through serialized truthy values, so raw booleans are not sufficient for compatibility.
+
+### Stable Defaults
+- Storage get path: normalize and return only; no implicit writeback
+- Storage set path: de-duplicate unchanged payloads
+- Popup first-run flags: store as legacy-compatible string `"true"`

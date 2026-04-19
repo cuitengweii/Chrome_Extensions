@@ -143,3 +143,24 @@
 ### Avoid Next Time
 - For packaged/minified extension projects, treat popup/content/background as separate runtime surfaces and verify all of them before declaring a UI trigger bug closed.
 - For social feed automation, prefer positive structure constraints (post container + action bar) over broad text matches.
+## 2026-04-19 | Runtime Patch Limits Around Legacy Preferences
+
+### Pitfall
+- Repeated runtime-layer DOM bridges around the old bundled preferences page did not reliably close persistence.
+- Several fixes improved surrounding popup behavior, but the original preference values still reset after reopen.
+
+### What Worked
+- Storage compatibility fixes were still necessary and useful around the popup runtime:
+  - restore legacy serialized object shapes for bundled popup storage reads/writes
+  - stop read-path storage writeback to avoid Chrome write quota exhaustion
+  - migrate popup auth/account rendering toward GasGx runtime snapshots without reopening LinkedIn or external user-center pages
+
+### What Did Not Fully Work
+- DOM-level preference replay and persistence bridges were not enough to guarantee stable bundled preference persistence.
+- Treating the problem as only a UI event issue led to multiple partial fixes without closing the root ownership boundary.
+
+### Avoid Next Time
+- For this extension, do not keep stacking outer popup DOM fixes once bundled preferences still reset.
+- Go directly to one of these deeper fixes in the next thread:
+  - intercept bundled `PreferencesModel.load/save`
+  - replace the legacy preferences surface with a fully controlled runtime/native implementation

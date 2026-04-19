@@ -215,3 +215,53 @@
   - opening extension popup should not open LinkedIn composer modal.
   - comment generation + auto-send should remain on post/comment workflow only.
   - extension toolbar icon should remain visually stable before/after popup open and tab activation.
+## 2026-04-19 | GasGx Popup Integration Sweep + Unresolved Legacy Preferences
+
+### Status
+- Extension branding is now aligned to `GasGx To Linkedin` in:
+  - `D:\code\Chrome_Extensions\LinkedIn automatic comments\manifest.json`
+  - popup runtime title override in `D:\code\Chrome_Extensions\LinkedIn automatic comments\runtime.patch.js`
+- Popup now stays inside the extension flow during normal toolbar click instead of falling back to the old external user-center jump path.
+- Popup auth/account rendering is now routed through a GasGx runtime compatibility layer:
+  - GasGx auth snapshot persistence
+  - GasGx account panel injection
+  - legacy bundled popup storage compatibility for `account / ui / profile / automation / preferences`
+  - popup loading overlay while auth state is being resolved
+- Legacy popup bootstrap compatibility was expanded in runtime patch:
+  - old `services.rocket-pod.ai` popup requests are locally mocked for bootstrap data
+  - popup `executeScript` paths that previously caused LinkedIn reload/profile bootstrap side effects are intercepted
+  - old storage payloads are normalized to bundled-popup-compatible serialized shapes
+- Comment/reply generation runtime is currently wired to Spark via:
+  - `window.__ceSparkGenerateComment`
+  - `window.__ceSparkGenerateReply`
+- Storage quota hardening was added after popup reads triggered repeated writes:
+  - removed read-path writeback from storage get patch flow
+  - added write de-duplication for runtime storage writes
+  - added de-duplication for popup first-run flag persistence
+- Original bundled popup preferences persistence is still not reliably closed; multiple runtime bridges were attempted in this thread, but the issue remains open.
+
+### Landed Output
+- Runtime integration layer expanded in:
+  - `D:\code\Chrome_Extensions\LinkedIn automatic comments\runtime.patch.js`
+- Branding update landed in:
+  - `D:\code\Chrome_Extensions\LinkedIn automatic comments\manifest.json`
+
+### Regression Snapshot
+- `node --check D:\code\Chrome_Extensions\LinkedIn automatic comments\runtime.patch.js` passed repeatedly during the thread.
+- Static checks confirmed runtime patch contains:
+  - `patchStorageAreaSet`
+  - `installPopupExecuteScriptPatch`
+  - `installPopupLegacyXhrMock`
+  - `renderGasGxPopupAccountPanel`
+  - `renderGasGxPopupLoading`
+  - Spark generation entrypoints
+
+### Unresolved
+- Original bundled popup preferences still do not persist reliably across popup reopen.
+- This thread should not be treated as having closed preferences persistence.
+
+### Next Step
+- Stop adding outer DOM-only fixes for original bundled preferences.
+- Next thread should patch one of these deeper boundaries only:
+  - intercept old bundled `PreferencesModel.load/save`
+  - replace the legacy preferences surface with a fully controlled runtime/native settings surface

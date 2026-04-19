@@ -5,7 +5,7 @@
   const UI_KEY = "ui";
   const MODE_KEY = "commentron_theme_mode";
   const LANG_KEY = "commentron_language";
-  const BRAND_TITLE = "LinkedIn Automatic Comments";
+  const BRAND_TITLE = "GasGx To Linkedin";
   const THEMES = ["dark", "light"];
   const LANGUAGES = ["en", "zh-CN"];
   const JSON_PARSE_PATCH_FLAG = "__ceJsonParsePatched";
@@ -21,6 +21,11 @@
   const DEFAULT_RANDOM_TONE_ENABLED = false;
   const DEFAULT_RANDOM_LENGTH_ENABLED = false;
   const DEFAULT_REPLY_PROMPT_HINT = "";
+  const LINKEDIN_PROFILE_STORAGE_KEY = "profile";
+  const GASGX_SIGNED_OUT_FLAG_KEY = "ce_gasgx_signed_out";
+  const LEGACY_PREFERENCES_STORAGE_KEY = "preferences";
+  const LEGACY_PREFERENCES_CANONICAL_KEY = "ce_legacy_preferences_canonical";
+  const LEGACY_TRUE_RAW = "true";
   const SPARK_SETTINGS_KEY = "ce.sparkSettings";
   const SPARK_CONFIG_RESOURCE_PATH = "config/spark.gasgx.json";
   const SPARK_DEFAULT_SETTINGS = Object.freeze({
@@ -48,7 +53,15 @@
   const GASGX_AUTH_CHANGED_EVENT = "ce:gasgx-auth-changed";
   const GASGX_AUTH_OVERLAY_ID = "ce-gasgx-auth-overlay";
   const GASGX_AUTH_BADGE_ID = "ce-gasgx-auth-badge";
+  const GASGX_ACCOUNT_PANEL_ID = "ce-gasgx-account-panel";
   const GASGX_MAIN_SITE_STORAGE_KEY = "gasgx-main-auth";
+  const GASGX_MAIN_SITE_ACCOUNT_URL = "https://www.gasgx.com/account/account.html";
+  const GASGX_SITE_URL_PATTERNS = Object.freeze([
+    "https://www.gasgx.com/*",
+    "https://gasgx.com/*"
+  ]);
+  const GASGX_AUTH_REUSE_WINDOW_MS = 12 * 60 * 60 * 1000;
+  const GASGX_POPUP_IMPORT_PROBE_COOLDOWN_MS = 30_000;
   const GASGX_SUPABASE_URL = "https://mkpcliytqudclkwtewru.supabase.co";
   const GASGX_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_S2uWAddQEXhWJgGeIF_ZbQ_H_thz2hw";
   const GASGX_EXTENSION_CONTACT_URL = "https://www.gasgx.com/account/account.html";
@@ -71,6 +84,23 @@
     isSignInVisible: true,
     isResetSeatsVisible: false
   });
+  const POPUP_LEGACY_HOST = "services.rocket-pod.ai";
+  const POPUP_MOCK_XHR_FLAG = "__cePopupMockXhrInstalled";
+  const POPUP_EMPTY_AUTOMATION_STATS = Object.freeze({
+    total: 0,
+    since: 0,
+    today: 0
+  });
+  const POPUP_EMPTY_COMPLETIONS = Object.freeze({
+    generated: {
+      comments: 0,
+      replies: 0
+    },
+    posted: {
+      comments: 0,
+      replies: 0
+    }
+  });
   const GATE_TEXT_PATTERN = /(free\s*trial|max(?:imum)?\s*usage|maximum\s*usage\s*allowed|upgrade|subscribe|already\s*a\s*subscriber|reached\s*the\s*maximum\s*usage|active\s*commentron\s*subscription|you\s*don.?t\s*have\s*an\s*active\s*commentron\s*subscription|sign-?in\s+using\s+the\s+extension\s+window|newer\s*commentron\s*version|please\s*update\s*commentron|update\s*commentron)/i;
 
   let autoSendEnabled = DEFAULT_AUTO_SEND_ENABLED;
@@ -80,11 +110,18 @@
   let randomLengthEnabled = DEFAULT_RANDOM_LENGTH_ENABLED;
   let replyPromptHint = DEFAULT_REPLY_PROMPT_HINT;
   let sparkConfigPromise = null;
+  let legacyPreferencesSyncTimer = 0;
+  let legacyPreferencesWatchTimer = 0;
+  let legacyPreferencesLastSnapshot = "";
   const ORIGINAL_STORAGE_GETTERS = new WeakMap();
+  const ORIGINAL_STORAGE_SETTERS = new WeakMap();
   const gasgxAuthState = {
     loaded: false,
     loadingPromise: null,
     snapshot: null
+  };
+  const gasgxSessionImportState = {
+    lastPopupProbeAt: 0
   };
   let gasgxLastPersistedSnapshotRaw = "";
 
@@ -935,19 +972,26 @@ ${commentText || "(empty)"}
     }
   }
 
-  function parseStoredAccount(raw) {
-    if (!raw) return {};
-    if (typeof raw === "string") {
-      try {
-        const obj = JSON.parse(raw);
-        if (obj && typeof obj === "object" && !Array.isArray(obj)) return obj;
-      } catch (_err) {
-        return {};
-      }
-      return {};
-    }
+  function decodeStoredObjectValue(raw) {
+    if (!raw) return null;
     if (typeof raw === "object" && !Array.isArray(raw)) return raw;
-    return {};
+
+    let current = raw;
+    for (let depth = 0; depth < 3; depth += 1) {
+      if (current && typeof current === "object" && !Array.isArray(current)) return current;
+      if (typeof current !== "string") return null;
+      try {
+        current = JSON.parse(current);
+      } catch (_err) {
+        return null;
+      }
+    }
+
+    return current && typeof current === "object" && !Array.isArray(current) ? current : null;
+  }
+
+  function parseStoredAccount(raw) {
+    return decodeStoredObjectValue(raw) || {};
   }
 
   function stringifyStoredAccount(account) {
@@ -958,23 +1002,18 @@ ${commentText || "(empty)"}
     }
   }
 
+  function stringifyLegacyStoredObject(value) {
+    try {
+      return JSON.stringify(JSON.stringify(value ?? {}));
+    } catch (_err) {
+      return "\"{}\"";
+    }
+  }
+
 
   function parseStoredObject(raw, fallback = {}) {
-    if (!raw) return { ...fallback };
-    if (typeof raw === "string") {
-      try {
-        const parsed = JSON.parse(raw);
-        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-          return { ...fallback, ...parsed };
-        }
-      } catch (_err) {
-        return { ...fallback };
-      }
-      return { ...fallback };
-    }
-    if (typeof raw === "object" && !Array.isArray(raw)) {
-      return { ...fallback, ...raw };
-    }
+    const parsed = decodeStoredObjectValue(raw);
+    if (parsed) return { ...fallback, ...parsed };
     return { ...fallback };
   }
 
@@ -984,6 +1023,43 @@ ${commentText || "(empty)"}
     } catch (_err) {
       return "{}";
     }
+  }
+
+  function includesStorageKey(keys, targetKey) {
+    if (keys === undefined || keys === null) return true;
+    if (typeof keys === "string") return keys === targetKey;
+    if (Array.isArray(keys)) return keys.includes(targetKey);
+    return !!(keys && typeof keys === "object" && !Array.isArray(keys) && Object.prototype.hasOwnProperty.call(keys, targetKey));
+  }
+
+  function normalizeLegacyStorageWrite(key, rawValue, authSnapshot = getCurrentGasGxAuthSnapshot()) {
+    if (key === ACCOUNT_KEY) {
+      const existingAccount = parseStoredAccount(rawValue);
+      return stringifyLegacyStoredObject(
+        isGasGxExtensionEnabled(authSnapshot)
+          ? buildEnabledAccount(authSnapshot, existingAccount)
+          : buildLockedAccount(authSnapshot)
+      );
+    }
+    if (key === LEGACY_PREFERENCES_STORAGE_KEY) {
+      return stringifyLegacyStoredObject(
+        sanitizeLegacyPreferences(parseStoredObject(rawValue, getDefaultLegacyPreferences()))
+      );
+    }
+    if (key === UI_KEY) {
+      return stringifyLegacyStoredObject(
+        deriveUiState(parseStoredObject(rawValue, DEFAULT_UI_STATE), authSnapshot)
+      );
+    }
+    if (key === LINKEDIN_PROFILE_STORAGE_KEY) {
+      return stringifyLegacyStoredObject(
+        sanitizeLinkedInProfile(parseStoredObject(rawValue, getDefaultLinkedInProfile()))
+      );
+    }
+    if (key === "automation") {
+      return stringifyLegacyStoredObject(parseStoredObject(rawValue, {}));
+    }
+    return rawValue;
   }
 
   function getDefaultGasGxAuthSnapshot() {
@@ -1033,6 +1109,26 @@ ${commentText || "(empty)"}
     return snapshot.status === "enabled" && !!snapshot.profileEnabled && !!snapshot.accessToken;
   }
 
+  function isLegacyPopupSubscriberId(value) {
+    return sparkToString(value, "").trim().length === 24;
+  }
+
+  function buildLegacyPopupSubscriberId(snapshot = getCurrentGasGxAuthSnapshot(), existing = {}) {
+    const existingId = sparkToString(existing?.subscriberId, "").trim();
+    if (isLegacyPopupSubscriberId(existingId)) return existingId;
+
+    const seed = sparkToString(snapshot?.userId, "").trim()
+      || sparkToString(snapshot?.email, "").trim().toLowerCase()
+      || TEST_SUBSCRIBER_ID;
+    let derived = "";
+
+    for (let index = 0; index < seed.length && derived.length < 24; index += 1) {
+      derived += seed.charCodeAt(index).toString(16).padStart(2, "0");
+    }
+
+    return (derived + TEST_SUBSCRIBER_ID).slice(0, 24);
+  }
+
   function buildLockedAccount(snapshot = getCurrentGasGxAuthSnapshot()) {
     return {
       subscriberId: "",
@@ -1049,7 +1145,7 @@ ${commentText || "(empty)"}
     return {
       ...DEFAULT_ACCOUNT,
       ...existing,
-      subscriberId: snapshot.userId || existing.subscriberId || TEST_SUBSCRIBER_ID,
+      subscriberId: buildLegacyPopupSubscriberId(snapshot, existing),
       email: snapshot.email || existing.email || "",
       password: "",
       plan: snapshot.plan || "GasGx Enabled",
@@ -1116,6 +1212,9 @@ ${commentText || "(empty)"}
       });
       gasgxLastPersistedSnapshotRaw = nextRaw;
     }
+    if (next.accessToken || next.refreshToken || next.status === "enabled" || next.status === "signed_in_but_not_enabled") {
+      await persistGasGxSignedOutFlag(false);
+    }
     dispatchGasGxAuthChanged(next);
     return next;
   }
@@ -1126,6 +1225,124 @@ ${commentText || "(empty)"}
     const raw = await rawStorageGet(storage, GASGX_AUTH_STORAGE_KEY);
     gasgxLastPersistedSnapshotRaw = sparkToString(raw?.[GASGX_AUTH_STORAGE_KEY], "");
     return sanitizeGasGxAuthSnapshot(parseStoredObject(raw?.[GASGX_AUTH_STORAGE_KEY], getDefaultGasGxAuthSnapshot()));
+  }
+
+  function getDefaultLinkedInProfile() {
+    return {
+      seat: "",
+      me: "",
+      imageUrl: ""
+    };
+  }
+
+  function sanitizeLinkedInProfile(raw) {
+    const base = getDefaultLinkedInProfile();
+    const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    return {
+      seat: sparkToString(source.seat, base.seat).trim(),
+      me: sparkToString(source.me, base.me).trim(),
+      imageUrl: sparkToString(source.imageUrl, base.imageUrl).trim()
+    };
+  }
+
+  function hasLinkedInProfileData(profile) {
+    const next = sanitizeLinkedInProfile(profile);
+    return !!(next.seat || next.me || next.imageUrl);
+  }
+
+  async function loadPersistedLinkedInProfile() {
+    const storage = chrome?.storage?.local;
+    if (!storage) return getDefaultLinkedInProfile();
+    const raw = await rawStorageGet(storage, LINKEDIN_PROFILE_STORAGE_KEY);
+    return sanitizeLinkedInProfile(parseStoredObject(raw?.[LINKEDIN_PROFILE_STORAGE_KEY], getDefaultLinkedInProfile()));
+  }
+
+  async function persistLinkedInProfile(profile) {
+    const storage = chrome?.storage?.local;
+    const next = sanitizeLinkedInProfile(profile);
+    if (!storage?.set || !hasLinkedInProfileData(next)) return next;
+    await setStorageValue(storage, {
+      [LINKEDIN_PROFILE_STORAGE_KEY]: stringifyLegacyStoredObject(next)
+    });
+    return next;
+  }
+
+  function getDefaultLegacyPreferences() {
+    return {
+      commentLength: 2,
+      commentTone: "Polite",
+      commentMentionPostAuthor: false,
+      commentUseEmojis: false,
+      commentEndWithQuestion: false,
+      commentOfferServices: false,
+      commentIndustry: "NotSpecified",
+      replyKeepItShort: true,
+      replyEndWithQuestion: false,
+      replyAckIfMyPost: true,
+      engageInEnglish: false,
+      voiceGender: "NotSpecified",
+      reengagementCooldown: "NotSpecified"
+    };
+  }
+
+  function sanitizeLegacyPreferences(raw) {
+    const base = getDefaultLegacyPreferences();
+    const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+    return {
+      ...base,
+      ...source,
+      commentLength: Math.max(1, Math.min(5, Math.round(sparkToNumber(source.commentLength, base.commentLength)))),
+      commentTone: sparkToString(source.commentTone, base.commentTone).trim() || base.commentTone,
+      commentIndustry: sparkToString(source.commentIndustry, base.commentIndustry).trim() || base.commentIndustry,
+      voiceGender: sparkToString(source.voiceGender, base.voiceGender).trim() || base.voiceGender,
+      reengagementCooldown: sparkToString(source.reengagementCooldown, base.reengagementCooldown).trim() || base.reengagementCooldown,
+      commentMentionPostAuthor: sparkToBoolean(source.commentMentionPostAuthor, base.commentMentionPostAuthor),
+      commentUseEmojis: sparkToBoolean(source.commentUseEmojis, base.commentUseEmojis),
+      commentEndWithQuestion: sparkToBoolean(source.commentEndWithQuestion, base.commentEndWithQuestion),
+      commentOfferServices: sparkToBoolean(source.commentOfferServices, base.commentOfferServices),
+      replyKeepItShort: sparkToBoolean(source.replyKeepItShort, base.replyKeepItShort),
+      replyEndWithQuestion: sparkToBoolean(source.replyEndWithQuestion, base.replyEndWithQuestion),
+      replyAckIfMyPost: sparkToBoolean(source.replyAckIfMyPost, base.replyAckIfMyPost),
+      engageInEnglish: sparkToBoolean(source.engageInEnglish, base.engageInEnglish)
+    };
+  }
+
+  async function loadLegacyPreferences() {
+    const storage = chrome?.storage?.local;
+    if (!storage?.get) return getDefaultLegacyPreferences();
+    const canonical = await loadCanonicalLegacyPreferences(storage);
+    if (canonical) return canonical;
+    const raw = await rawStorageGet(storage, LEGACY_PREFERENCES_STORAGE_KEY);
+    return sanitizeLegacyPreferences(parseStoredObject(raw?.[LEGACY_PREFERENCES_STORAGE_KEY], getDefaultLegacyPreferences()));
+  }
+
+  async function persistLegacyPreferences(patch) {
+    const storage = chrome?.storage?.local;
+    if (!storage?.set || !sparkIsPlainObject(patch)) return getDefaultLegacyPreferences();
+    const current = await loadLegacyPreferences();
+    const next = sanitizeLegacyPreferences({
+      ...current,
+      ...patch
+    });
+    await setStorageValue(storage, {
+      [LEGACY_PREFERENCES_STORAGE_KEY]: stringifyLegacyStoredObject(next)
+    });
+    return next;
+  }
+
+  async function loadGasGxSignedOutFlag() {
+    const storage = chrome?.storage?.local;
+    if (!storage?.get) return false;
+    const raw = await rawStorageGet(storage, GASGX_SIGNED_OUT_FLAG_KEY);
+    return normalizeFeatureToggle(raw?.[GASGX_SIGNED_OUT_FLAG_KEY], false);
+  }
+
+  async function persistGasGxSignedOutFlag(value) {
+    const storage = chrome?.storage?.local;
+    if (!storage?.set) return;
+    await setStorageValue(storage, {
+      [GASGX_SIGNED_OUT_FLAG_KEY]: !!value
+    });
   }
 
   async function supabaseFetchJson(path, init = {}) {
@@ -1205,14 +1422,293 @@ ${commentText || "(empty)"}
     });
   }
 
+  function normalizeImportedGasGxSessionPayload(source, depth = 0) {
+    if (depth > 6 || source === null || source === undefined) return null;
+
+    if (typeof source === "string") {
+      const trimmed = source.trim();
+      if (!trimmed) return null;
+      try {
+        return normalizeImportedGasGxSessionPayload(JSON.parse(trimmed), depth + 1);
+      } catch (_err) {
+        return null;
+      }
+    }
+
+    if (Array.isArray(source)) {
+      for (const item of source) {
+        const normalized = normalizeImportedGasGxSessionPayload(item, depth + 1);
+        if (normalized) return normalized;
+      }
+      return null;
+    }
+
+    if (!sparkIsPlainObject(source)) return null;
+
+    const accessToken = sparkToString(source.access_token, "").trim();
+    const refreshToken = sparkToString(source.refresh_token, "").trim();
+    const user = sparkIsPlainObject(source.user)
+      ? source.user
+      : (sparkIsPlainObject(source.currentUser) ? source.currentUser : {});
+
+    if (accessToken || refreshToken) {
+      return {
+        access_token: accessToken,
+        refresh_token: refreshToken,
+        expires_at: Math.max(0, Math.floor(sparkToNumber(source.expires_at, 0))),
+        expires_in: Math.max(0, Math.floor(sparkToNumber(source.expires_in, 0))),
+        user: {
+          id: sparkToString(user.id, "").trim(),
+          email: sparkToString(user.email, "").trim()
+        }
+      };
+    }
+
+    for (const key of ["currentSession", "session", "sessionValue", "data", "value", "auth", "state"]) {
+      const nested = normalizeImportedGasGxSessionPayload(source[key], depth + 1);
+      if (nested) return nested;
+    }
+
+    for (const value of Object.values(source)) {
+      const nested = normalizeImportedGasGxSessionPayload(value, depth + 1);
+      if (nested) return nested;
+    }
+
+    return null;
+  }
+
+  async function readGasGxSessionFromTab(tabId) {
+    const scriptingApi = chrome?.scripting;
+    if (!scriptingApi?.executeScript || !Number.isInteger(tabId)) return null;
+
+    let results = null;
+    try {
+      results = await scriptingApi.executeScript({
+        target: { tabId },
+        func: (storageKey) => {
+          const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
+          const parseJson = (raw) => {
+            if (!raw || typeof raw !== "string") return null;
+            try {
+              return JSON.parse(raw);
+            } catch (_err) {
+              return null;
+            }
+          };
+          const normalizeSession = (value, depth = 0) => {
+            if (depth > 6 || value === null || value === undefined) return null;
+            if (typeof value === "string") {
+              const parsed = parseJson(value.trim());
+              return parsed ? normalizeSession(parsed, depth + 1) : null;
+            }
+            if (Array.isArray(value)) {
+              for (const item of value) {
+                const nested = normalizeSession(item, depth + 1);
+                if (nested) return nested;
+              }
+              return null;
+            }
+            if (!isObject(value)) return null;
+
+            const accessToken = String(value.access_token || "").trim();
+            const refreshToken = String(value.refresh_token || "").trim();
+            const user = isObject(value.user) ? value.user : (isObject(value.currentUser) ? value.currentUser : {});
+
+            if (accessToken || refreshToken) {
+              return {
+                access_token: accessToken,
+                refresh_token: refreshToken,
+                expires_at: Math.max(0, Math.floor(Number(value.expires_at || 0) || 0)),
+                expires_in: Math.max(0, Math.floor(Number(value.expires_in || 0) || 0)),
+                user: {
+                  id: String(user.id || "").trim(),
+                  email: String(user.email || "").trim()
+                }
+              };
+            }
+
+            for (const key of ["currentSession", "session", "sessionValue", "data", "value", "auth", "state"]) {
+              const nested = normalizeSession(value[key], depth + 1);
+              if (nested) return nested;
+            }
+
+            for (const nestedValue of Object.values(value)) {
+              const nested = normalizeSession(nestedValue, depth + 1);
+              if (nested) return nested;
+            }
+
+            return null;
+          };
+          const collectKeys = (storage) => {
+            const keys = [storageKey];
+            if (!storage) return keys;
+            try {
+              for (let index = 0; index < storage.length; index += 1) {
+                const key = storage.key(index);
+                if (!key) continue;
+                if (key === storageKey || /^sb-[a-z0-9-]+-auth-token$/i.test(key)) {
+                  keys.push(key);
+                }
+              }
+            } catch (_err) {}
+            return Array.from(new Set(keys));
+          };
+
+          const storages = [
+            { label: "localStorage", area: window.localStorage },
+            { label: "sessionStorage", area: window.sessionStorage }
+          ];
+
+          for (const { label, area } of storages) {
+            if (!area) continue;
+            for (const key of collectKeys(area)) {
+              let raw = "";
+              try {
+                raw = area.getItem(key) || "";
+              } catch (_err) {
+                raw = "";
+              }
+              if (!raw) continue;
+              const normalized = normalizeSession(parseJson(raw));
+              if (normalized) {
+                return {
+                  ...normalized,
+                  __storageArea: label,
+                  __storageKey: key
+                };
+              }
+            }
+          }
+
+          return null;
+        },
+        args: [GASGX_MAIN_SITE_STORAGE_KEY]
+      });
+    } catch (_err) {
+      results = null;
+    }
+
+    return normalizeImportedGasGxSessionPayload(Array.isArray(results) ? results[0]?.result : null);
+  }
+
+  async function waitForTabLoadComplete(tabId, timeoutMs = 8_000) {
+    const tabsApi = chrome?.tabs;
+    if (!tabsApi?.get || !tabsApi?.onUpdated) return false;
+
+    try {
+      const current = await new Promise((resolve) => {
+        try {
+          tabsApi.get(tabId, (tab) => resolve(chrome?.runtime?.lastError ? null : tab));
+        } catch (_err) {
+          resolve(null);
+        }
+      });
+      if (current?.status === "complete") return true;
+    } catch (_err) {}
+
+    return await new Promise((resolve) => {
+      const cleanup = () => {
+        try {
+          tabsApi.onUpdated.removeListener(handleUpdate);
+        } catch (_err) {}
+        clearTimeout(timer);
+      };
+      const handleUpdate = (updatedTabId, changeInfo) => {
+        if (updatedTabId !== tabId) return;
+        if (changeInfo?.status !== "complete") return;
+        cleanup();
+        resolve(true);
+      };
+      const timer = setTimeout(() => {
+        cleanup();
+        resolve(false);
+      }, timeoutMs);
+
+      try {
+        tabsApi.onUpdated.addListener(handleUpdate);
+      } catch (_err) {
+        cleanup();
+        resolve(false);
+      }
+    });
+  }
+
+  async function rawStorageSet(area, value) {
+    const setter = ORIGINAL_STORAGE_SETTERS.get(area) || area?.set?.bind(area);
+    if (typeof setter !== "function") return;
+    await new Promise((resolve) => {
+      let settled = false;
+      const done = () => {
+        if (settled) return;
+        settled = true;
+        resolve();
+      };
+      try {
+        const ret = setter(value, () => done());
+        if (ret && typeof ret.then === "function") {
+          ret.then(() => done()).catch(() => done());
+        } else if (setter.length < 2) {
+          done();
+        }
+      } catch (_err) {
+        done();
+      }
+    });
+  }
+
+  async function loadCanonicalLegacyPreferences(area = chrome?.storage?.local) {
+    if (!area) return null;
+    const raw = await rawStorageGet(area, LEGACY_PREFERENCES_CANONICAL_KEY);
+    const value = raw?.[LEGACY_PREFERENCES_CANONICAL_KEY];
+    if (!value) return null;
+    return sanitizeLegacyPreferences(parseStoredObject(value, getDefaultLegacyPreferences()));
+  }
+
+  async function tryImportGasGxSessionViaProbeTab() {
+    const tabsApi = chrome?.tabs;
+    if (!tabsApi?.create || !tabsApi?.remove) return null;
+
+    const now = Date.now();
+    if (!isPopupContext() || now - gasgxSessionImportState.lastPopupProbeAt < GASGX_POPUP_IMPORT_PROBE_COOLDOWN_MS) {
+      return null;
+    }
+    gasgxSessionImportState.lastPopupProbeAt = now;
+
+    let probeTabId = null;
+    try {
+      const probeTab = await new Promise((resolve) => {
+        try {
+          tabsApi.create({ url: GASGX_MAIN_SITE_ACCOUNT_URL, active: false }, (tab) => resolve(tab || null));
+        } catch (_err) {
+          resolve(null);
+        }
+      });
+
+      probeTabId = Number(probeTab?.id);
+      if (!Number.isInteger(probeTabId)) return null;
+
+      await waitForTabLoadComplete(probeTabId);
+      return await readGasGxSessionFromTab(probeTabId);
+    } catch (_err) {
+      return null;
+    } finally {
+      if (Number.isInteger(probeTabId)) {
+        try {
+          tabsApi.remove(probeTabId, () => void chrome?.runtime?.lastError);
+        } catch (_err) {}
+      }
+    }
+  }
+
   async function tryImportGasGxSessionFromOpenTabs() {
     const tabsApi = chrome?.tabs;
-    const scriptingApi = chrome?.scripting;
-    if (!tabsApi?.query || !scriptingApi?.executeScript) return null;
+    if (!tabsApi?.query) return null;
 
     const tabs = await new Promise((resolve) => {
       try {
-        tabsApi.query({}, (items) => resolve(Array.isArray(items) ? items : []));
+        tabsApi.query({
+          url: GASGX_SITE_URL_PATTERNS
+        }, (items) => resolve(Array.isArray(items) ? items : []));
       } catch (_err) {
         resolve([]);
       }
@@ -1221,40 +1717,15 @@ ${commentText || "(empty)"}
     for (const tab of tabs) {
       const tabId = Number(tab?.id);
       if (!Number.isInteger(tabId)) continue;
-      let results = null;
-      try {
-        results = await scriptingApi.executeScript({
-          target: { tabId },
-          func: (storageKey) => {
-            try {
-              const raw = window.localStorage.getItem(storageKey);
-              return {
-                href: window.location.href,
-                raw
-              };
-            } catch (_err) {
-              return null;
-            }
-          },
-          args: [GASGX_MAIN_SITE_STORAGE_KEY]
-        });
-      } catch (_err) {
-        results = null;
-      }
-
-      const payload = Array.isArray(results) ? results[0]?.result : null;
-      const raw = sparkToString(payload?.raw, "").trim();
-      if (!raw) continue;
-
-      const parsed = parseStoredObject(raw, null);
-      if (!parsed || typeof parsed !== "object") continue;
-      const accessToken = sparkToString(parsed.access_token, "").trim();
-      const refreshToken = sparkToString(parsed.refresh_token, "").trim();
-      if (!accessToken && !refreshToken) continue;
-      return parsed;
+      const session = await readGasGxSessionFromTab(tabId);
+      if (session) return session;
     }
 
-    return null;
+    if (isPopupContext()) {
+      return null;
+    }
+
+    return await tryImportGasGxSessionViaProbeTab();
   }
 
   async function clearGasGxAuthSnapshot() {
@@ -1290,7 +1761,19 @@ ${commentText || "(empty)"}
     if (!current.refreshToken && !current.accessToken) {
       const importedSession = await tryImportGasGxSessionFromOpenTabs();
       if (importedSession) {
-        return await buildGasGxSnapshotFromSession(importedSession);
+        return await validatePersistedGasGxAuthSnapshot({
+          status: "loading",
+          userId: sparkToString(importedSession?.user?.id, "").trim(),
+          email: sparkToString(importedSession?.user?.email, "").trim(),
+          accessToken: sparkToString(importedSession?.access_token, "").trim(),
+          refreshToken: sparkToString(importedSession?.refresh_token, "").trim(),
+          sessionExpiresAt: Math.max(
+            0,
+            Math.floor(
+              (sparkToNumber(importedSession?.expires_at, 0) || ((Date.now() / 1000) + sparkToNumber(importedSession?.expires_in, 0))) * 1000
+            )
+          )
+        });
       }
       return getDefaultGasGxAuthSnapshot();
     }
@@ -1316,11 +1799,30 @@ ${commentText || "(empty)"}
     }
   }
 
+  function canReusePersistedGasGxAuthSnapshot(snapshot) {
+    const current = sanitizeGasGxAuthSnapshot(snapshot);
+    if (!["enabled", "signed_in_but_not_enabled"].includes(current.status)) return false;
+    if (!current.accessToken && !current.refreshToken) return false;
+    if (!current.lastValidatedAt) return false;
+
+    const now = Date.now();
+    const validatedRecently = now - current.lastValidatedAt <= GASGX_AUTH_REUSE_WINDOW_MS;
+    const expiresSafelyLater = !current.sessionExpiresAt || current.sessionExpiresAt > now + 5 * 60 * 1000;
+
+    return validatedRecently && expiresSafelyLater;
+  }
+
   async function ensureGasGxAuthSnapshotLoaded(forceRefresh = false) {
     if (!forceRefresh && gasgxAuthState.loaded && gasgxAuthState.snapshot) return gasgxAuthState.snapshot;
     if (!forceRefresh && gasgxAuthState.loadingPromise) return await gasgxAuthState.loadingPromise;
     gasgxAuthState.loadingPromise = (async () => {
       const persisted = await loadPersistedGasGxAuthSnapshot();
+      if (!forceRefresh && canReusePersistedGasGxAuthSnapshot(persisted)) {
+        gasgxAuthState.snapshot = persisted;
+        gasgxAuthState.loaded = true;
+        dispatchGasGxAuthChanged(persisted);
+        return persisted;
+      }
       const validated = await validatePersistedGasGxAuthSnapshot(persisted);
       return await persistGasGxAuthSnapshot(validated);
     })();
@@ -1331,27 +1833,34 @@ ${commentText || "(empty)"}
     }
   }
 
-  function normalizeStorageShape(result, area) {
+  function normalizeStorageShape(result, requestedKeys) {
     if (!result || typeof result !== "object") return result;
 
-    let changed = false;
-    const patchPayload = {};
     const patched = { ...result };
     const authSnapshot = getCurrentGasGxAuthSnapshot();
+    const versionKey = sparkToString(chrome?.runtime?.getManifest?.()?.version, "").trim();
+
+    if (isPopupContext() && versionKey) {
+      if (includesStorageKey(requestedKeys, versionKey) && patched[versionKey] !== LEGACY_TRUE_RAW) {
+        patched[versionKey] = LEGACY_TRUE_RAW;
+      }
+      if (includesStorageKey(requestedKeys, "Pixel Fresh Install") && patched["Pixel Fresh Install"] !== LEGACY_TRUE_RAW) {
+        patched["Pixel Fresh Install"] = LEGACY_TRUE_RAW;
+      }
+    }
 
     for (const key of Object.keys(patched)) {
       const rawValue = patched[key];
       let normalizedValue = rawValue;
 
-      if (key === ACCOUNT_KEY) {
-        const existingAccount = parseStoredAccount(rawValue);
-        normalizedValue = stringifyStoredAccount(
-          isGasGxExtensionEnabled(authSnapshot)
-            ? buildEnabledAccount(authSnapshot, existingAccount)
-            : buildLockedAccount(authSnapshot)
-        );
-      } else if (key === UI_KEY) {
-        normalizedValue = stringifyStoredObject(deriveUiState(parseStoredObject(rawValue, DEFAULT_UI_STATE), authSnapshot));
+      if (
+        key === ACCOUNT_KEY
+        || key === LEGACY_PREFERENCES_STORAGE_KEY
+        || key === UI_KEY
+        || key === LINKEDIN_PROFILE_STORAGE_KEY
+        || key === "automation"
+      ) {
+        normalizedValue = normalizeLegacyStorageWrite(key, rawValue, authSnapshot);
       } else if (rawValue && typeof rawValue === "object") {
         try {
           normalizedValue = JSON.stringify(rawValue);
@@ -1362,15 +1871,7 @@ ${commentText || "(empty)"}
 
       if (normalizedValue !== rawValue) {
         patched[key] = normalizedValue;
-        patchPayload[key] = normalizedValue;
-        changed = true;
       }
-    }
-
-    if (changed) {
-      try {
-        area?.set?.(patchPayload, () => {});
-      } catch (_err) {}
     }
 
     return patched;
@@ -1386,9 +1887,17 @@ ${commentText || "(empty)"}
     try {
       area.get = function patchedGet(keys, callback) {
         const run = async () => {
-          await ensureGasGxAuthSnapshotLoaded();
+          if (!isPopupContext()) {
+            await ensureGasGxAuthSnapshotLoaded();
+          }
           const raw = await rawStorageGet(area, keys);
-          return normalizeStorageShape(raw || {}, area);
+          if (includesStorageKey(keys, LEGACY_PREFERENCES_STORAGE_KEY)) {
+            const canonical = await loadCanonicalLegacyPreferences(area);
+            if (canonical) {
+              raw[LEGACY_PREFERENCES_STORAGE_KEY] = stringifyLegacyStoredObject(canonical);
+            }
+          }
+          return normalizeStorageShape(raw || {}, keys);
         };
 
         if (typeof callback === "function") {
@@ -1408,15 +1917,76 @@ ${commentText || "(empty)"}
     }
   }
 
+  function patchStorageAreaSet(area) {
+    if (!area || area.__ceSetPatched) return;
+    if (typeof area.set !== "function") return;
+
+    const originalSet = area.set.bind(area);
+    ORIGINAL_STORAGE_SETTERS.set(area, originalSet);
+
+    try {
+      area.set = function patchedSet(items, callback) {
+        const run = async () => {
+          const payload = items && typeof items === "object" ? { ...items } : {};
+          const authSnapshot = getCurrentGasGxAuthSnapshot();
+
+          for (const key of [ACCOUNT_KEY, LEGACY_PREFERENCES_STORAGE_KEY, UI_KEY, LINKEDIN_PROFILE_STORAGE_KEY, "automation"]) {
+            if (Object.prototype.hasOwnProperty.call(payload, key)) {
+              payload[key] = normalizeLegacyStorageWrite(key, payload[key], authSnapshot);
+            }
+          }
+
+          if (Object.prototype.hasOwnProperty.call(payload, LEGACY_PREFERENCES_STORAGE_KEY)) {
+            const canonical = sanitizeLegacyPreferences(
+              parseStoredObject(payload[LEGACY_PREFERENCES_STORAGE_KEY], getDefaultLegacyPreferences())
+            );
+            payload[LEGACY_PREFERENCES_STORAGE_KEY] = stringifyLegacyStoredObject(canonical);
+            payload[LEGACY_PREFERENCES_CANONICAL_KEY] = stringifyStoredObject(canonical);
+          }
+
+          const keys = Object.keys(payload);
+          if (!keys.length) return;
+
+          const current = await rawStorageGet(area, keys);
+          const changedPayload = {};
+          for (const key of keys) {
+            if (current?.[key] !== payload[key]) {
+              changedPayload[key] = payload[key];
+            }
+          }
+
+          if (!Object.keys(changedPayload).length) return;
+          await rawStorageSet(area, changedPayload);
+        };
+
+        if (typeof callback === "function") {
+          Promise.resolve().then(run).then(() => callback()).catch(() => callback());
+          return;
+        }
+
+        return Promise.resolve().then(run);
+      };
+
+      Object.defineProperty(area, "__ceSetPatched", {
+        value: true,
+        configurable: true
+      });
+    } catch (_err) {
+      // Ignore when storage APIs are not patchable in current context.
+    }
+  }
+
   const STORAGE_AREAS = [];
   patchGlobalJsonParse();
   if (typeof chrome !== "undefined" && chrome.storage) {
     if (chrome.storage.local) {
       patchStorageAreaGet(chrome.storage.local);
+      patchStorageAreaSet(chrome.storage.local);
       STORAGE_AREAS.push(chrome.storage.local);
     }
     if (chrome.storage.sync) {
       patchStorageAreaGet(chrome.storage.sync);
+      patchStorageAreaSet(chrome.storage.sync);
       STORAGE_AREAS.push(chrome.storage.sync);
     }
   }
@@ -1600,6 +2170,164 @@ ${commentText || "(empty)"}
     } catch (_err) {
       return false;
     }
+  }
+
+  function isPopupReloadExecution(details) {
+    const source = sparkToString(details?.func?.toString?.(), "");
+    return /window\.location\.reload\s*\(/.test(source);
+  }
+
+  function isPopupLoadProfileExecution(details) {
+    const source = sparkToString(details?.func?.toString?.(), "");
+    return /window\.loadProfile\s*\(/.test(source);
+  }
+
+  async function executeLinkedInProfileProbe(originalExecuteScript, details) {
+    const probeDetails = {
+      target: details?.target,
+      world: details?.world,
+      injectImmediately: details?.injectImmediately,
+      func: async () => {
+        const toText = (value) => {
+          if (value === undefined || value === null) return "";
+          return String(value).trim();
+        };
+        const parseSeat = (href) => {
+          const raw = toText(href);
+          if (!raw) return "";
+          try {
+            const url = new URL(raw, window.location.origin);
+            const match = url.pathname.match(/\/in\/([^/?#]+)/i);
+            return match ? decodeURIComponent(match[1]) : "";
+          } catch (_err) {
+            return "";
+          }
+        };
+        const buildImageUrlFromVector = (vector) => {
+          if (!vector || typeof vector !== "object") return "";
+          const rootUrl = toText(vector.rootUrl);
+          const artifacts = Array.isArray(vector.artifacts) ? vector.artifacts : [];
+          const artifact = artifacts.length ? artifacts[artifacts.length - 1] : null;
+          const path = toText(artifact?.fileIdentifyingUrlPathSegment);
+          return rootUrl && path ? `${rootUrl}${path}` : "";
+        };
+        const pickText = (selectors) => {
+          for (const selector of selectors) {
+            const node = document.querySelector(selector);
+            const text = toText(node?.textContent || node?.getAttribute?.("alt"));
+            if (text) return text;
+          }
+          return "";
+        };
+        const pickAttr = (selectors, attr) => {
+          for (const selector of selectors) {
+            const node = document.querySelector(selector);
+            const value = toText(node?.getAttribute?.(attr));
+            if (value) return value;
+          }
+          return "";
+        };
+        const fromDom = () => ({
+          seat: parseSeat(
+            pickAttr([
+              "a[data-control-name='nav.settings_view_profile'][href*='/in/']",
+              "a.global-nav__secondary-link[href*='/in/']",
+              ".feed-identity-module a[href*='/in/']",
+              "a[href*='linkedin.com/in/']"
+            ], "href")
+          ),
+          me: pickText([
+            ".feed-identity-module__actor-meta strong",
+            ".feed-identity-module__actor-meta div",
+            "a[data-control-name='nav.settings_view_profile'] span[aria-hidden='true']",
+            "img.global-nav__me-photo"
+          ]),
+          imageUrl: pickAttr([
+            "img.global-nav__me-photo",
+            ".feed-identity-module img",
+            "img.presence-entity__image"
+          ], "src")
+        });
+
+        const domProfile = fromDom();
+
+        try {
+          const sessionMatch = document.cookie.match(/JSESSIONID=\"?(.*?)\"?(?:;|$)/);
+          const csrfToken = toText(sessionMatch?.[1]);
+          if (!csrfToken) return domProfile;
+
+          const response = await fetch("https://www.linkedin.com/voyager/api/me", {
+            credentials: "include",
+            headers: {
+              "csrf-token": csrfToken,
+              "x-restli-protocol-version": "2.0.0"
+            }
+          });
+          if (!response.ok) return domProfile;
+
+          const payload = await response.json();
+          const miniProfile = payload?.miniProfile && typeof payload.miniProfile === "object" ? payload.miniProfile : {};
+          const fullName = [toText(miniProfile.firstName), toText(miniProfile.lastName)].filter(Boolean).join(" ").trim();
+          const vectorImage = miniProfile?.picture?.["com.linkedin.common.VectorImage"]
+            || miniProfile?.picture?.vectorImage
+            || miniProfile?.picture?.displayImageReference?.vectorImage
+            || payload?.profilePicture?.displayImageReference?.vectorImage
+            || null;
+
+          return {
+            seat: toText(miniProfile.publicIdentifier) || domProfile.seat,
+            me: fullName || domProfile.me,
+            imageUrl: buildImageUrlFromVector(vectorImage) || domProfile.imageUrl
+          };
+        } catch (_err) {
+          return domProfile;
+        }
+      },
+      args: []
+    };
+
+    const results = await originalExecuteScript(probeDetails);
+    const profile = sanitizeLinkedInProfile(Array.isArray(results) ? results[0]?.result : null);
+    if (hasLinkedInProfileData(profile)) {
+      await persistLinkedInProfile(profile);
+      return [{ result: profile }];
+    }
+
+    const stored = await loadPersistedLinkedInProfile();
+    return [{ result: stored }];
+  }
+
+  function installPopupExecuteScriptPatch() {
+    if (!isPopupContext()) return;
+    const scriptingApi = chrome?.scripting;
+    if (!scriptingApi || typeof scriptingApi.executeScript !== "function") return;
+    if (scriptingApi.executeScript.__cePopupPatched) return;
+
+    const originalExecuteScript = scriptingApi.executeScript.bind(scriptingApi);
+    const patchedExecuteScript = function patchedExecuteScript(details, callback) {
+      const run = async () => {
+        if (isPopupReloadExecution(details)) {
+          return [{ result: null }];
+        }
+
+        if (isPopupLoadProfileExecution(details)) {
+          return await executeLinkedInProfileProbe(originalExecuteScript, details);
+        }
+
+        return await originalExecuteScript(details);
+      };
+
+      if (typeof callback === "function") {
+        run().then((result) => callback(result)).catch(() => callback([]));
+        return;
+      }
+
+      return run();
+    };
+
+    patchedExecuteScript.__cePopupPatched = true;
+    patchedExecuteScript.__cePopupOriginal = originalExecuteScript;
+    scriptingApi.executeScript = patchedExecuteScript;
   }
 
   function normalizeTheme(mode) {
@@ -1868,13 +2596,585 @@ ${commentText || "(empty)"}
   }
 
   function setStorageValue(area, value) {
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
       try {
-        area.set(value, () => resolve());
+        const payload = value && typeof value === "object" ? { ...value } : {};
+        const keys = Object.keys(payload);
+        if (!keys.length) {
+          resolve();
+          return;
+        }
+
+        const current = await rawStorageGet(area, keys);
+        const changedPayload = {};
+        for (const key of keys) {
+          if (current?.[key] !== payload[key]) {
+            changedPayload[key] = payload[key];
+          }
+        }
+
+        if (!Object.keys(changedPayload).length) {
+          resolve();
+          return;
+        }
+
+        area.set(changedPayload, () => resolve());
       } catch (_err) {
         resolve();
       }
     });
+  }
+
+  async function persistPopupFirstRunFlags() {
+    if (!isPopupContext()) return;
+    const storage = chrome?.storage?.local;
+    const version = sparkToString(chrome?.runtime?.getManifest?.()?.version, "").trim();
+    if (!storage?.set || !version) return;
+    const current = await rawStorageGet(storage, [version, "Pixel Fresh Install"]);
+    if (current?.[version] === LEGACY_TRUE_RAW && current?.["Pixel Fresh Install"] === LEGACY_TRUE_RAW) return;
+    await setStorageValue(storage, {
+      [version]: LEGACY_TRUE_RAW,
+      "Pixel Fresh Install": LEGACY_TRUE_RAW
+    });
+  }
+
+  function getPopupLegacyVersion() {
+    try {
+      return sparkToString(chrome?.runtime?.getManifest?.()?.version, "").trim();
+    } catch (_err) {
+      return "";
+    }
+  }
+
+  function parsePopupLegacyRequestBody(body) {
+    if (body === undefined || body === null || body === "") return {};
+    if (typeof body === "string") {
+      try {
+        const parsed = JSON.parse(body);
+        return sparkIsPlainObject(parsed) ? parsed : {};
+      } catch (_err) {
+        return {};
+      }
+    }
+    return sparkIsPlainObject(body) ? body : {};
+  }
+
+  function normalizePopupLegacyStats(raw) {
+    const source = sparkIsPlainObject(raw) ? raw : {};
+    return {
+      total: Math.max(0, Math.floor(sparkToNumber(source.total, POPUP_EMPTY_AUTOMATION_STATS.total))),
+      since: Math.max(0, Math.floor(sparkToNumber(source.since, POPUP_EMPTY_AUTOMATION_STATS.since))),
+      today: Math.max(0, Math.floor(sparkToNumber(source.today, POPUP_EMPTY_AUTOMATION_STATS.today)))
+    };
+  }
+
+  function normalizePopupLegacyCompletions(raw) {
+    const source = sparkIsPlainObject(raw) ? raw : {};
+    const generated = sparkIsPlainObject(source.generated) ? source.generated : {};
+    const posted = sparkIsPlainObject(source.posted) ? source.posted : {};
+    return {
+      generated: {
+        comments: Math.max(0, Math.floor(sparkToNumber(generated.comments, POPUP_EMPTY_COMPLETIONS.generated.comments))),
+        replies: Math.max(0, Math.floor(sparkToNumber(generated.replies, POPUP_EMPTY_COMPLETIONS.generated.replies)))
+      },
+      posted: {
+        comments: Math.max(0, Math.floor(sparkToNumber(posted.comments, POPUP_EMPTY_COMPLETIONS.posted.comments))),
+        replies: Math.max(0, Math.floor(sparkToNumber(posted.replies, POPUP_EMPTY_COMPLETIONS.posted.replies)))
+      }
+    };
+  }
+
+  function normalizePopupLegacyAutomationList(raw, fallbackId = "") {
+    const source = sparkIsPlainObject(raw) ? raw : {};
+    const nextId = sparkToString(source._id, fallbackId || `gasgx-${Date.now()}`).trim() || `gasgx-${Date.now()}`;
+    return {
+      ...source,
+      _id: nextId,
+      enabledSeats: Array.isArray(source.enabledSeats) ? source.enabledSeats.filter(Boolean) : []
+    };
+  }
+
+  async function readPopupLegacyCompatState() {
+    const snapshot = getCurrentGasGxAuthSnapshot();
+    const storage = chrome?.storage?.local;
+    let account = buildLockedAccount(snapshot);
+    let automation = {};
+
+    if (storage) {
+      try {
+        const raw = await rawStorageGet(storage, [ACCOUNT_KEY, "automation", "completions"]);
+        account = parseStoredAccount(raw?.[ACCOUNT_KEY]);
+        automation = parseStoredObject(raw?.automation, {});
+      } catch (_err) {}
+    }
+
+    const plan = sparkToString(account.plan, "").trim()
+      || sparkToString(snapshot.plan, "").trim()
+      || (isGasGxExtensionEnabled(snapshot) ? "GasGx Enabled" : "");
+    const subscriberId = sparkToString(account.subscriberId, "").trim()
+      || sparkToString(snapshot.userId, "").trim()
+      || TEST_SUBSCRIBER_ID;
+
+    return {
+      snapshot,
+      account,
+      plan,
+      subscriberId,
+      isTrialEligible: sparkToBoolean(account.isTrialEligible, false),
+      lists: Array.isArray(automation.lists) ? automation.lists.map((item, index) => normalizePopupLegacyAutomationList(item, `gasgx-${index + 1}`)) : [],
+      stats: normalizePopupLegacyStats(automation.stats),
+      completions: normalizePopupLegacyCompletions(automation.completions)
+    };
+  }
+
+  async function writePopupLegacyAutomationPatch(patch) {
+    const storage = chrome?.storage?.local;
+    if (!storage) return;
+    const raw = await rawStorageGet(storage, "automation");
+    const current = parseStoredObject(raw?.automation, {});
+    await setStorageValue(storage, {
+      automation: stringifyLegacyStoredObject({
+        ...current,
+        ...patch
+      })
+    });
+  }
+
+  async function getPopupLegacyMockResponse(method, url, body) {
+    let parsedUrl = null;
+    try {
+      parsedUrl = new URL(url, location.origin);
+    } catch (_err) {
+      return null;
+    }
+
+    if (parsedUrl.host !== POPUP_LEGACY_HOST) return null;
+
+    const compat = await readPopupLegacyCompatState();
+    const pathname = parsedUrl.pathname;
+    const requestBody = parsePopupLegacyRequestBody(body);
+
+    switch (pathname) {
+      case "/api/commentron/get-priming":
+        return {
+          status: 200,
+          body: {
+            latestVersion: getPopupLegacyVersion(),
+            plan: compat.plan,
+            isTrialEligible: compat.isTrialEligible,
+            automationStats: compat.stats
+          }
+        };
+      case "/api/commentron/latest-version":
+        return {
+          status: 200,
+          body: getPopupLegacyVersion()
+        };
+      case "/api/commentron/is-subscribed":
+        return {
+          status: 200,
+          body: isGasGxExtensionEnabled(compat.snapshot)
+        };
+      case "/api/commentron/get-plan":
+        return {
+          status: 200,
+          body: compat.plan
+        };
+      case "/api/commentron/get-automation-lists":
+        return {
+          status: 200,
+          body: compat.lists
+        };
+      case "/api/commentron/get-automation-stats":
+        return {
+          status: 200,
+          body: compat.stats
+        };
+      case "/api/commentron/get-completions":
+        return {
+          status: 200,
+          body: compat.completions
+        };
+      case "/api/commentron/automation-lists": {
+        const nextList = normalizePopupLegacyAutomationList({
+          ...requestBody,
+          subscriberId: sparkToString(requestBody.subscriberId, compat.subscriberId).trim() || compat.subscriberId
+        });
+        const nextLists = [...compat.lists, nextList];
+        await writePopupLegacyAutomationPatch({ lists: nextLists });
+        return {
+          status: 200,
+          body: nextList
+        };
+      }
+      case "/api/commentron/enable-automation-list-seat": {
+        const listId = sparkToString(requestBody._id, "").trim();
+        const seat = sparkToString(requestBody.seat, "").trim();
+        const nextLists = compat.lists.map((item) => {
+          if (item._id !== listId) return item;
+          const nextSeats = seat && !item.enabledSeats.includes(seat)
+            ? [...item.enabledSeats, seat]
+            : item.enabledSeats;
+          return {
+            ...item,
+            enabledSeats: nextSeats
+          };
+        });
+        await writePopupLegacyAutomationPatch({ lists: nextLists });
+        return {
+          status: 200,
+          body: { success: true }
+        };
+      }
+      case "/api/commentron/disable-automation-list-seat": {
+        const listId = sparkToString(requestBody._id, "").trim();
+        const seat = sparkToString(requestBody.seat, "").trim();
+        const nextLists = compat.lists.map((item) => {
+          if (item._id !== listId) return item;
+          return {
+            ...item,
+            enabledSeats: item.enabledSeats.filter((entry) => entry !== seat)
+          };
+        });
+        await writePopupLegacyAutomationPatch({ lists: nextLists });
+        return {
+          status: 200,
+          body: { success: true }
+        };
+      }
+      case "/api/commentron/delete-automation-list": {
+        const listId = sparkToString(requestBody._id, "").trim();
+        const nextLists = compat.lists.filter((item) => item._id !== listId);
+        await writePopupLegacyAutomationPatch({ lists: nextLists });
+        return {
+          status: 200,
+          body: { success: true }
+        };
+      }
+      case "/api/commentron/reset-seats": {
+        const nextLists = compat.lists.map((item) => ({
+          ...item,
+          enabledSeats: []
+        }));
+        await writePopupLegacyAutomationPatch({
+          lists: nextLists,
+          stats: {
+            ...compat.stats,
+            today: 0
+          },
+          resetTimestamp: Date.now()
+        });
+        return {
+          status: 200,
+          body: { success: true }
+        };
+      }
+      case "/api/commentron/engagements":
+      case "/api/commentron/peep":
+      case "/api/logging/front-error":
+      case "/api/logging/email-admin":
+        return {
+          status: 200,
+          body: { success: true }
+        };
+      default:
+        return null;
+    }
+  }
+
+  function shouldMockPopupLegacyRequest(url) {
+    if (!isPopupContext() || !url) return false;
+    try {
+      const parsed = new URL(url, location.origin);
+      return parsed.host === POPUP_LEGACY_HOST;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function installPopupLegacyXhrMock() {
+    if (!isPopupContext()) return;
+    if (window[POPUP_MOCK_XHR_FLAG]) return;
+
+    const NativeXHR = window.XMLHttpRequest;
+    if (typeof NativeXHR !== "function") return;
+
+    const listenerMap = new WeakMap();
+    const ensureListenerBucket = (instance, type) => {
+      let bucket = listenerMap.get(instance);
+      if (!bucket) {
+        bucket = new Map();
+        listenerMap.set(instance, bucket);
+      }
+      let set = bucket.get(type);
+      if (!set) {
+        set = new Set();
+        bucket.set(type, set);
+      }
+      return set;
+    };
+
+    const emitMockEvent = (instance, type) => {
+      const handler = instance[`on${type}`];
+      const event = typeof Event === "function" ? new Event(type) : { type };
+      if (typeof handler === "function") {
+        try {
+          handler.call(instance, event);
+        } catch (_err) {}
+      }
+      const bucket = listenerMap.get(instance);
+      const listeners = bucket?.get(type);
+      if (!listeners) return;
+      for (const listener of Array.from(listeners)) {
+        try {
+          listener.call(instance, event);
+        } catch (_err) {}
+      }
+    };
+
+    class PopupLegacyMockXHR {
+      constructor() {
+        this._xhr = new NativeXHR();
+        this._mock = null;
+        this._mockResponseText = "";
+        this._mockStatus = 0;
+        this._mockReadyState = 0;
+        this._responseType = "";
+        this._timeout = 0;
+        this._withCredentials = false;
+        this._aborted = false;
+        this.onreadystatechange = null;
+        this.onload = null;
+        this.onerror = null;
+        this.onabort = null;
+        this.ontimeout = null;
+        this.onloadend = null;
+        this.upload = this._xhr.upload;
+
+        const forward = (type) => {
+          this._xhr.addEventListener(type, (event) => {
+            const handler = this[`on${type}`];
+            if (typeof handler === "function") {
+              try {
+                handler.call(this, event);
+              } catch (_err) {}
+            }
+            const bucket = listenerMap.get(this);
+            const listeners = bucket?.get(type);
+            if (!listeners) return;
+            for (const listener of Array.from(listeners)) {
+              try {
+                listener.call(this, event);
+              } catch (_err) {}
+            }
+          });
+        };
+
+        [
+          "readystatechange",
+          "load",
+          "error",
+          "abort",
+          "timeout",
+          "loadend",
+          "loadstart",
+          "progress"
+        ].forEach(forward);
+      }
+
+      open(method, url, async = true, username, password) {
+        this._aborted = false;
+        if (shouldMockPopupLegacyRequest(url)) {
+          this._mock = {
+            method: sparkToString(method, "GET").toUpperCase(),
+            url: sparkToString(url, ""),
+            async,
+            username,
+            password,
+            headers: {}
+          };
+          this._mockReadyState = 1;
+          emitMockEvent(this, "readystatechange");
+          return;
+        }
+
+        this._mock = null;
+        return this._xhr.open(method, url, async, username, password);
+      }
+
+      setRequestHeader(name, value) {
+        if (this._mock) {
+          this._mock.headers[sparkToString(name, "")] = sparkToString(value, "");
+          return;
+        }
+        return this._xhr.setRequestHeader(name, value);
+      }
+
+      addEventListener(type, listener, options) {
+        if (this._mock) {
+          ensureListenerBucket(this, type).add(listener);
+          return;
+        }
+        return this._xhr.addEventListener(type, listener, options);
+      }
+
+      removeEventListener(type, listener, options) {
+        if (this._mock) {
+          ensureListenerBucket(this, type).delete(listener);
+          return;
+        }
+        return this._xhr.removeEventListener(type, listener, options);
+      }
+
+      send(body = null) {
+        if (!this._mock) {
+          return this._xhr.send(body);
+        }
+
+        Promise.resolve()
+          .then(() => getPopupLegacyMockResponse(this._mock?.method, this._mock?.url, body))
+          .then((mock) => {
+            if (!this._mock) return;
+            if (!mock) {
+              const current = this._mock;
+              this._mock = null;
+              this._xhr.open(current.method, current.url, current.async, current.username, current.password);
+              for (const [name, value] of Object.entries(current.headers || {})) {
+                this._xhr.setRequestHeader(name, value);
+              }
+              this._xhr.responseType = this._responseType;
+              this._xhr.withCredentials = this._withCredentials;
+              this._xhr.timeout = this._timeout;
+              this._xhr.send(body);
+              return;
+            }
+
+            this._mockStatus = Math.max(100, Math.floor(sparkToNumber(mock.status, 200)));
+            this._mockResponseText = JSON.stringify(mock.body ?? {});
+            this._mockReadyState = 2;
+            emitMockEvent(this, "readystatechange");
+
+            setTimeout(() => {
+              if (!this._mock || this._aborted) return;
+              this._mockReadyState = 4;
+              emitMockEvent(this, "readystatechange");
+              emitMockEvent(this, "load");
+              emitMockEvent(this, "loadend");
+            }, 0);
+          })
+          .catch(() => {
+            if (!this._mock || this._aborted) return;
+            this._mockStatus = 500;
+            this._mockResponseText = JSON.stringify({ message: "Popup compatibility bridge failed." });
+            this._mockReadyState = 4;
+            emitMockEvent(this, "readystatechange");
+            emitMockEvent(this, "error");
+            emitMockEvent(this, "loadend");
+          });
+      }
+
+      abort() {
+        if (this._mock) {
+          this._aborted = true;
+          this._mockReadyState = 0;
+          emitMockEvent(this, "abort");
+          emitMockEvent(this, "loadend");
+          return;
+        }
+        return this._xhr.abort();
+      }
+
+      getAllResponseHeaders() {
+        if (this._mock) {
+          return "content-type: application/json\r\n";
+        }
+        return typeof this._xhr.getAllResponseHeaders === "function"
+          ? this._xhr.getAllResponseHeaders()
+          : "";
+      }
+
+      getResponseHeader(name) {
+        if (this._mock) {
+          return /^content-type$/i.test(sparkToString(name, "")) ? "application/json" : null;
+        }
+        return typeof this._xhr.getResponseHeader === "function"
+          ? this._xhr.getResponseHeader(name)
+          : null;
+      }
+
+      overrideMimeType(type) {
+        if (this._mock) return;
+        return this._xhr.overrideMimeType?.(type);
+      }
+
+      get readyState() {
+        return this._mock ? this._mockReadyState : this._xhr.readyState;
+      }
+
+      get status() {
+        return this._mock ? this._mockStatus : this._xhr.status;
+      }
+
+      get statusText() {
+        return this._mock ? "OK" : this._xhr.statusText;
+      }
+
+      get responseText() {
+        return this._mock ? this._mockResponseText : this._xhr.responseText;
+      }
+
+      get response() {
+        if (!this._mock) return this._xhr.response;
+        if (this._responseType === "json") {
+          try {
+            return JSON.parse(this._mockResponseText);
+          } catch (_err) {
+            return null;
+          }
+        }
+        return this._mockResponseText;
+      }
+
+      get responseURL() {
+        return this._mock ? this._mock.url : this._xhr.responseURL;
+      }
+
+      get timeout() {
+        return this._mock ? this._timeout : this._xhr.timeout;
+      }
+
+      set timeout(value) {
+        this._timeout = sparkToNumber(value, 0);
+        this._xhr.timeout = value;
+      }
+
+      get withCredentials() {
+        return this._mock ? this._withCredentials : this._xhr.withCredentials;
+      }
+
+      set withCredentials(value) {
+        this._withCredentials = !!value;
+        this._xhr.withCredentials = value;
+      }
+
+      get responseType() {
+        return this._mock ? this._responseType : this._xhr.responseType;
+      }
+
+      set responseType(value) {
+        this._responseType = sparkToString(value, "");
+        this._xhr.responseType = value;
+      }
+    }
+
+    PopupLegacyMockXHR.UNSENT = NativeXHR.UNSENT ?? 0;
+    PopupLegacyMockXHR.OPENED = NativeXHR.OPENED ?? 1;
+    PopupLegacyMockXHR.HEADERS_RECEIVED = NativeXHR.HEADERS_RECEIVED ?? 2;
+    PopupLegacyMockXHR.LOADING = NativeXHR.LOADING ?? 3;
+    PopupLegacyMockXHR.DONE = NativeXHR.DONE ?? 4;
+
+    window.XMLHttpRequest = PopupLegacyMockXHR;
+    window[POPUP_MOCK_XHR_FLAG] = true;
   }
 
   async function syncGasGxDerivedStorage() {
@@ -1890,8 +3190,8 @@ ${commentText || "(empty)"}
         ? buildEnabledAccount(snapshot, parseStoredAccount(accountObj[ACCOUNT_KEY]))
         : buildLockedAccount(snapshot);
       const nextUi = deriveUiState(parseStoredObject(uiObj[UI_KEY], DEFAULT_UI_STATE), snapshot);
-      const nextAccountRaw = stringifyStoredAccount(nextAccount);
-      const nextUiRaw = stringifyStoredObject(nextUi);
+      const nextAccountRaw = stringifyLegacyStoredObject(nextAccount);
+      const nextUiRaw = stringifyLegacyStoredObject(nextUi);
 
       if (currentAccountRaw === nextAccountRaw && currentUiRaw === nextUiRaw) {
         continue;
@@ -2118,6 +3418,57 @@ ${commentText || "(empty)"}
     }
   }
 
+  function replaceLicensedToLabel() {
+    if (!document.body) return;
+    const candidates = document.querySelectorAll("#__plasmo .MuiGrid-item, #__plasmo .info-flex, #__plasmo div, #__plasmo span, #__plasmo p");
+    for (const node of candidates) {
+      if (isInsideGasGxPopupUi(node)) continue;
+      const text = normalizePopupUiText(node.textContent);
+      if (!text || !/^licensed to[:\s]/i.test(text)) continue;
+
+      let replaced = false;
+      for (const child of Array.from(node.childNodes)) {
+        if (child.nodeType !== Node.TEXT_NODE) continue;
+        const raw = child.nodeValue || "";
+        if (!/licensed to/i.test(raw)) continue;
+        child.nodeValue = raw.replace(/licensed to\s*:?\s*/i, "Linkedin当前账号 ");
+        replaced = true;
+      }
+
+      if (!replaced) {
+        continue;
+      }
+
+      node.style.cursor = "default";
+      if (!node.dataset.ceLicensedLabelLocked) {
+        node.dataset.ceLicensedLabelLocked = "true";
+        node.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          event.stopImmediatePropagation?.();
+        }, true);
+      }
+    }
+  }
+
+  function hideBottomLeftFloatingToggle() {
+    if (!document.body) return;
+    const candidates = document.querySelectorAll("#__plasmo input[type='checkbox'], #__plasmo [role='switch'], #__plasmo .MuiSwitch-root, #__plasmo .MuiCheckbox-root");
+    for (const node of candidates) {
+      if (isInsideGasGxPopupUi(node)) continue;
+      const host = node.closest(".MuiSwitch-root, .MuiCheckbox-root, label, button, span, div");
+      const target = host || node;
+      const rect = target.getBoundingClientRect?.();
+      if (!rect || !rect.width || !rect.height) continue;
+      const nearBottom = rect.bottom >= window.innerHeight - 90;
+      const nearLeft = rect.left <= 120;
+      const isolated = !normalizePopupUiText(target.parentElement?.textContent || "").replace(normalizePopupUiText(target.textContent || ""), "").trim();
+      if (!nearBottom || !nearLeft || !isolated) continue;
+      target.style.display = "none";
+      target.setAttribute("data-ce-hidden", "floating-bottom-toggle");
+    }
+  }
+
   function isGateText(text) {
     return !!(text && GATE_TEXT_PATTERN.test(text));
   }
@@ -2269,10 +3620,21 @@ ${commentText || "(empty)"}
     applyLanguageToDom();
     unlockDisabledControls();
     enforceBrandTitle();
+    replaceLicensedToLabel();
+    installLegacyPreferencesPersistence();
+    ensureLegacyPreferencesMonitor();
+    if (isPreferencesTabActive()) {
+      void applyLegacyPreferencesToDom();
+    } else if (document.body) {
+      delete document.body.dataset.ceLegacyPrefsApplied;
+      legacyPreferencesLastSnapshot = "";
+    }
     mountPreferencesAutoSendControls();
     ensurePopupSlidersInteractive();
     mountReplyPromptHintControl();
+    renderGasGxPopupAccountPanel();
     hideBottomRightLogo();
+    hideBottomLeftFloatingToggle();
     suppressGateToastApis();
     hideGateToasts();
   }
@@ -2458,9 +3820,281 @@ ${commentText || "(empty)"}
     return fallback && fallback !== document.body ? fallback : null;
   }
 
+  function isPreferencesTabActive() {
+    const buttons = Array.from(document.querySelectorAll("#__plasmo button, #__plasmo [role='tab'], #__plasmo .MuiButtonBase-root"));
+    for (const button of buttons) {
+      const text = normalizePopupUiText(button.textContent);
+      if (!text) continue;
+      if (!/^(preferences|偏好)$|(^偏好 )|( preferences$)/i.test(text) && !/^偏好$/i.test(text)) continue;
+      const isSelected = button.getAttribute("aria-selected") === "true";
+      const className = sparkToString(button.className, "");
+      const activeByClass = /active|selected|Mui-selected|MuiTab-textColorPrimary/i.test(className);
+      return isSelected || activeByClass;
+    }
+    return false;
+  }
+
+  function findLegacyPreferenceCheckbox(labelMatchers) {
+    const labels = Array.from(document.querySelectorAll("#__plasmo label"));
+    for (const label of labels) {
+      const text = normalizePopupUiText(label.textContent);
+      if (!text) continue;
+      if (!labelMatchers.some((matcher) => matcher.test(text))) continue;
+      const input = label.querySelector('input[type="checkbox"]');
+      if (input) return input;
+    }
+    return null;
+  }
+
+  function isVisibleElement(element) {
+    if (!element || !element.getBoundingClientRect) return false;
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+  }
+
+  function getVisibleLegacyCheckboxes() {
+    return Array.from(document.querySelectorAll("#__plasmo input[type='checkbox']"))
+      .filter((input) => !input.closest("#ce-preferences-auto-send-root, #ce-reply-prompt-hint-root"))
+      .filter((input) => isVisibleElement(input));
+  }
+
+  function getVisibleLegacySelects() {
+    return Array.from(document.querySelectorAll("#__plasmo select"))
+      .filter((select) => !select.closest("#ce-preferences-auto-send-root, #ce-reply-prompt-hint-root"))
+      .filter((select) => isVisibleElement(select));
+  }
+
+  function getVisibleLegacyRanges() {
+    return Array.from(document.querySelectorAll("#__plasmo input[type='range']"))
+      .filter((input) => !input.closest("#ce-preferences-auto-send-root, #ce-reply-prompt-hint-root"))
+      .filter((input) => isVisibleElement(input));
+  }
+
+  function hasCompleteLegacyPreferencesControls() {
+    return !!(
+      (findLegacyPreferenceLengthSlider() || getVisibleLegacyRanges()[0])
+      && (findLegacyPreferenceSelect([/^语气$/, /^tone$/i]) || getVisibleLegacySelects()[0])
+      && (findLegacyPreferenceCheckbox([/评论\/回复使用英文/, /comment\/reply in english/i]) || getVisibleLegacyCheckboxes()[0])
+      && (findLegacyPreferenceCheckbox([/使用表情/, /use emojis/i]) || getVisibleLegacyCheckboxes()[1])
+      && (findLegacyPreferenceCheckbox([/开放式结尾/, /open-ended/i]) || getVisibleLegacyCheckboxes()[2])
+      && (findLegacyPreferenceCheckbox([/保持简短回复/, /keep it short/i]) || getVisibleLegacyCheckboxes()[3])
+      && (findLegacyPreferenceCheckbox([/On My Own Posts/i, /Reply Only with Ack/i]) || getVisibleLegacyCheckboxes()[4])
+      && (findLegacyPreferenceSelect([/语气性别/, /voice gender/i]) || getVisibleLegacySelects()[1])
+    );
+  }
+
+  function findLegacyPreferenceSelect(labelMatchers) {
+    const labels = Array.from(document.querySelectorAll("#__plasmo label, #__plasmo span, #__plasmo div"));
+    for (const label of labels) {
+      const text = normalizePopupUiText(label.textContent);
+      if (!text) continue;
+      if (!labelMatchers.some((matcher) => matcher.test(text))) continue;
+      const container = label.closest("div, label");
+      const select = container?.parentElement?.querySelector("select") || container?.querySelector("select");
+      if (select) return select;
+    }
+    return null;
+  }
+
+  function findLegacyPreferenceLengthSlider() {
+    const labels = Array.from(document.querySelectorAll("#__plasmo label, #__plasmo span, #__plasmo div"));
+    for (const label of labels) {
+      const text = normalizePopupUiText(label.textContent);
+      if (!/^长度[:：]?\s*/.test(text) && !/^length[:：]?\s*/i.test(text)) continue;
+      const container = label.closest("div");
+      const slider = container?.parentElement?.querySelector(".MuiSlider-root input[type='range']") || container?.querySelector(".MuiSlider-root input[type='range']");
+      if (slider) return slider;
+    }
+    return document.querySelector("#__plasmo .MuiSlider-root input[type='range']");
+  }
+
+  function setInputChecked(input, checked) {
+    if (!input) return;
+    const next = !!checked;
+    if (!!input.checked === next) return;
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked");
+      descriptor?.set ? descriptor.set.call(input, next) : (input.checked = next);
+    } catch (_err) {
+      input.checked = next;
+    }
+  }
+
+  function setSelectValue(select, value) {
+    if (!select || value === undefined || value === null) return;
+    const next = sparkToString(value, "").trim();
+    if (!next) return;
+    if (sparkToString(select.value, "").trim() === next) return;
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value");
+      descriptor?.set ? descriptor.set.call(select, next) : (select.value = next);
+    } catch (_err) {
+      select.value = next;
+    }
+  }
+
+  function setRangeValue(input, value) {
+    if (!input) return;
+    const next = String(Math.max(1, Math.min(5, Math.round(sparkToNumber(value, 2)))));
+    if (sparkToString(input.value, "") === next) return;
+    try {
+      const descriptor = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "value");
+      descriptor?.set ? descriptor.set.call(input, next) : (input.value = next);
+    } catch (_err) {
+      input.value = next;
+    }
+  }
+
+  function serializeLegacyPreferencesSnapshot(preferences) {
+    return stringifyStoredObject(
+      sanitizeLegacyPreferences(preferences && typeof preferences === "object" ? preferences : getDefaultLegacyPreferences())
+    );
+  }
+
+  function buildLegacyPreferencesStateFromDom() {
+    if (!hasCompleteLegacyPreferencesControls()) return null;
+    const patch = collectLegacyPreferencesFromDom();
+    if (!Object.keys(patch).length) return null;
+    return sanitizeLegacyPreferences({
+      ...getDefaultLegacyPreferences(),
+      ...patch
+    });
+  }
+
+  async function syncLegacyPreferencesFromDom(forcePersist = false) {
+    if (!isPreferencesTabActive()) return;
+    const next = buildLegacyPreferencesStateFromDom();
+    if (!next) return;
+
+    const snapshot = serializeLegacyPreferencesSnapshot(next);
+    if (!legacyPreferencesLastSnapshot) {
+      legacyPreferencesLastSnapshot = snapshot;
+      if (!forcePersist) return;
+    }
+
+    if (!forcePersist && snapshot === legacyPreferencesLastSnapshot) return;
+    legacyPreferencesLastSnapshot = snapshot;
+    await persistLegacyPreferences(next);
+  }
+
+  async function applyLegacyPreferencesToDom() {
+    if (!isPreferencesTabActive() || !document.body) return;
+    if (document.body.dataset.ceLegacyPrefsApplied === "true") return;
+    if (!hasCompleteLegacyPreferencesControls()) return;
+    const preferences = await loadLegacyPreferences();
+    const [lengthRange] = getVisibleLegacyRanges();
+    const [toneSelect, voiceGenderSelect] = getVisibleLegacySelects();
+    const [englishCheckbox, emojiCheckbox, openEndedCheckbox, keepShortCheckbox, ackMyPostCheckbox] = getVisibleLegacyCheckboxes();
+
+    setRangeValue(lengthRange || findLegacyPreferenceLengthSlider(), preferences.commentLength);
+    setSelectValue(toneSelect || findLegacyPreferenceSelect([/^语气$/, /^tone$/i]), preferences.commentTone);
+    setInputChecked(englishCheckbox || findLegacyPreferenceCheckbox([/评论\/回复使用英文/, /comment\/reply in english/i]), preferences.engageInEnglish);
+    setInputChecked(emojiCheckbox || findLegacyPreferenceCheckbox([/使用表情/, /use emojis/i]), preferences.commentUseEmojis);
+    setInputChecked(openEndedCheckbox || findLegacyPreferenceCheckbox([/开放式结尾/, /open-ended/i]), preferences.commentEndWithQuestion);
+    setInputChecked(keepShortCheckbox || findLegacyPreferenceCheckbox([/保持简短回复/, /keep it short/i]), preferences.replyKeepItShort);
+    setInputChecked(ackMyPostCheckbox || findLegacyPreferenceCheckbox([/On My Own Posts/i, /Reply Only with Ack/i]), preferences.replyAckIfMyPost);
+    setSelectValue(voiceGenderSelect || findLegacyPreferenceSelect([/语气性别/, /voice gender/i]), preferences.voiceGender);
+    legacyPreferencesLastSnapshot = serializeLegacyPreferencesSnapshot(preferences);
+    document.body.dataset.ceLegacyPrefsApplied = "true";
+  }
+
+  function collectLegacyPreferencesFromDom() {
+    const patch = {};
+    const [visibleLengthSlider] = getVisibleLegacyRanges();
+    const lengthSlider = visibleLengthSlider || findLegacyPreferenceLengthSlider();
+    if (lengthSlider) patch.commentLength = Number(lengthSlider.value);
+
+    const [visibleToneSelect, visibleVoiceGenderSelect] = getVisibleLegacySelects();
+    const toneSelect = visibleToneSelect || findLegacyPreferenceSelect([/^语气$/, /^tone$/i]);
+    const voiceGenderSelect = visibleVoiceGenderSelect || findLegacyPreferenceSelect([/语气性别/, /voice gender/i]);
+    if (toneSelect) patch.commentTone = toneSelect.value;
+
+    const [visibleEnglishCheckbox, visibleEmojiCheckbox, visibleOpenEndedCheckbox, visibleKeepShortCheckbox, visibleAckMyPostCheckbox] = getVisibleLegacyCheckboxes();
+    const englishCheckbox = visibleEnglishCheckbox || findLegacyPreferenceCheckbox([/评论\/回复使用英文/, /comment\/reply in english/i]);
+    const emojiCheckbox = visibleEmojiCheckbox || findLegacyPreferenceCheckbox([/使用表情/, /use emojis/i]);
+    const openEndedCheckbox = visibleOpenEndedCheckbox || findLegacyPreferenceCheckbox([/开放式结尾/, /open-ended/i]);
+    const keepShortCheckbox = visibleKeepShortCheckbox || findLegacyPreferenceCheckbox([/保持简短回复/, /keep it short/i]);
+    const ackMyPostCheckbox = visibleAckMyPostCheckbox || findLegacyPreferenceCheckbox([/On My Own Posts/i, /Reply Only with Ack/i]);
+    if (englishCheckbox) patch.engageInEnglish = !!englishCheckbox.checked;
+
+    if (emojiCheckbox) patch.commentUseEmojis = !!emojiCheckbox.checked;
+
+    if (openEndedCheckbox) patch.commentEndWithQuestion = !!openEndedCheckbox.checked;
+
+    if (keepShortCheckbox) patch.replyKeepItShort = !!keepShortCheckbox.checked;
+
+    if (ackMyPostCheckbox) patch.replyAckIfMyPost = !!ackMyPostCheckbox.checked;
+
+    if (voiceGenderSelect) patch.voiceGender = voiceGenderSelect.value;
+
+    return patch;
+  }
+
+  function scheduleLegacyPreferencesPersistence() {
+    if (!isPreferencesTabActive()) return;
+    clearTimeout(legacyPreferencesSyncTimer);
+    legacyPreferencesSyncTimer = window.setTimeout(() => {
+      void syncLegacyPreferencesFromDom(true);
+    }, 120);
+  }
+
+  function installLegacyPreferencesPersistence() {
+    if (!isPopupContext() || !document.body || document.body.dataset.ceLegacyPrefsBound === "true") return;
+    document.body.dataset.ceLegacyPrefsBound = "true";
+
+    document.body.addEventListener("change", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !isPreferencesTabActive() || !event.isTrusted) return;
+      delete document.body.dataset.ceLegacyPrefsApplied;
+      scheduleLegacyPreferencesPersistence();
+    }, true);
+
+    document.body.addEventListener("input", (event) => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !isPreferencesTabActive() || !event.isTrusted) return;
+      delete document.body.dataset.ceLegacyPrefsApplied;
+      scheduleLegacyPreferencesPersistence();
+    }, true);
+
+    const flush = () => {
+      clearTimeout(legacyPreferencesSyncTimer);
+      void syncLegacyPreferencesFromDom(true);
+    };
+
+    window.addEventListener("pagehide", flush);
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flush();
+    });
+  }
+
+  function ensureLegacyPreferencesMonitor() {
+    if (!isPopupContext() || legacyPreferencesWatchTimer) return;
+    legacyPreferencesWatchTimer = window.setInterval(() => {
+      if (!isPreferencesTabActive()) return;
+      void syncLegacyPreferencesFromDom(false);
+    }, 400);
+  }
+
   function mountPreferencesAutoSendControls() {
     if (!document.body) return;
-    if (document.getElementById("ce-preferences-auto-send-root")) return;
+    const existingRoot = document.getElementById("ce-preferences-auto-send-root");
+    if (!isPreferencesTabActive()) {
+      if (existingRoot) existingRoot.style.display = "none";
+      const existingReply = document.getElementById("ce-reply-prompt-hint-root");
+      if (existingReply) existingReply.style.display = "none";
+      return;
+    }
+    if (existingRoot) {
+      existingRoot.style.display = "";
+      const existingReply = document.getElementById("ce-reply-prompt-hint-root");
+      if (existingReply) existingReply.style.display = "";
+      void Promise.all([
+        loadAutoSendDelayRange(),
+        loadRandomStrategySettings(),
+        loadReplyPromptHint()
+      ]).then(() => updateControls());
+      return;
+    }
 
     const anchorRow = findPreferenceAnchorRow();
     if (!anchorRow || !anchorRow.parentElement) return;
@@ -2568,26 +4202,37 @@ ${commentText || "(empty)"}
     root.appendChild(delayRow);
 
     anchorRow.insertAdjacentElement("afterend", root);
-    void loadRandomStrategySettings().then(() => updateControls());
+    void Promise.all([
+      loadAutoSendDelayRange(),
+      loadRandomStrategySettings(),
+      loadReplyPromptHint()
+    ]).then(() => updateControls());
     updateControls();
   }
 
   function mountReplyPromptHintControl() {
     const settingsRoot = document.getElementById("ce-preferences-auto-send-root");
     if (!settingsRoot) return;
-    if (document.getElementById("ce-reply-prompt-hint-root")) return;
+    const existingRoot = document.getElementById("ce-reply-prompt-hint-root");
+    if (existingRoot) {
+      existingRoot.style.display = isPreferencesTabActive() ? "" : "none";
+      return;
+    }
 
     const root = document.createElement("div");
     root.id = "ce-reply-prompt-hint-root";
+    root.className = "ce-pref-field";
 
     const label = document.createElement("label");
     label.id = "ce-reply-prompt-hint-label";
+    label.className = "ce-pref-field-label";
     label.setAttribute("for", "ce-reply-prompt-hint-input");
 
-    const input = document.createElement("input");
+    const input = document.createElement("textarea");
     input.id = "ce-reply-prompt-hint-input";
-    input.type = "text";
+    input.className = "ce-pref-field-textarea";
     input.maxLength = 240;
+    input.rows = 3;
     input.spellcheck = false;
     input.autocomplete = "off";
 
@@ -2612,17 +4257,160 @@ ${commentText || "(empty)"}
       updateControls();
     });
 
-    input.addEventListener("keydown", (event) => {
-      if (event.key !== "Enter") return;
-      event.preventDefault();
-      input.blur();
-    });
-
     root.appendChild(label);
     root.appendChild(input);
     settingsRoot.appendChild(root);
     updateControls();
   }
+
+  function normalizePopupUiText(text) {
+    return sparkToString(text, "").replace(/\s+/g, " ").trim();
+  }
+
+  function isInsideGasGxPopupUi(node) {
+    return !!node?.closest?.(`#${GASGX_AUTH_OVERLAY_ID}, #${GASGX_AUTH_BADGE_ID}, #${GASGX_ACCOUNT_PANEL_ID}`);
+  }
+
+  function shouldHideLegacyPopupAccountNode(node) {
+    if (!node || isInsideGasGxPopupUi(node)) return false;
+
+    const text = normalizePopupUiText(node.textContent);
+    if (!text) return false;
+
+    if (
+      /free trial ended/i.test(text)
+      || /early bird mode/i.test(text)
+      || /have an account\?/i.test(text)
+      || /已有账号/.test(text)
+      || /登录/.test(text)
+      || /watch tutorial/i.test(text)
+      || /write us a review/i.test(text)
+      || /^plan:/i.test(text)
+      || /^sign up$/i.test(text)
+      || /^登录$/.test(text)
+      || /^已有账号？?$/.test(text)
+      || /^sign out$/i.test(text)
+      || /same email you used to sign in to gasgx/i.test(text)
+      || /same password you used to register/i.test(text)
+      || /forgot password/i.test(text)
+    ) {
+      return true;
+    }
+
+    return !!node.querySelector("input") && (/^email$/i.test(text) || /^password$/i.test(text));
+  }
+
+  function hideLegacyPopupAccountUi() {
+    if (!isPopupContext() || !document.body) return;
+
+    const nodes = document.querySelectorAll("#__plasmo .MuiGrid-item, #__plasmo .info-flex, #__plasmo .left-margin, #__plasmo .stick-to-bottom, #__plasmo .MuiFormControl-root");
+    for (const node of nodes) {
+      if (!shouldHideLegacyPopupAccountNode(node)) continue;
+      node.style.display = "none";
+      node.setAttribute("data-ce-gasgx-hidden", "legacy-account-auth");
+    }
+  }
+
+  function findGasGxAccountPanelAnchor() {
+    const root = document.getElementById("__plasmo");
+    if (!root) return null;
+
+    const candidates = root.querySelectorAll(".MuiGrid-item, .left-margin, .info-flex, div");
+    for (const node of candidates) {
+      if (isInsideGasGxPopupUi(node)) continue;
+      const text = normalizePopupUiText(node.textContent);
+      if (!text) continue;
+      if (
+        /^licensed to:/i.test(text)
+        || /^licensed to\s/i.test(text)
+        || /^linkedin当前账号[:\s]?/i.test(text)
+      ) return node;
+    }
+
+    return null;
+  }
+
+  function ensureGasGxAccountPanel() {
+    if (!isPopupContext() || !document.body) return null;
+
+    ensureGasGxPopupStyles();
+    const anchor = findGasGxAccountPanelAnchor();
+    let panel = document.getElementById(GASGX_ACCOUNT_PANEL_ID);
+    if (!anchor?.parentElement) {
+      panel?.remove();
+      return null;
+    }
+
+    if (!panel) {
+      panel = document.createElement("div");
+      panel.id = GASGX_ACCOUNT_PANEL_ID;
+    }
+
+    if (panel.parentElement !== anchor.parentElement || panel.previousElementSibling !== anchor) {
+      anchor.insertAdjacentElement("afterend", panel);
+    }
+
+    return panel;
+  }
+
+  function renderGasGxPopupAccountPanel() {
+    if (!isPopupContext() || !document.body) return;
+
+    hideLegacyPopupAccountUi();
+    const panel = ensureGasGxAccountPanel();
+    if (!panel) return;
+
+    const snapshot = getCurrentGasGxAuthSnapshot();
+    const enabled = isGasGxExtensionEnabled(snapshot);
+    const isBlocked = snapshot.status === "signed_in_but_not_enabled";
+    const isError = snapshot.status === "auth_error";
+    const title = currentLang === "zh-CN" ? "GasGx 账号" : "GasGx Account";
+    const statusText = enabled
+      ? (currentLang === "zh-CN" ? "已启用" : "Enabled")
+      : isBlocked
+        ? (currentLang === "zh-CN" ? "待开通" : "Pending entitlement")
+        : isError
+          ? (currentLang === "zh-CN" ? "登录异常" : "Auth error")
+          : (currentLang === "zh-CN" ? "需要登录" : "Sign-in required");
+    const summaryText = enabled
+      ? (currentLang === "zh-CN"
+        ? "当前扩展已切换为 GasGx 账号体系。"
+        : "This popup now uses your GasGx account system.")
+      : isBlocked
+        ? (currentLang === "zh-CN"
+          ? "当前 GasGx 账号已登录，但还没有开通 LinkedIn Automatic Comments 权限。"
+          : "This GasGx account is signed in, but LinkedIn Automatic Comments is not enabled yet.")
+        : isError
+          ? (snapshot.errorMessage || (currentLang === "zh-CN" ? "GasGx 登录失败，请重新验证。" : "GasGx sign-in failed. Please verify again."))
+          : (currentLang === "zh-CN"
+            ? "请使用 GasGx 账号登录并验证扩展权限。"
+            : "Use your GasGx account to sign in and verify extension access.");
+    const emailText = snapshot.email || (currentLang === "zh-CN" ? "未连接账号" : "No account connected");
+    const primaryActionLabel = enabled
+      ? (currentLang === "zh-CN" ? "退出登录" : "Sign out")
+      : (currentLang === "zh-CN" ? "切换账号" : "Switch account");
+    const secondaryActionLabel = currentLang === "zh-CN" ? "打开 GasGx" : "Open GasGx";
+
+    panel.innerHTML = `
+      <div class="ce-gasgx-account-card" data-status="${enabled ? "enabled" : isBlocked ? "blocked" : isError ? "error" : "signin"}">
+        <div class="ce-gasgx-account-head">
+          <div>
+            <div class="ce-gasgx-account-title">${title}</div>
+            <div class="ce-gasgx-account-email">${emailText}</div>
+          </div>
+          <span class="ce-gasgx-account-pill">${statusText}</span>
+        </div>
+        <div class="ce-gasgx-account-summary">${summaryText}</div>
+        <div class="ce-gasgx-account-actions">
+          <a class="ce-gasgx-account-link" href="${GASGX_EXTENSION_CONTACT_URL}" target="_blank" rel="noreferrer">${secondaryActionLabel}</a>
+          ${snapshot.email || enabled || isBlocked ? `<button type="button" class="ce-gasgx-account-btn" id="ce-gasgx-account-action">${primaryActionLabel}</button>` : ""}
+        </div>
+      </div>`;
+
+    const actionBtn = document.getElementById("ce-gasgx-account-action");
+    actionBtn?.addEventListener("click", () => { void handleGasGxPopupSignOut(); }, { once: true });
+  }
+
   function ensureGasGxPopupStyles() {
     if (document.getElementById("ce-gasgx-auth-style")) return;
     const style = document.createElement("style");
@@ -2631,6 +4419,8 @@ ${commentText || "(empty)"}
       #${GASGX_AUTH_OVERLAY_ID} { position: fixed; inset: 0; z-index: 2147483646; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, rgba(9,17,28,0.96), rgba(16,47,34,0.94)); padding: 18px; }
       #${GASGX_AUTH_OVERLAY_ID}[data-mode="hidden"] { display: none; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-card { width: min(100%, 360px); border-radius: 18px; padding: 20px; background: rgba(8,13,22,0.94); border: 1px solid rgba(102,255,153,0.22); box-shadow: 0 18px 50px rgba(0,0,0,0.34); color: #f6fff7; font-family: "Segoe UI", sans-serif; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-card-loading { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px 20px; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-loading-spinner { width: 34px; height: 34px; margin-bottom: 14px; border-radius: 50%; border: 3px solid rgba(102,255,153,0.16); border-top-color: #66ff99; animation: ce-gasgx-spin 0.9s linear infinite; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-subtitle { font-size: 12px; line-height: 1.5; color: rgba(230,244,234,0.75); margin-bottom: 16px; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-error { min-height: 18px; color: #ff9f9f; font-size: 12px; margin-bottom: 10px; }
@@ -2645,6 +4435,30 @@ ${commentText || "(empty)"}
       #${GASGX_AUTH_OVERLAY_ID} .ce-link { color: #8cf8b5; text-decoration: none; font-size: 12px; }
       #${GASGX_AUTH_BADGE_ID} { position: fixed; top: 8px; right: 8px; z-index: 2147483645; display: none; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 999px; background: rgba(5,18,13,0.88); color: #dffff0; border: 1px solid rgba(102,255,153,0.22); font-family: "Segoe UI", sans-serif; font-size: 11px; }
       #${GASGX_AUTH_BADGE_ID} button { appearance: none; border: 0; border-radius: 999px; padding: 4px 8px; cursor: pointer; font-size: 11px; background: rgba(255,255,255,0.1); color: #fff; }
+      #${GASGX_ACCOUNT_PANEL_ID} { margin: 14px 0 18px; }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-card { border-radius: 16px; padding: 14px 16px; background: rgba(8,20,14,0.42); border: 1px solid rgba(102,255,153,0.22); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-title { font-size: 14px; font-weight: 700; color: #f3fff5; }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-email { margin-top: 4px; font-size: 12px; color: rgba(223,255,240,0.82); word-break: break-all; }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-pill { flex-shrink: 0; border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 700; color: #d7ffe4; background: rgba(102,255,153,0.14); border: 1px solid rgba(102,255,153,0.24); }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-summary { font-size: 12px; line-height: 1.55; color: rgba(230,244,234,0.82); }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-link,
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-btn { appearance: none; border: 0; border-radius: 12px; font-size: 12px; font-weight: 700; line-height: 1; text-decoration: none; cursor: pointer; }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-link { padding: 10px 12px; color: #8cf8b5; background: rgba(255,255,255,0.06); }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-btn { padding: 10px 14px; color: #0b1c12; background: #66ff99; }
+      #ce-preferences-auto-send-root.ce-preferences-auto-send { position: relative; z-index: 8; margin-top: 12px; padding: 12px 10px 4px; border-top: 1px solid rgba(102,255,153,0.12); pointer-events: auto; }
+      #ce-preferences-auto-send-root .ce-pref-row { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; pointer-events: auto; }
+      #ce-preferences-auto-send-root .ce-pref-toggle { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; pointer-events: auto; user-select: none; color: rgba(243,255,245,0.92); font-size: 13px; line-height: 1.4; }
+      #ce-preferences-auto-send-root .ce-pref-toggle input[type="checkbox"] { appearance: auto; width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: #66ff99; pointer-events: auto; flex: 0 0 auto; }
+      #ce-preferences-auto-send-root .ce-pref-delay-row { flex-wrap: wrap; color: rgba(230,244,234,0.82); font-size: 13px; }
+      #ce-preferences-auto-send-root .ce-pref-delay-row input[type="number"] { width: 54px; height: 24px; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.28); color: #f3fff5; box-sizing: border-box; pointer-events: auto; }
+      #ce-reply-prompt-hint-root.ce-pref-field { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+      #ce-reply-prompt-hint-label.ce-pref-field-label { display: block; font-size: 13px; font-weight: 600; line-height: 1.4; color: rgba(230,244,234,0.88); }
+      #ce-reply-prompt-hint-input.ce-pref-field-textarea { width: 100%; min-height: 78px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; background: rgba(0,0,0,0.24); color: #f3fff5; font-size: 13px; line-height: 1.5; box-sizing: border-box; resize: vertical; }
+      #ce-reply-prompt-hint-input.ce-pref-field-textarea::placeholder { color: rgba(230,244,234,0.42); }
+      #ce-reply-prompt-hint-input.ce-pref-field-textarea:focus { outline: none; border-color: rgba(102,255,153,0.72); box-shadow: 0 0 0 2px rgba(102,255,153,0.12); }
+      @keyframes ce-gasgx-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     `;
     document.head.appendChild(style);
   }
@@ -2665,12 +4479,8 @@ ${commentText || "(empty)"}
       overlay.id = GASGX_AUTH_OVERLAY_ID;
       document.body.appendChild(overlay);
     }
-    let badge = document.getElementById(GASGX_AUTH_BADGE_ID);
-    if (!badge) {
-      badge = document.createElement("div");
-      badge.id = GASGX_AUTH_BADGE_ID;
-      document.body.appendChild(badge);
-    }
+    const badge = document.getElementById(GASGX_AUTH_BADGE_ID);
+    badge?.remove();
     return { overlay, badge };
   }
 
@@ -2704,8 +4514,24 @@ ${commentText || "(empty)"}
   }
 
   async function handleGasGxPopupSignOut() {
+    await persistGasGxSignedOutFlag(true);
     await clearGasGxAuthSnapshot();
     await syncGasGxDerivedStorage();
+  }
+
+  function renderGasGxPopupLoading() {
+    if (!isPopupContext() || !document.body) return;
+    const { overlay } = ensureGasGxPopupOverlay();
+    setPopupRootInteractivity(false);
+    overlay.setAttribute("data-mode", "active");
+    overlay.innerHTML = `
+      <div class="ce-card ce-card-loading">
+        <div class="ce-loading-spinner" aria-hidden="true"></div>
+        <div class="ce-title">${currentLang === "zh-CN" ? "正在确认登录状态" : "Checking your sign-in status"}</div>
+        <div class="ce-subtitle">${currentLang === "zh-CN"
+          ? "正在同步 GasGx 账号与扩展权限，请稍候片刻。"
+          : "Syncing your GasGx account and extension access. This should only take a moment."}</div>
+      </div>`;
   }
 
   function renderGasGxPopupAuth() {
@@ -2717,13 +4543,14 @@ ${commentText || "(empty)"}
     if (enabled) {
       overlay.setAttribute("data-mode", "hidden");
       overlay.innerHTML = "";
-      badge.style.display = "flex";
-      badge.innerHTML = `<span>GasGx verified: ${snapshot.email || "user"}</span><button type="button" id="ce-gasgx-sign-out-btn">Sign out</button>`;
-      const logoutBtn = document.getElementById("ce-gasgx-sign-out-btn");
-      logoutBtn?.addEventListener("click", () => { void handleGasGxPopupSignOut(); }, { once: true });
+      renderGasGxPopupAccountPanel();
+      queueApplyRuntime();
       return;
     }
-    badge.style.display = "none";
+    if (badge) {
+      badge.style.display = "none";
+      badge.innerHTML = "";
+    }
     const isBlocked = snapshot.status === "signed_in_but_not_enabled";
     const isError = snapshot.status === "auth_error";
     overlay.setAttribute("data-mode", "active");
@@ -2738,6 +4565,7 @@ ${commentText || "(empty)"}
     form?.addEventListener("submit", (event) => { void handleGasGxPopupSignInSubmit(event); });
     const switchAccountBtn = document.getElementById("ce-gasgx-switch-account");
     switchAccountBtn?.addEventListener("click", () => { void handleGasGxPopupSignOut(); });
+    renderGasGxPopupAccountPanel();
   }
 
   function initContentContext() {
@@ -2770,11 +4598,47 @@ ${commentText || "(empty)"}
   }
 
   function initPopupContext() {
+    applyTheme(currentMode);
+    applyLanguage(currentLang);
+    void persistPopupFirstRunFlags();
+    mountControls();
+    queueApplyRuntime();
+
     const renderAuth = () => {
       window.requestAnimationFrame(() => {
         renderGasGxPopupAuth();
       });
     };
+
+    void Promise.all([
+      loadPersistedGasGxAuthSnapshot(),
+      loadGasGxSignedOutFlag()
+    ]).then(([persisted, signedOut]) => {
+      const hasPersistedAuth = !!(
+        persisted?.accessToken
+        || persisted?.refreshToken
+        || persisted?.status === "enabled"
+        || persisted?.status === "signed_in_but_not_enabled"
+      );
+
+      if (hasPersistedAuth && !signedOut) {
+        gasgxAuthState.snapshot = persisted;
+        gasgxAuthState.loaded = true;
+        renderAuth();
+        queueApplyRuntime();
+        return;
+      }
+
+      if (!signedOut) {
+        renderGasGxPopupLoading();
+      } else {
+        gasgxAuthState.snapshot = persisted;
+        gasgxAuthState.loaded = true;
+        renderAuth();
+      }
+    }).catch(() => {
+      renderGasGxPopupLoading();
+    });
 
     void ensureGasGxAuthSnapshotLoaded().then(async () => {
       await syncGasGxDerivedStorage();
@@ -2784,17 +4648,33 @@ ${commentText || "(empty)"}
     });
 
     window.addEventListener(GASGX_AUTH_CHANGED_EVENT, renderAuth);
+
+    if (!document.body) return;
+    const observer = new MutationObserver(() => {
+      queueApplyRuntime();
+    });
+    observer.observe(document.body, {
+      childList: true,
+      subtree: true,
+      characterData: true,
+      attributes: true,
+      attributeFilter: ["title", "aria-label", "placeholder", "class", "disabled"]
+    });
   }
 
   void ensureGasGxAuthSnapshotLoaded().then(() => syncGasGxDerivedStorage());
-  setInterval(() => {
-    void ensureGasGxAuthSnapshotLoaded(true).then(() => syncGasGxDerivedStorage());
-  }, 60_000);
+  if (!isPopupContext()) {
+    setInterval(() => {
+      void ensureGasGxAuthSnapshotLoaded(true).then(() => syncGasGxDerivedStorage());
+    }, 60_000);
+  }
 
   setupAutoSendDelayRuntime();
   setupRandomStrategyRuntime();
   setupReplyPromptHintRuntime();
   setupSparkRuntime();
+  installPopupExecuteScriptPatch();
+  installPopupLegacyXhrMock();
 
   if (!isPopupContext()) {
     if (document.readyState === "loading") {

@@ -23,6 +23,7 @@
   const DEFAULT_REPLY_PROMPT_HINT = "";
   const LINKEDIN_PROFILE_STORAGE_KEY = "profile";
   const GASGX_SIGNED_OUT_FLAG_KEY = "ce_gasgx_signed_out";
+  const GASGX_LOCAL_SIGNED_IN_KEY = "ce_gasgx_local_signed_in";
   const LEGACY_PREFERENCES_STORAGE_KEY = "preferences";
   const LEGACY_PREFERENCES_CANONICAL_KEY = "ce_legacy_preferences_canonical";
   const LEGACY_TRUE_RAW = "true";
@@ -55,13 +56,7 @@
   const GASGX_AUTH_BADGE_ID = "ce-gasgx-auth-badge";
   const GASGX_ACCOUNT_PANEL_ID = "ce-gasgx-account-panel";
   const GASGX_MAIN_SITE_STORAGE_KEY = "gasgx-main-auth";
-  const GASGX_MAIN_SITE_ACCOUNT_URL = "https://www.gasgx.com/account/account.html";
-  const GASGX_SITE_URL_PATTERNS = Object.freeze([
-    "https://www.gasgx.com/*",
-    "https://gasgx.com/*"
-  ]);
   const GASGX_AUTH_REUSE_WINDOW_MS = 12 * 60 * 60 * 1000;
-  const GASGX_POPUP_IMPORT_PROBE_COOLDOWN_MS = 30_000;
   const GASGX_SUPABASE_URL = "https://mkpcliytqudclkwtewru.supabase.co";
   const GASGX_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_S2uWAddQEXhWJgGeIF_ZbQ_H_thz2hw";
   const GASGX_EXTENSION_CONTACT_URL = "https://www.gasgx.com/account/account.html";
@@ -113,15 +108,15 @@
   let legacyPreferencesSyncTimer = 0;
   let legacyPreferencesWatchTimer = 0;
   let legacyPreferencesLastSnapshot = "";
+  let gasgxDerivedStorageSyncPromise = null;
+  let gasgxDerivedStorageLastRunAt = 0;
+  let gasgxDerivedStorageLastSignature = "";
   const ORIGINAL_STORAGE_GETTERS = new WeakMap();
   const ORIGINAL_STORAGE_SETTERS = new WeakMap();
   const gasgxAuthState = {
     loaded: false,
     loadingPromise: null,
     snapshot: null
-  };
-  const gasgxSessionImportState = {
-    lastPopupProbeAt: 0
   };
   let gasgxLastPersistedSnapshotRaw = "";
 
@@ -1025,6 +1020,25 @@ ${commentText || "(empty)"}
     }
   }
 
+  function readLocalStorageValue(key, fallback = "") {
+    try {
+      const value = localStorage.getItem(key);
+      return value === null || value === undefined ? fallback : value;
+    } catch (_err) {
+      return fallback;
+    }
+  }
+
+  function writeLocalStorageValue(key, value) {
+    try {
+      if (value === undefined || value === null || value === "") {
+        localStorage.removeItem(key);
+      } else {
+        localStorage.setItem(key, String(value));
+      }
+    } catch (_err) {}
+  }
+
   function includesStorageKey(keys, targetKey) {
     if (keys === undefined || keys === null) return true;
     if (typeof keys === "string") return keys === targetKey;
@@ -1106,7 +1120,18 @@ ${commentText || "(empty)"}
   }
 
   function isGasGxExtensionEnabled(snapshot = getCurrentGasGxAuthSnapshot()) {
-    return snapshot.status === "enabled" && !!snapshot.profileEnabled && !!snapshot.accessToken;
+    return snapshot.status === "enabled" && !!snapshot.profileEnabled;
+  }
+
+  function hasUsableLocalGasGxAuth(snapshot, localSignedIn = false) {
+    const current = sanitizeGasGxAuthSnapshot(snapshot);
+    return !!(
+      current.accessToken
+      || current.refreshToken
+      || current.status === "enabled"
+      || current.status === "signed_in_but_not_enabled"
+      || (localSignedIn && (current.email || current.userId || current.plan || current.profileEnabled))
+    );
   }
 
   function isLegacyPopupSubscriberId(value) {
@@ -1148,7 +1173,7 @@ ${commentText || "(empty)"}
       subscriberId: buildLegacyPopupSubscriberId(snapshot, existing),
       email: snapshot.email || existing.email || "",
       password: "",
-      plan: snapshot.plan || "GasGx Enabled",
+      plan: snapshot.plan || "GasGx Local",
       isTrialEligible: false,
       accessToken: snapshot.accessToken || "",
       refreshToken: snapshot.refreshToken || ""
@@ -1202,6 +1227,7 @@ ${commentText || "(empty)"}
     const nextRaw = stringifyStoredObject(next);
     gasgxAuthState.snapshot = next;
     gasgxAuthState.loaded = true;
+    writeLocalStorageValue(GASGX_AUTH_STORAGE_KEY, nextRaw);
     if (storage?.set && gasgxLastPersistedSnapshotRaw !== nextRaw) {
       await new Promise((resolve) => {
         try {
@@ -1214,6 +1240,7 @@ ${commentText || "(empty)"}
     }
     if (next.accessToken || next.refreshToken || next.status === "enabled" || next.status === "signed_in_but_not_enabled") {
       await persistGasGxSignedOutFlag(false);
+      await persistGasGxLocalSignedInFlag(true);
     }
     dispatchGasGxAuthChanged(next);
     return next;
@@ -1221,10 +1248,13 @@ ${commentText || "(empty)"}
 
   async function loadPersistedGasGxAuthSnapshot() {
     const storage = chrome?.storage?.local;
-    if (!storage) return getDefaultGasGxAuthSnapshot();
-    const raw = await rawStorageGet(storage, GASGX_AUTH_STORAGE_KEY);
-    gasgxLastPersistedSnapshotRaw = sparkToString(raw?.[GASGX_AUTH_STORAGE_KEY], "");
-    return sanitizeGasGxAuthSnapshot(parseStoredObject(raw?.[GASGX_AUTH_STORAGE_KEY], getDefaultGasGxAuthSnapshot()));
+    const raw = storage ? await rawStorageGet(storage, GASGX_AUTH_STORAGE_KEY) : {};
+    const storageValue = sparkToString(raw?.[GASGX_AUTH_STORAGE_KEY], "");
+    const fallbackValue = readLocalStorageValue(GASGX_AUTH_STORAGE_KEY, "");
+    gasgxLastPersistedSnapshotRaw = storageValue || fallbackValue;
+    return sanitizeGasGxAuthSnapshot(
+      parseStoredObject(storageValue || fallbackValue, getDefaultGasGxAuthSnapshot())
+    );
   }
 
   function getDefaultLinkedInProfile() {
@@ -1332,16 +1362,37 @@ ${commentText || "(empty)"}
 
   async function loadGasGxSignedOutFlag() {
     const storage = chrome?.storage?.local;
-    if (!storage?.get) return false;
-    const raw = await rawStorageGet(storage, GASGX_SIGNED_OUT_FLAG_KEY);
-    return normalizeFeatureToggle(raw?.[GASGX_SIGNED_OUT_FLAG_KEY], false);
+    const raw = storage?.get ? await rawStorageGet(storage, GASGX_SIGNED_OUT_FLAG_KEY) : {};
+    return normalizeFeatureToggle(
+      raw?.[GASGX_SIGNED_OUT_FLAG_KEY] ?? readLocalStorageValue(GASGX_SIGNED_OUT_FLAG_KEY, false),
+      false
+    );
   }
 
   async function persistGasGxSignedOutFlag(value) {
     const storage = chrome?.storage?.local;
+    writeLocalStorageValue(GASGX_SIGNED_OUT_FLAG_KEY, value ? "true" : "false");
     if (!storage?.set) return;
     await setStorageValue(storage, {
       [GASGX_SIGNED_OUT_FLAG_KEY]: !!value
+    });
+  }
+
+  async function loadGasGxLocalSignedInFlag() {
+    const storage = chrome?.storage?.local;
+    const raw = storage?.get ? await rawStorageGet(storage, GASGX_LOCAL_SIGNED_IN_KEY) : {};
+    return normalizeFeatureToggle(
+      raw?.[GASGX_LOCAL_SIGNED_IN_KEY] ?? readLocalStorageValue(GASGX_LOCAL_SIGNED_IN_KEY, false),
+      false
+    );
+  }
+
+  async function persistGasGxLocalSignedInFlag(value) {
+    const storage = chrome?.storage?.local;
+    writeLocalStorageValue(GASGX_LOCAL_SIGNED_IN_KEY, value ? "true" : "false");
+    if (!storage?.set) return;
+    await setStorageValue(storage, {
+      [GASGX_LOCAL_SIGNED_IN_KEY]: !!value
     });
   }
 
@@ -1370,37 +1421,6 @@ ${commentText || "(empty)"}
     return payload;
   }
 
-  async function fetchGasGxProfileEntitlement(accessToken, userId) {
-    const query = new URLSearchParams({
-      select: "id,linkedin_extension_enabled,linkedin_extension_plan,linkedin_extension_enabled_at",
-      id: `eq.${userId}`,
-      limit: "1"
-    });
-    const payload = await supabaseFetchJson(`/rest/v1/profiles?${query.toString()}`, {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    const row = Array.isArray(payload) ? payload[0] : null;
-    if (!row || typeof row !== "object") {
-      return { enabled: false, plan: "", enabledAt: "" };
-    }
-    return {
-      enabled: !!row.linkedin_extension_enabled,
-      plan: sparkToString(row.linkedin_extension_plan, "").trim(),
-      enabledAt: sparkToString(row.linkedin_extension_enabled_at, "").trim()
-    };
-  }
-
-  async function fetchGasGxUser(accessToken) {
-    const payload = await supabaseFetchJson("/auth/v1/user", {
-      headers: { Authorization: `Bearer ${accessToken}` }
-    });
-    const user = payload && typeof payload === "object" ? payload : {};
-    return {
-      id: sparkToString(user.id, "").trim(),
-      email: sparkToString(user.email, "").trim()
-    };
-  }
-
   async function signInWithGasGxPassword(email, password) {
     const normalizedEmail = sparkToString(email, "").trim().toLowerCase();
     const normalizedPassword = sparkToString(password, "");
@@ -1410,226 +1430,6 @@ ${commentText || "(empty)"}
     return await supabaseFetchJson("/auth/v1/token?grant_type=password", {
       method: "POST",
       body: JSON.stringify({ email: normalizedEmail, password: normalizedPassword })
-    });
-  }
-
-  async function refreshGasGxSession(refreshToken) {
-    const token = sparkToString(refreshToken, "").trim();
-    if (!token) throw new Error("Missing refresh token.");
-    return await supabaseFetchJson("/auth/v1/token?grant_type=refresh_token", {
-      method: "POST",
-      body: JSON.stringify({ refresh_token: token })
-    });
-  }
-
-  function normalizeImportedGasGxSessionPayload(source, depth = 0) {
-    if (depth > 6 || source === null || source === undefined) return null;
-
-    if (typeof source === "string") {
-      const trimmed = source.trim();
-      if (!trimmed) return null;
-      try {
-        return normalizeImportedGasGxSessionPayload(JSON.parse(trimmed), depth + 1);
-      } catch (_err) {
-        return null;
-      }
-    }
-
-    if (Array.isArray(source)) {
-      for (const item of source) {
-        const normalized = normalizeImportedGasGxSessionPayload(item, depth + 1);
-        if (normalized) return normalized;
-      }
-      return null;
-    }
-
-    if (!sparkIsPlainObject(source)) return null;
-
-    const accessToken = sparkToString(source.access_token, "").trim();
-    const refreshToken = sparkToString(source.refresh_token, "").trim();
-    const user = sparkIsPlainObject(source.user)
-      ? source.user
-      : (sparkIsPlainObject(source.currentUser) ? source.currentUser : {});
-
-    if (accessToken || refreshToken) {
-      return {
-        access_token: accessToken,
-        refresh_token: refreshToken,
-        expires_at: Math.max(0, Math.floor(sparkToNumber(source.expires_at, 0))),
-        expires_in: Math.max(0, Math.floor(sparkToNumber(source.expires_in, 0))),
-        user: {
-          id: sparkToString(user.id, "").trim(),
-          email: sparkToString(user.email, "").trim()
-        }
-      };
-    }
-
-    for (const key of ["currentSession", "session", "sessionValue", "data", "value", "auth", "state"]) {
-      const nested = normalizeImportedGasGxSessionPayload(source[key], depth + 1);
-      if (nested) return nested;
-    }
-
-    for (const value of Object.values(source)) {
-      const nested = normalizeImportedGasGxSessionPayload(value, depth + 1);
-      if (nested) return nested;
-    }
-
-    return null;
-  }
-
-  async function readGasGxSessionFromTab(tabId) {
-    const scriptingApi = chrome?.scripting;
-    if (!scriptingApi?.executeScript || !Number.isInteger(tabId)) return null;
-
-    let results = null;
-    try {
-      results = await scriptingApi.executeScript({
-        target: { tabId },
-        func: (storageKey) => {
-          const isObject = (value) => Boolean(value) && typeof value === "object" && !Array.isArray(value);
-          const parseJson = (raw) => {
-            if (!raw || typeof raw !== "string") return null;
-            try {
-              return JSON.parse(raw);
-            } catch (_err) {
-              return null;
-            }
-          };
-          const normalizeSession = (value, depth = 0) => {
-            if (depth > 6 || value === null || value === undefined) return null;
-            if (typeof value === "string") {
-              const parsed = parseJson(value.trim());
-              return parsed ? normalizeSession(parsed, depth + 1) : null;
-            }
-            if (Array.isArray(value)) {
-              for (const item of value) {
-                const nested = normalizeSession(item, depth + 1);
-                if (nested) return nested;
-              }
-              return null;
-            }
-            if (!isObject(value)) return null;
-
-            const accessToken = String(value.access_token || "").trim();
-            const refreshToken = String(value.refresh_token || "").trim();
-            const user = isObject(value.user) ? value.user : (isObject(value.currentUser) ? value.currentUser : {});
-
-            if (accessToken || refreshToken) {
-              return {
-                access_token: accessToken,
-                refresh_token: refreshToken,
-                expires_at: Math.max(0, Math.floor(Number(value.expires_at || 0) || 0)),
-                expires_in: Math.max(0, Math.floor(Number(value.expires_in || 0) || 0)),
-                user: {
-                  id: String(user.id || "").trim(),
-                  email: String(user.email || "").trim()
-                }
-              };
-            }
-
-            for (const key of ["currentSession", "session", "sessionValue", "data", "value", "auth", "state"]) {
-              const nested = normalizeSession(value[key], depth + 1);
-              if (nested) return nested;
-            }
-
-            for (const nestedValue of Object.values(value)) {
-              const nested = normalizeSession(nestedValue, depth + 1);
-              if (nested) return nested;
-            }
-
-            return null;
-          };
-          const collectKeys = (storage) => {
-            const keys = [storageKey];
-            if (!storage) return keys;
-            try {
-              for (let index = 0; index < storage.length; index += 1) {
-                const key = storage.key(index);
-                if (!key) continue;
-                if (key === storageKey || /^sb-[a-z0-9-]+-auth-token$/i.test(key)) {
-                  keys.push(key);
-                }
-              }
-            } catch (_err) {}
-            return Array.from(new Set(keys));
-          };
-
-          const storages = [
-            { label: "localStorage", area: window.localStorage },
-            { label: "sessionStorage", area: window.sessionStorage }
-          ];
-
-          for (const { label, area } of storages) {
-            if (!area) continue;
-            for (const key of collectKeys(area)) {
-              let raw = "";
-              try {
-                raw = area.getItem(key) || "";
-              } catch (_err) {
-                raw = "";
-              }
-              if (!raw) continue;
-              const normalized = normalizeSession(parseJson(raw));
-              if (normalized) {
-                return {
-                  ...normalized,
-                  __storageArea: label,
-                  __storageKey: key
-                };
-              }
-            }
-          }
-
-          return null;
-        },
-        args: [GASGX_MAIN_SITE_STORAGE_KEY]
-      });
-    } catch (_err) {
-      results = null;
-    }
-
-    return normalizeImportedGasGxSessionPayload(Array.isArray(results) ? results[0]?.result : null);
-  }
-
-  async function waitForTabLoadComplete(tabId, timeoutMs = 8_000) {
-    const tabsApi = chrome?.tabs;
-    if (!tabsApi?.get || !tabsApi?.onUpdated) return false;
-
-    try {
-      const current = await new Promise((resolve) => {
-        try {
-          tabsApi.get(tabId, (tab) => resolve(chrome?.runtime?.lastError ? null : tab));
-        } catch (_err) {
-          resolve(null);
-        }
-      });
-      if (current?.status === "complete") return true;
-    } catch (_err) {}
-
-    return await new Promise((resolve) => {
-      const cleanup = () => {
-        try {
-          tabsApi.onUpdated.removeListener(handleUpdate);
-        } catch (_err) {}
-        clearTimeout(timer);
-      };
-      const handleUpdate = (updatedTabId, changeInfo) => {
-        if (updatedTabId !== tabId) return;
-        if (changeInfo?.status !== "complete") return;
-        cleanup();
-        resolve(true);
-      };
-      const timer = setTimeout(() => {
-        cleanup();
-        resolve(false);
-      }, timeoutMs);
-
-      try {
-        tabsApi.onUpdated.addListener(handleUpdate);
-      } catch (_err) {
-        cleanup();
-        resolve(false);
-      }
     });
   }
 
@@ -1664,71 +1464,8 @@ ${commentText || "(empty)"}
     return sanitizeLegacyPreferences(parseStoredObject(value, getDefaultLegacyPreferences()));
   }
 
-  async function tryImportGasGxSessionViaProbeTab() {
-    const tabsApi = chrome?.tabs;
-    if (!tabsApi?.create || !tabsApi?.remove) return null;
-
-    const now = Date.now();
-    if (!isPopupContext() || now - gasgxSessionImportState.lastPopupProbeAt < GASGX_POPUP_IMPORT_PROBE_COOLDOWN_MS) {
-      return null;
-    }
-    gasgxSessionImportState.lastPopupProbeAt = now;
-
-    let probeTabId = null;
-    try {
-      const probeTab = await new Promise((resolve) => {
-        try {
-          tabsApi.create({ url: GASGX_MAIN_SITE_ACCOUNT_URL, active: false }, (tab) => resolve(tab || null));
-        } catch (_err) {
-          resolve(null);
-        }
-      });
-
-      probeTabId = Number(probeTab?.id);
-      if (!Number.isInteger(probeTabId)) return null;
-
-      await waitForTabLoadComplete(probeTabId);
-      return await readGasGxSessionFromTab(probeTabId);
-    } catch (_err) {
-      return null;
-    } finally {
-      if (Number.isInteger(probeTabId)) {
-        try {
-          tabsApi.remove(probeTabId, () => void chrome?.runtime?.lastError);
-        } catch (_err) {}
-      }
-    }
-  }
-
-  async function tryImportGasGxSessionFromOpenTabs() {
-    const tabsApi = chrome?.tabs;
-    if (!tabsApi?.query) return null;
-
-    const tabs = await new Promise((resolve) => {
-      try {
-        tabsApi.query({
-          url: GASGX_SITE_URL_PATTERNS
-        }, (items) => resolve(Array.isArray(items) ? items : []));
-      } catch (_err) {
-        resolve([]);
-      }
-    });
-
-    for (const tab of tabs) {
-      const tabId = Number(tab?.id);
-      if (!Number.isInteger(tabId)) continue;
-      const session = await readGasGxSessionFromTab(tabId);
-      if (session) return session;
-    }
-
-    if (isPopupContext()) {
-      return null;
-    }
-
-    return await tryImportGasGxSessionViaProbeTab();
-  }
-
   async function clearGasGxAuthSnapshot() {
+    await persistGasGxLocalSignedInFlag(false);
     return await persistGasGxAuthSnapshot(getDefaultGasGxAuthSnapshot());
   }
 
@@ -1739,15 +1476,16 @@ ${commentText || "(empty)"}
     const userFromSession = sessionPayload?.user && typeof sessionPayload.user === "object" ? sessionPayload.user : {};
     const userId = sparkToString(userFromSession.id, "").trim();
     const userEmail = sparkToString(userFromSession.email, "").trim();
-    const user = userId && userEmail ? { id: userId, email: userEmail } : await fetchGasGxUser(accessToken);
-    const entitlement = await fetchGasGxProfileEntitlement(accessToken, user.id);
+    const user = userId || userEmail
+      ? { id: userId, email: userEmail }
+      : { id: "", email: "" };
     return sanitizeGasGxAuthSnapshot({
-      status: entitlement.enabled ? "enabled" : "signed_in_but_not_enabled",
+      status: "enabled",
       userId: user.id,
       email: user.email,
-      plan: entitlement.plan || "",
-      profileEnabled: entitlement.enabled,
-      enabledAt: entitlement.enabledAt || "",
+      plan: "GasGx Local",
+      profileEnabled: true,
+      enabledAt: new Date().toISOString(),
       accessToken,
       refreshToken,
       sessionExpiresAt: expiresAt * 1000,
@@ -1758,58 +1496,18 @@ ${commentText || "(empty)"}
 
   async function validatePersistedGasGxAuthSnapshot(snapshot) {
     const current = sanitizeGasGxAuthSnapshot(snapshot);
-    if (!current.refreshToken && !current.accessToken) {
-      const importedSession = await tryImportGasGxSessionFromOpenTabs();
-      if (importedSession) {
-        return await validatePersistedGasGxAuthSnapshot({
-          status: "loading",
-          userId: sparkToString(importedSession?.user?.id, "").trim(),
-          email: sparkToString(importedSession?.user?.email, "").trim(),
-          accessToken: sparkToString(importedSession?.access_token, "").trim(),
-          refreshToken: sparkToString(importedSession?.refresh_token, "").trim(),
-          sessionExpiresAt: Math.max(
-            0,
-            Math.floor(
-              (sparkToNumber(importedSession?.expires_at, 0) || ((Date.now() / 1000) + sparkToNumber(importedSession?.expires_in, 0))) * 1000
-            )
-          )
-        });
-      }
-      return getDefaultGasGxAuthSnapshot();
-    }
-    try {
-      const now = Date.now();
-      let sessionPayload = {
-        access_token: current.accessToken,
-        refresh_token: current.refreshToken,
-        expires_at: Math.floor(current.sessionExpiresAt / 1000),
-        user: { id: current.userId, email: current.email }
-      };
-      const willExpireSoon = !current.accessToken || !current.sessionExpiresAt || current.sessionExpiresAt <= now + 60000;
-      if (willExpireSoon) {
-        sessionPayload = await refreshGasGxSession(current.refreshToken);
-      }
-      return await buildGasGxSnapshotFromSession(sessionPayload);
-    } catch (error) {
+    if (current.status === "enabled" && current.profileEnabled) {
       return sanitizeGasGxAuthSnapshot({
-        ...getDefaultGasGxAuthSnapshot(),
-        status: "auth_error",
-        errorMessage: sparkToString(error?.message, "GasGx authentication failed.").trim()
+        ...current,
+        lastValidatedAt: current.lastValidatedAt || Date.now()
       });
     }
+    return getDefaultGasGxAuthSnapshot();
   }
 
   function canReusePersistedGasGxAuthSnapshot(snapshot) {
     const current = sanitizeGasGxAuthSnapshot(snapshot);
-    if (!["enabled", "signed_in_but_not_enabled"].includes(current.status)) return false;
-    if (!current.accessToken && !current.refreshToken) return false;
-    if (!current.lastValidatedAt) return false;
-
-    const now = Date.now();
-    const validatedRecently = now - current.lastValidatedAt <= GASGX_AUTH_REUSE_WINDOW_MS;
-    const expiresSafelyLater = !current.sessionExpiresAt || current.sessionExpiresAt > now + 5 * 60 * 1000;
-
-    return validatedRecently && expiresSafelyLater;
+    return current.status === "enabled" && !!current.profileEnabled;
   }
 
   async function ensureGasGxAuthSnapshotLoaded(forceRefresh = false) {
@@ -2710,7 +2408,7 @@ ${commentText || "(empty)"}
 
     const plan = sparkToString(account.plan, "").trim()
       || sparkToString(snapshot.plan, "").trim()
-      || (isGasGxExtensionEnabled(snapshot) ? "GasGx Enabled" : "");
+      || (isGasGxExtensionEnabled(snapshot) ? "GasGx Local" : "");
     const subscriberId = sparkToString(account.subscriberId, "").trim()
       || sparkToString(snapshot.userId, "").trim()
       || TEST_SUBSCRIBER_ID;
@@ -3179,7 +2877,18 @@ ${commentText || "(empty)"}
 
   async function syncGasGxDerivedStorage() {
     if (!STORAGE_AREAS.length) return;
+    if (gasgxDerivedStorageSyncPromise) {
+      return await gasgxDerivedStorageSyncPromise;
+    }
+
+    const now = Date.now();
+    if (isPopupContext() && now - gasgxDerivedStorageLastRunAt < 5000) {
+      return;
+    }
+
+    gasgxDerivedStorageSyncPromise = (async () => {
     const snapshot = await ensureGasGxAuthSnapshotLoaded();
+    const pendingWrites = [];
 
     for (const area of STORAGE_AREAS) {
       const accountObj = await getStorageValue(area, ACCOUNT_KEY);
@@ -3197,10 +2906,47 @@ ${commentText || "(empty)"}
         continue;
       }
 
-      await setStorageValue(area, {
-        [ACCOUNT_KEY]: nextAccountRaw,
-        [UI_KEY]: nextUiRaw
+      pendingWrites.push({
+        area,
+        areaName: sparkToString(area?.__ceAreaName, ""),
+        account: nextAccountRaw,
+        ui: nextUiRaw
       });
+    }
+
+    const nextSignature = stringifyStoredObject({
+      status: sparkToString(snapshot?.status, ""),
+      userId: sparkToString(snapshot?.userId, ""),
+      email: sparkToString(snapshot?.email, ""),
+      plan: sparkToString(snapshot?.plan, ""),
+      profileEnabled: !!snapshot?.profileEnabled,
+      writes: pendingWrites.map((item) => ({
+        areaName: item.areaName,
+        account: item.account,
+        ui: item.ui
+      }))
+    });
+
+    if (nextSignature === gasgxDerivedStorageLastSignature) {
+      gasgxDerivedStorageLastRunAt = Date.now();
+      return;
+    }
+
+    for (const item of pendingWrites) {
+      await setStorageValue(item.area, {
+        [ACCOUNT_KEY]: item.account,
+        [UI_KEY]: item.ui
+      });
+    }
+
+    gasgxDerivedStorageLastRunAt = Date.now();
+    gasgxDerivedStorageLastSignature = nextSignature;
+    })();
+
+    try {
+      return await gasgxDerivedStorageSyncPromise;
+    } finally {
+      gasgxDerivedStorageSyncPromise = null;
     }
   }
 
@@ -3621,7 +3367,8 @@ ${commentText || "(empty)"}
     unlockDisabledControls();
     enforceBrandTitle();
     replaceLicensedToLabel();
-    installLegacyPreferencesPersistence();
+    const controlledPreferencesRoot = document.getElementById("ce-controlled-preferences-root");
+    if (controlledPreferencesRoot) controlledPreferencesRoot.remove();
     ensureLegacyPreferencesMonitor();
     if (isPreferencesTabActive()) {
       void applyLegacyPreferencesToDom();
@@ -3820,6 +3567,14 @@ ${commentText || "(empty)"}
     return fallback && fallback !== document.body ? fallback : null;
   }
 
+  function getLegacyPreferencesHost() {
+    const anchor = findPreferenceAnchorRow();
+    if (!anchor) {
+      return document.querySelector("#__plasmo .tab-content, #__plasmo .tabs-content, #__plasmo .accordion, #__plasmo .content, #__plasmo main, #__plasmo");
+    }
+    return anchor.parentElement || anchor;
+  }
+
   function isPreferencesTabActive() {
     const buttons = Array.from(document.querySelectorAll("#__plasmo button, #__plasmo [role='tab'], #__plasmo .MuiButtonBase-root"));
     for (const button of buttons) {
@@ -3832,6 +3587,251 @@ ${commentText || "(empty)"}
       return isSelected || activeByClass;
     }
     return false;
+  }
+
+  function getLegacyPreferenceToneOptions() {
+    const select = findLegacyPreferenceSelect([/^语气$/, /^tone$/i]) || getVisibleLegacySelects()[0];
+    const options = Array.from(select?.options || []).map((option) => ({
+      value: sparkToString(option.value, "").trim(),
+      label: sparkToString(option.textContent, "").trim() || sparkToString(option.value, "").trim()
+    })).filter((option) => option.value);
+    if (options.length) return options;
+    return [
+      { value: "Polite", label: "Polite" },
+      { value: "Casual", label: "Casual" },
+      { value: "Friendly", label: "Friendly" },
+      { value: "Professional", label: "Professional" }
+    ];
+  }
+
+  function getLegacyPreferenceVoiceGenderOptions() {
+    const select = findLegacyPreferenceSelect([/语气性别/, /voice gender/i]) || getVisibleLegacySelects()[1];
+    const options = Array.from(select?.options || []).map((option) => ({
+      value: sparkToString(option.value, "").trim(),
+      label: sparkToString(option.textContent, "").trim() || sparkToString(option.value, "").trim()
+    })).filter((option) => option.value);
+    if (options.length) return options;
+    return [
+      { value: "NotSpecified", label: "Not Specified" },
+      { value: "Male", label: "Male" },
+      { value: "Female", label: "Female" }
+    ];
+  }
+
+  function hideLegacyPreferencesSurface() {
+    const rows = Array.from(document.querySelectorAll("#__plasmo .info-flex, #__plasmo label, #__plasmo .MuiFormControl-root, #__plasmo .MuiSlider-root"))
+      .filter((element) => !element.closest("#ce-controlled-preferences-root, #ce-preferences-auto-send-root, #ce-reply-prompt-hint-root"));
+    const matchers = [
+      /comment\/reply in english/i,
+      /use emojis/i,
+      /open-ended/i,
+      /keep it short/i,
+      /reply only with ack/i,
+      /on my own posts/i,
+      /^tone$/i,
+      /voice gender/i,
+      /^length[:：]?/i,
+      /评论\/回复使用英文/,
+      /使用表情/,
+      /开放式结尾/,
+      /保持简短回复/,
+      /语气性别/,
+      /^语气$/,
+      /^长度[:：]?/
+    ];
+    for (const row of rows) {
+      const text = normalizePopupUiText(row.textContent);
+      if (!text || !matchers.some((matcher) => matcher.test(text))) continue;
+      row.style.display = "none";
+      row.style.margin = "0";
+      row.style.padding = "0";
+      row.style.minHeight = "0";
+      row.dataset.ceLegacyPreferenceHidden = "true";
+    }
+  }
+
+  function buildControlledPreferenceField(documentRef, preferences, toneOptions, voiceOptions) {
+    const root = documentRef.createElement("div");
+    root.id = "ce-controlled-preferences-root";
+    root.style.cssText = "margin:8px 0 12px;padding:12px;border:1px solid rgba(27,183,110,.18);border-radius:12px;background:rgba(10,21,18,.04);display:grid;gap:10px;";
+
+    const title = documentRef.createElement("div");
+    title.textContent = currentLang === "zh-CN" ? "偏好设置（Runtime 接管持久化）" : "Preferences (runtime-managed persistence)";
+    title.style.cssText = "font-weight:700;font-size:13px;";
+    root.appendChild(title);
+
+    const subtitle = documentRef.createElement("div");
+    subtitle.textContent = currentLang === "zh-CN"
+      ? "这里的修改会直接写入 runtime canonical preferences，重新打开 popup 后仍会保留。"
+      : "Changes here write directly to the runtime canonical preferences and persist after popup reopen.";
+    subtitle.style.cssText = "font-size:11px;opacity:.74;line-height:1.45;";
+    root.appendChild(subtitle);
+
+    const fieldsWrap = documentRef.createElement("div");
+    fieldsWrap.style.cssText = "display:grid;gap:8px;";
+    root.appendChild(fieldsWrap);
+
+    const fields = [
+      {
+        key: "commentLength",
+        label: currentLang === "zh-CN" ? "评论长度" : "Comment length",
+        type: "select",
+        value: String(Math.max(1, Math.min(5, sparkToNumber(preferences.commentLength, 2)))),
+        options: [
+          { value: "1", label: "1" },
+          { value: "2", label: "2" },
+          { value: "3", label: "3" },
+          { value: "4", label: "4" },
+          { value: "5", label: "5" }
+        ]
+      },
+      {
+        key: "commentTone",
+        label: currentLang === "zh-CN" ? "语气" : "Tone",
+        type: "select",
+        value: sparkToString(preferences.commentTone, "Polite"),
+        options: toneOptions
+      },
+      {
+        key: "voiceGender",
+        label: currentLang === "zh-CN" ? "语气性别" : "Voice gender",
+        type: "select",
+        value: sparkToString(preferences.voiceGender, "NotSpecified"),
+        options: voiceOptions
+      },
+      {
+        key: "engageInEnglish",
+        label: currentLang === "zh-CN" ? "评论 / 回复使用英文" : "Comment / reply in English",
+        type: "checkbox",
+        value: !!preferences.engageInEnglish
+      },
+      {
+        key: "commentUseEmojis",
+        label: currentLang === "zh-CN" ? "使用表情" : "Use emojis",
+        type: "checkbox",
+        value: !!preferences.commentUseEmojis
+      },
+      {
+        key: "commentEndWithQuestion",
+        label: currentLang === "zh-CN" ? "开放式结尾" : "Open-ended ending",
+        type: "checkbox",
+        value: !!preferences.commentEndWithQuestion
+      },
+      {
+        key: "replyKeepItShort",
+        label: currentLang === "zh-CN" ? "保持简短回复" : "Keep replies short",
+        type: "checkbox",
+        value: !!preferences.replyKeepItShort
+      },
+      {
+        key: "replyAckIfMyPost",
+        label: currentLang === "zh-CN" ? "自己的帖子仅回复确认语" : "Ack only on my own posts",
+        type: "checkbox",
+        value: !!preferences.replyAckIfMyPost
+      }
+    ];
+
+    for (const field of fields) {
+      const row = documentRef.createElement("label");
+      row.style.cssText = field.type === "checkbox"
+        ? "display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.03);"
+        : "display:grid;gap:6px;font-size:12px;";
+      const caption = documentRef.createElement("span");
+      caption.textContent = field.label;
+      caption.style.cssText = field.type === "checkbox"
+        ? "font-weight:600;line-height:1.35;flex:1;"
+        : "font-weight:600;";
+      row.appendChild(caption);
+
+      let control;
+      if (field.type === "checkbox") {
+        control = documentRef.createElement("input");
+        control.type = "checkbox";
+        control.checked = !!field.value;
+        control.style.cssText = "width:16px;height:16px;flex:0 0 auto;";
+      } else {
+        control = documentRef.createElement("select");
+        control.style.cssText = "width:100%;min-height:34px;border-radius:10px;border:1px solid rgba(27,183,110,.22);padding:6px 10px;background:rgba(255,255,255,.03);box-sizing:border-box;";
+        for (const option of field.options) {
+          const optionEl = documentRef.createElement("option");
+          optionEl.value = option.value;
+          optionEl.textContent = option.label;
+          if (option.value === field.value) optionEl.selected = true;
+          control.appendChild(optionEl);
+        }
+      }
+
+      control.dataset.cePrefKey = field.key;
+      row.appendChild(control);
+      fieldsWrap.appendChild(row);
+    }
+
+    return root;
+  }
+
+  function getControlledPreferencesPanelSignature(preferences, toneOptions, voiceOptions) {
+    return stringifyStoredObject({
+      lang: currentLang,
+      preferences: sanitizeLegacyPreferences(preferences),
+      toneOptions: Array.isArray(toneOptions) ? toneOptions : [],
+      voiceOptions: Array.isArray(voiceOptions) ? voiceOptions : []
+    });
+  }
+
+  async function mountControlledLegacyPreferencesPanel() {
+    if (!document.body) return;
+    const existing = document.getElementById("ce-controlled-preferences-root");
+    const anchor = findPreferenceAnchorRow();
+    if (!isPreferencesTabActive()) {
+      if (existing) existing.style.display = "none";
+      if (document.body) {
+        delete document.body.dataset.ceLegacyPrefsApplied;
+        legacyPreferencesLastSnapshot = "";
+      }
+      return;
+    }
+
+    const host = getLegacyPreferencesHost();
+    if (!host) return;
+
+    hideLegacyPreferencesSurface();
+    const preferences = await loadLegacyPreferences();
+    const toneOptions = getLegacyPreferenceToneOptions();
+    const voiceOptions = getLegacyPreferenceVoiceGenderOptions();
+    const nextSignature = getControlledPreferencesPanelSignature(preferences, toneOptions, voiceOptions);
+
+    if (existing && existing.dataset.cePanelSignature === nextSignature) {
+      existing.style.display = "";
+      document.body.dataset.ceLegacyPrefsApplied = "true";
+      return;
+    }
+
+    if (existing) existing.remove();
+    const panel = buildControlledPreferenceField(document, preferences, toneOptions, voiceOptions);
+    panel.dataset.cePanelSignature = nextSignature;
+    panel.addEventListener("change", async (event) => {
+      const target = event.target;
+      const key = sparkToString(target?.dataset?.cePrefKey, "").trim();
+      if (!key) return;
+      const patch = {
+        [key]: target instanceof HTMLInputElement && target.type === "checkbox"
+          ? !!target.checked
+          : sparkToString(target?.value, "")
+      };
+      if (key === "commentLength") {
+        patch[key] = Math.max(1, Math.min(5, Math.round(sparkToNumber(target?.value, 2))));
+      }
+      const next = await persistLegacyPreferences(patch);
+      legacyPreferencesLastSnapshot = serializeLegacyPreferencesSnapshot(next);
+      panel.dataset.cePanelSignature = getControlledPreferencesPanelSignature(next, toneOptions, voiceOptions);
+    });
+
+    if (anchor && anchor.parentElement === host) {
+      host.insertBefore(panel, anchor);
+    } else {
+      host.insertBefore(panel, host.firstChild || null);
+    }
+    document.body.dataset.ceLegacyPrefsApplied = "true";
   }
 
   function findLegacyPreferenceCheckbox(labelMatchers) {
@@ -4110,6 +4110,7 @@ ${commentText || "(empty)"}
     const autoToggle = document.createElement("input");
     autoToggle.id = "ce-pref-auto-send-toggle";
     autoToggle.type = "checkbox";
+    toggleLabel.setAttribute("for", autoToggle.id);
     autoToggle.addEventListener("change", async () => {
       autoSendEnabled = !!autoToggle.checked;
       await persistAutoSendSettings();
@@ -4128,6 +4129,7 @@ ${commentText || "(empty)"}
     const randomToneToggle = document.createElement("input");
     randomToneToggle.id = "ce-pref-random-tone-toggle";
     randomToneToggle.type = "checkbox";
+    randomToneLabel.setAttribute("for", randomToneToggle.id);
     randomToneToggle.addEventListener("change", async () => {
       randomToneEnabled = !!randomToneToggle.checked;
       await persistRandomStrategySettings();
@@ -4146,6 +4148,7 @@ ${commentText || "(empty)"}
     const randomLengthToggle = document.createElement("input");
     randomLengthToggle.id = "ce-pref-random-length-toggle";
     randomLengthToggle.type = "checkbox";
+    randomLengthLabel.setAttribute("for", randomLengthToggle.id);
     randomLengthToggle.addEventListener("change", async () => {
       randomLengthEnabled = !!randomLengthToggle.checked;
       await persistRandomStrategySettings();
@@ -4366,25 +4369,25 @@ ${commentText || "(empty)"}
     const isError = snapshot.status === "auth_error";
     const title = currentLang === "zh-CN" ? "GasGx 账号" : "GasGx Account";
     const statusText = enabled
-      ? (currentLang === "zh-CN" ? "已启用" : "Enabled")
+      ? (currentLang === "zh-CN" ? "本地已登录" : "Signed in locally")
       : isBlocked
-        ? (currentLang === "zh-CN" ? "待开通" : "Pending entitlement")
+        ? (currentLang === "zh-CN" ? "本地状态受限" : "Local state blocked")
         : isError
-          ? (currentLang === "zh-CN" ? "登录异常" : "Auth error")
-          : (currentLang === "zh-CN" ? "需要登录" : "Sign-in required");
+          ? (currentLang === "zh-CN" ? "登录异常" : "Sign-in error")
+          : (currentLang === "zh-CN" ? "需要本地登录" : "Local sign-in required");
     const summaryText = enabled
       ? (currentLang === "zh-CN"
-        ? "当前扩展已切换为 GasGx 账号体系。"
-        : "This popup now uses your GasGx account system.")
+        ? "当前扩展直接使用本地保存的 GasGx 登录状态和偏好配置。"
+        : "This popup now uses the locally stored GasGx sign-in state and preferences.")
       : isBlocked
         ? (currentLang === "zh-CN"
-          ? "当前 GasGx 账号已登录，但还没有开通 LinkedIn Automatic Comments 权限。"
-          : "This GasGx account is signed in, but LinkedIn Automatic Comments is not enabled yet.")
+          ? "当前本地账号状态不可用，请切换账号重新登录。"
+          : "The current local account state is unavailable. Please switch accounts and sign in again.")
         : isError
-          ? (snapshot.errorMessage || (currentLang === "zh-CN" ? "GasGx 登录失败，请重新验证。" : "GasGx sign-in failed. Please verify again."))
+          ? (snapshot.errorMessage || (currentLang === "zh-CN" ? "GasGx 登录失败，请重新登录。" : "GasGx sign-in failed. Please sign in again."))
           : (currentLang === "zh-CN"
-            ? "请使用 GasGx 账号登录并验证扩展权限。"
-            : "Use your GasGx account to sign in and verify extension access.");
+            ? "请使用 GasGx 账号登录，扩展会把登录状态和偏好保存在本地。"
+            : "Sign in with your GasGx account. The extension will keep the sign-in state and preferences locally.");
     const emailText = snapshot.email || (currentLang === "zh-CN" ? "未连接账号" : "No account connected");
     const primaryActionLabel = enabled
       ? (currentLang === "zh-CN" ? "退出登录" : "Sign out")
@@ -4425,6 +4428,8 @@ ${commentText || "(empty)"}
       #${GASGX_AUTH_OVERLAY_ID} .ce-subtitle { font-size: 12px; line-height: 1.5; color: rgba(230,244,234,0.75); margin-bottom: 16px; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-error { min-height: 18px; color: #ff9f9f; font-size: 12px; margin-bottom: 10px; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-success { color: #9df5b1; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-inline-status { display: inline-flex; align-items: center; gap: 8px; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-inline-spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(102,255,153,0.2); border-top-color: #66ff99; animation: ce-gasgx-spin 0.9s linear infinite; flex: 0 0 auto; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-label { font-size: 12px; color: rgba(230,244,234,0.86); }
       #${GASGX_AUTH_OVERLAY_ID} .ce-input { width: 100%; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; background: rgba(255,255,255,0.06); color: #fff; padding: 10px 12px; font-size: 13px; box-sizing: border-box; }
@@ -4491,9 +4496,10 @@ ${commentText || "(empty)"}
     const passwordInput = form.querySelector('input[name="password"]');
     const errorNode = form.querySelector("[data-role='error']");
     const submitBtn = form.querySelector("button[type='submit']");
+    form.dataset.ceLoading = "true";
     if (submitBtn) submitBtn.disabled = true;
     if (errorNode) {
-      errorNode.textContent = "Signing in to GasGx...";
+      errorNode.innerHTML = '<span class="ce-inline-status"><span class="ce-inline-spinner" aria-hidden="true"></span><span>Signing in to GasGx...</span></span>';
       errorNode.classList.remove("ce-success");
     }
     try {
@@ -4509,6 +4515,7 @@ ${commentText || "(empty)"}
       });
       await syncGasGxDerivedStorage();
     } finally {
+      delete form.dataset.ceLoading;
       if (submitBtn) submitBtn.disabled = false;
     }
   }
@@ -4527,10 +4534,10 @@ ${commentText || "(empty)"}
     overlay.innerHTML = `
       <div class="ce-card ce-card-loading">
         <div class="ce-loading-spinner" aria-hidden="true"></div>
-        <div class="ce-title">${currentLang === "zh-CN" ? "正在确认登录状态" : "Checking your sign-in status"}</div>
+        <div class="ce-title">${currentLang === "zh-CN" ? "正在读取本地登录状态" : "Loading local sign-in state"}</div>
         <div class="ce-subtitle">${currentLang === "zh-CN"
-          ? "正在同步 GasGx 账号与扩展权限，请稍候片刻。"
-          : "Syncing your GasGx account and extension access. This should only take a moment."}</div>
+          ? "扩展正在读取本地保存的账号状态与偏好配置。"
+          : "Loading the locally stored account state and preferences."}</div>
       </div>`;
   }
 
@@ -4556,10 +4563,10 @@ ${commentText || "(empty)"}
     overlay.setAttribute("data-mode", "active");
     overlay.innerHTML = `
       <div class="ce-card">
-        <div class="ce-title">GasGx account verification</div>
-        <div class="ce-subtitle">Only GasGx accounts with LinkedIn Automatic Comments entitlement can use this extension.</div>
-        <div class="ce-error ${!isError && !isBlocked ? "ce-success" : ""}" data-role="status">${isBlocked ? "This GasGx account is signed in, but the extension is not enabled yet." : isError ? (snapshot.errorMessage || "GasGx authentication failed. Please sign in again.") : "Sign in with your GasGx account. Non-enabled accounts will remain blocked."}</div>
-        ${isBlocked ? `<div class="ce-row"><button type="button" class="ce-btn ce-btn-primary" id="ce-gasgx-switch-account">Switch account</button><a class="ce-link" href="${GASGX_EXTENSION_CONTACT_URL}" target="_blank" rel="noreferrer">Contact GasGx</a></div>` : `<form id="ce-gasgx-sign-in-form"><div class="ce-field"><label class="ce-label">GasGx email</label><input class="ce-input" type="email" name="email" autocomplete="username" placeholder="you@gasgx.com" value="${snapshot.email || ""}"></div><div class="ce-field"><label class="ce-label">Password</label><input class="ce-input" type="password" name="password" autocomplete="current-password" placeholder="Enter password"></div><div class="ce-error" data-role="error">${isError ? (snapshot.errorMessage || "") : ""}</div><div class="ce-row"><button type="submit" class="ce-btn ce-btn-primary">Sign in and verify</button><a class="ce-link" href="${GASGX_EXTENSION_CONTACT_URL}" target="_blank" rel="noreferrer">Open GasGx</a></div></form>`}
+        <div class="ce-title">GasGx local sign-in</div>
+        <div class="ce-subtitle">After sign-in succeeds once inside the extension, this popup will use the locally stored account state and preferences.</div>
+        <div class="ce-error ${!isError && !isBlocked ? "ce-success" : ""}" data-role="status">${isBlocked ? "This local account state is blocked. Please switch account." : isError ? (snapshot.errorMessage || "GasGx sign-in failed. Please sign in again.") : "Sign in with your GasGx account. The extension will keep the account state locally after success."}</div>
+        ${isBlocked ? `<div class="ce-row"><button type="button" class="ce-btn ce-btn-primary" id="ce-gasgx-switch-account">Switch account</button><a class="ce-link" href="${GASGX_EXTENSION_CONTACT_URL}" target="_blank" rel="noreferrer">Contact GasGx</a></div>` : `<form id="ce-gasgx-sign-in-form"><div class="ce-field"><label class="ce-label">GasGx email</label><input class="ce-input" type="email" name="email" autocomplete="username" placeholder="you@gasgx.com" value="${snapshot.email || ""}"></div><div class="ce-field"><label class="ce-label">Password</label><input class="ce-input" type="password" name="password" autocomplete="current-password" placeholder="Enter password"></div><div class="ce-error" data-role="error">${isError ? (snapshot.errorMessage || "") : ""}</div><div class="ce-row"><button type="submit" class="ce-btn ce-btn-primary">Sign in</button><a class="ce-link" href="${GASGX_EXTENSION_CONTACT_URL}" target="_blank" rel="noreferrer">Open GasGx</a></div></form>`}
       </div>`;
     const form = document.getElementById("ce-gasgx-sign-in-form");
     form?.addEventListener("submit", (event) => { void handleGasGxPopupSignInSubmit(event); });
@@ -4612,36 +4619,39 @@ ${commentText || "(empty)"}
 
     void Promise.all([
       loadPersistedGasGxAuthSnapshot(),
-      loadGasGxSignedOutFlag()
-    ]).then(([persisted, signedOut]) => {
-      const hasPersistedAuth = !!(
-        persisted?.accessToken
-        || persisted?.refreshToken
-        || persisted?.status === "enabled"
-        || persisted?.status === "signed_in_but_not_enabled"
-      );
+      loadGasGxSignedOutFlag(),
+      loadGasGxLocalSignedInFlag()
+    ]).then(async ([persisted, signedOut, localSignedIn]) => {
+      const restoredSnapshot = sanitizeGasGxAuthSnapshot({
+        ...persisted,
+        status: localSignedIn ? "enabled" : persisted?.status,
+        profileEnabled: localSignedIn ? true : persisted?.profileEnabled,
+        plan: sparkToString(persisted?.plan, "").trim() || (localSignedIn ? "GasGx Local" : "")
+      });
+      const hasPersistedAuth = hasUsableLocalGasGxAuth(restoredSnapshot, localSignedIn);
 
-      if (hasPersistedAuth && !signedOut) {
-        gasgxAuthState.snapshot = persisted;
+      if (hasPersistedAuth) {
+        if (signedOut) {
+          await persistGasGxSignedOutFlag(false);
+        }
+        gasgxAuthState.snapshot = restoredSnapshot;
         gasgxAuthState.loaded = true;
         renderAuth();
         queueApplyRuntime();
         return;
       }
 
-      if (!signedOut) {
-        renderGasGxPopupLoading();
-      } else {
-        gasgxAuthState.snapshot = persisted;
-        gasgxAuthState.loaded = true;
-        renderAuth();
-      }
+      gasgxAuthState.snapshot = sanitizeGasGxAuthSnapshot({
+        ...persisted,
+        status: signedOut ? "anonymous" : persisted?.status
+      });
+      gasgxAuthState.loaded = true;
+      renderAuth();
     }).catch(() => {
-      renderGasGxPopupLoading();
+      renderAuth();
     });
 
-    void ensureGasGxAuthSnapshotLoaded().then(async () => {
-      await syncGasGxDerivedStorage();
+    void syncGasGxDerivedStorage().then(() => {
       renderAuth();
     }).catch(() => {
       renderAuth();
@@ -4662,10 +4672,10 @@ ${commentText || "(empty)"}
     });
   }
 
-  void ensureGasGxAuthSnapshotLoaded().then(() => syncGasGxDerivedStorage());
+  void syncGasGxDerivedStorage();
   if (!isPopupContext()) {
     setInterval(() => {
-      void ensureGasGxAuthSnapshotLoaded(true).then(() => syncGasGxDerivedStorage());
+      void syncGasGxDerivedStorage();
     }, 60_000);
   }
 

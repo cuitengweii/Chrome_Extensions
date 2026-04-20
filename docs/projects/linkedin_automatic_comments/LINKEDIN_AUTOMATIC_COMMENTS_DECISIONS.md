@@ -3,248 +3,117 @@
 ## 2026-03-29 | Runtime Overlay Strategy
 
 ### Decision
-- Use a runtime overlay patch (`runtime.patch.js` + `popup-custom.css`) instead of editing bundled business modules directly.
-- Inject patch before popup bundle and preload it in content scripts to keep behavior consistent.
+- Use a runtime overlay patch (`runtime.patch.js` + `popup-custom.css`) instead of editing bundled business modules directly where possible.
+- Inject the patch before legacy popup/content behavior so compatibility logic can normalize storage and UI boundaries consistently.
 
 ### Why
-- Current project is distribution output (`popup.*.js`, `contents.*.js`) with no editable source tree.
-- Request explicitly constrained scope to style/language/feature gating and required no UI layout adjustment.
-- Runtime overlay minimizes risk and keeps current popup structure intact.
-
-### Stable Defaults
-- Default theme: `dark`
-- Theme options: `dark / light`
-- Default language: auto-detect (`zh-CN` for Chinese browser locales, otherwise `en`)
-- Language options: `zh-CN / en`
-- Local premium gate behavior: forced `plan=Advanced`, `isTrialEligible=true`, disabled UI controls unlocked
-
-### Trade-off
-- This is a client-side unlock and visual/i18n overlay.
-- If server-side subscription or quota checks reject requests, a deeper API-level patch would still be required in a follow-up thread.
-
-## 2026-03-29 | Unpacked Loadability Hardening
-
-### Decision
-- Keep a clean unpacked `manifest.json` by removing `key` and `update_url` fields.
-- Track required runtime artifacts for this extension in repository scope (bundle js/css, static background, icons, assets), not only patch files.
-
-### Why
-- The extension can fail to load on Chrome when unpacked metadata/config is inconsistent between machines.
-- Tracking only patch files is insufficient for a packaged-output project because core runtime bundles are mandatory load dependencies.
-
-### Stable Defaults
-- Load target remains unpacked extension at:
-  - `D:\code\Chrome_Extensions\LinkedIn automatic comments`
-- Manifest keeps only fields required for local unpacked execution.
-
-## 2026-03-29 | Naming Unification
-
-### Decision
-- Set extension display name to exactly `LinkedIn automatic comments`.
-- Keep popup title synchronized with the same name.
-
-### Why
-- Avoid mixed branding from legacy `CommenTron` naming and reduce confusion when loading/debugging in Chrome extensions page.
-
-### Stable Defaults
-- `manifest.json > name`: `LinkedIn automatic comments`
-- `popup.html > title`: `LinkedIn automatic comments`
+- The project is maintained as packaged distribution output, not source-level modules.
+- Small-scope runtime intervention is safer than broad bundle rewrites when the original source tree is unavailable.
 
 ## 2026-03-29 | Storage Serialization Compatibility
 
 ### Decision
-- Persist patched `account` payload in `chrome.storage` as JSON string, not raw object.
-- Add runtime `storage.get` normalization hook to convert legacy object-shaped account values to JSON string on read path.
+- Keep legacy storage payloads compatible with the bundled extension runtime.
+- Prefer serialized compatibility shims in `runtime.patch.js` instead of silently changing key meaning or payload shape.
 
 ### Why
-- Extension storage layer (`@rocket/storage`) calls `JSON.parse` for objects loaded with `getObject`.
-- Raw object writes from runtime patch caused popup boot failure with `SyntaxError: "[object Object]" is not valid JSON`.
+- The bundled popup/content logic still expects legacy storage contracts.
+- Raw object/string drift caused popup startup crashes and repeated persistence bugs earlier in the project.
 
-### Stable Defaults
-- `account` storage value shape remains stringified JSON across popup/content contexts.
-- Runtime self-heals historical bad values without requiring manual storage clear.
-- Runtime applies two safety layers before app bootstrap:
-  - normalize object-shaped values from `chrome.storage.*.get` into JSON strings
-  - guard `JSON.parse` against legacy `"[object Object]"` input
-
-## 2026-03-29 | Popup Bundle Parser Fallback
-
-### Decision
-- Patch bundled popup storage parser (`parseValue`) with compatibility fallback:
-  - return raw value when storage value is already an object
-  - return empty object for `"[object Object]"` legacy string
-  - otherwise continue standard `JSON.parse` path
-
-### Why
-- Runtime patch + storage normalization can still miss edge cases from stale local extension state.
-- The crash stack is inside bundled popup parser path, so in-bundle guard is the strongest last-mile protection.
-
-### Stable Defaults
-- Parser fallback is limited to malformed legacy payload handling and does not change normal JSON serialization flow.
-- Existing storage contract still prefers stringified JSON object payloads.
-
-## 2026-03-29 | LinkedIn Multi-Language Trigger Registration
-
-### Decision
-- Update content trigger discovery to register both English and Chinese action buttons:
-  - comment: `Comment` + `评论`
-  - reply: `Reply` + `回复`
-
-### Why
-- Original bundle only scanned `Comment/Reply` text, which fails on Chinese LinkedIn UI and causes “clicking comment does nothing�?
-- Keeping text-based dual-language match is the smallest safe fix for packaged-output project without source rebuild.
-
-### Stable Defaults
-- Existing filtering guards remain unchanged (`comment-post` and `comment-reply-post` submit buttons are still excluded).
-- Trigger behavior remains identical after registration; only candidate button discovery scope is expanded.
-- Chinese keyword literals in bundled patch are written as unicode escapes (`\u8bc4\u8bba`, `\u56de\u590d`) to avoid shell/codepage corruption.
-- Attribute-based fallback selectors (`aria-label`, `data-view-name`) are enabled to reduce dependency on visible text locale.
-
-## 2026-03-29 | Popup Enum i18n Strategy
-
-### Decision
-- Translate popup enum output values at runtime via dictionary mapping in `runtime.patch.js`, instead of rewriting string literals inside the minified popup bundle.
-
-### Why
-- Enum-driven dropdown labels are produced dynamically and were not fully covered by the previous static-label dictionary.
-- Bundle-level direct edits are brittle in packaged-output projects and increase regression risk.
-
-### Stable Defaults
-- Keep a dedicated option dictionary: `OPTION_EN_TO_ZH`.
-- Keep reverse mapping for language switching back: `OPTION_ZH_TO_EN`.
-- Route all option-like text through `translateOptionLabel` before fallback dictionary matching.
-- Coverage scope includes length/tone/industry/post-age/cooldown/plan/voice values used by popup UI.
-
-## 2026-03-29 | Tooltip Translation Robustness
-
-### Decision
-- Keep tooltip translation coverage validated against extracted popup tooltip literals.
-- Add punctuation-tolerant fallback match for critical long tooltip text to reduce locale/encoding drift risk.
-
-### Stable Defaults
-- For long narrative tooltip strings, support exact-map translation plus regex fallback for punctuation variants.
-
-## 2026-03-29 | Popup Branding Override
-
-### Decision
-- Use runtime DOM normalization in popup context to enforce product title text as `LinkedIn Automatic Comments`.
-- Hide decorative bottom-right fixed logo (`/assets/logo.png`) without changing existing layout structure.
-
-### Stable Defaults
-- Branding replacement is limited to header text nodes only.
-- Bottom-right logo suppression is limited to fixed-position container carrying the logo image.
-
-## 2026-03-29 | Visual Override Robustness Upgrade
-
-### Decision
-- Replace fragile text-node-only branding logic with deterministic overlay title rendering in popup header.
-- Replace style-attribute-based corner-logo selector with viewport-position-based hiding logic.
-
-### Stable Defaults
-- Brand enforcement no longer depends on bundled DOM split structure (`Commen` + `TRON` cases covered).
-- Corner icon suppression no longer depends on inline style presence (works with MUI class-generated positioning).
-
-## 2026-04-01 | Auto-Send Preference Model in Runtime Patch
-
-### Decision
-- Introduce explicit popup preferences for auto-send behavior at runtime layer:
-  - one boolean switch for send automation
-  - one bounded random delay range (`min/max` seconds)
-- Keep the persistence contract in `chrome.storage.local` under dedicated keys.
-
-### Why
-- Existing auto-flow lacked user-visible safety control for send timing.
-- A bounded random delay reduces deterministic click timing while preserving operator control.
-- Runtime-layer addition keeps packaged bundle change scope minimal for this repo shape.
-
-### Stable Defaults
-- `ce_auto_send_enabled = true`
-- `ce_auto_send_delay_min_sec = 2`
-- `ce_auto_send_delay_max_sec = 7`
-- Delay bounds are clamped to `0..30` seconds with min/max normalization.
-
-### Trade-off
-- This is a client-side preference patch; server-side policy constraints are unchanged.
-- Full behavior confidence still requires real LinkedIn UI runtime validation after popup reload.
-
-## 2026-04-05 | Popup Layout & Length-Control Stabilization
-
-### Decision
-- Keep top-right theme/language toggles inside header container (absolute-in-header), not fixed on body.
-- Disable runtime-injected auto-send preference panel in popup render pass to avoid overlapping existing bundled settings layout.
-- Add explicit slider interaction hardening:
-  - CSS pointer-event/touch-action fixes for `.MuiSlider-root`
-  - runtime pointer patch that writes to slider `<input type='range'>` and dispatches `input/change`.
-- Add post-generation length normalization in content pipeline based on `preferences.commentLength` so output length follows selected level even on fallback/unstable responses.
-
-### Why
-- Fixed-position runtime controls and injected panel caused visible overlap and blocked user interactions.
-- In specific popup states, bundled slider interaction could become unreliable; runtime hardening restores direct drag/click behavior.
-- User-observed output length drift required a deterministic local safeguard independent of backend variance.
-
-### Stable Defaults
-- Comment length local caps after cleanup:
-  - level 1: `56` chars
-  - level 2: `88` chars
-  - level 3: `132` chars
-  - level 4: `188` chars
-  - level 5: `320` chars
-- Prefix/suffix cleanup remains active (`Great point:` head and trailing `...` removed before paste).
-
-## 2026-04-15 | Composer-Guarded Triggering and Stable Extension Icon
-
-### Decision
-- Keep comment trigger discovery on a strict whitelist: only buttons inside feed post/article action bars can be registered for `createComment`.
-- Keep an explicit composer blacklist in both discovery and click-time guard (`share.post`, `share-box`, publish/topic/create-post entry points).
-- Disable scripted avatar click in popup seat bootstrap path (`getSeatByNavbarImage`) and rely on passive profile-link discovery.
-- Keep extension action icon fixed and do not switch by active tab/window focus.
-
-### Why
-- Broad selector matching in bundled output can still capture composer-adjacent buttons on localized LinkedIn UI and open the publish modal unexpectedly.
-- Popup and content bundles each have seat/trigger logic; fixing only one path is insufficient.
-- Dynamic icon switching caused visible logo changes that conflict with current single-brand requirement.
-
-### Stable Defaults
-- Comment trigger must satisfy both conditions:
-  - inside post container (`article` / activity container)
-  - inside social action bar container
-- Composer-related controls are always excluded from registration and from click-time execution.
-- Popup profile-seat bootstrap never performs scripted click on navbar avatar.
-- `chrome.action.setIcon` uses a fixed icon set (`icon16/32/48/64/128.plasmo.*.png`) regardless of page focus state.
 ## 2026-04-19 | GasGx Popup Runtime Compatibility Boundary
 
 ### Decision
-- Treat GasGx as the canonical popup account system for this extension.
-- Keep legacy RocketPod popup bootstrap alive only through runtime compatibility shims inside `runtime.patch.js`, not through continued dependence on remote RocketPod account logic.
-- Keep comment/reply generation on Spark runtime entrypoints rather than old popup bootstrap endpoints.
+- Treat GasGx as the canonical popup account/auth system for this extension.
+- Keep legacy popup bootstrap compatibility inside `runtime.patch.js` rather than depending on the original remote RocketPod account flow.
+- Keep Spark runtime entrypoints as the canonical AI generation surface.
 
 ### Why
-- The shipped project is still packaged/minified output, so a runtime integration boundary remains the lowest-risk way to migrate auth/account behavior without rebuilding source modules.
-- Popup boot still depends on legacy storage shapes and old bootstrap expectations; removing them outright would break startup before a source-level replacement exists.
-- The user requirement is to use GasGx account��ϵ while keeping the rest of the extension usable.
+- This preserves extension usability while migrating account ownership away from the old popup flow.
+- It is the lowest-risk path available in a packaged-output repository.
 
-### Stable Defaults
-- Extension display name: `GasGx To Linkedin`
-- Popup title brand: `GasGx To Linkedin`
-- Canonical popup auth source: persisted GasGx auth snapshot in runtime patch
-- Legacy popup storage object keys must remain compatible with bundled `@rocket/storage` expectations (double-serialized object payloads where required)
-- Comment/reply generation path remains Spark-based
-
-### Trade-off
-- This keeps the old bundled popup alive behind compatibility shims.
-- Preferences persistence is still not stable enough to call solved; future fixes should target the bundled `PreferencesModel.load/save` boundary or replace the legacy preferences UI entirely.
-
-## 2026-04-19 | Popup Storage Write Discipline
+## 2026-04-20 | Popup Runtime Shell Ownership
 
 ### Decision
-- Do not mutate Chrome storage on popup read path.
-- Only write storage when values actually changed, and keep first-run markers in legacy-compatible serialized form.
+- Stop treating the bundled popup DOM as the editable popup surface.
+- Popup is now owned by:
+  - `D:\code\Chrome_Extensions\LinkedIn automatic comments\popup.html`
+  - `D:\code\Chrome_Extensions\LinkedIn automatic comments\runtime.patch.js`
+  - `D:\code\Chrome_Extensions\LinkedIn automatic comments\popup-runtime.js`
+- Keep `runtime.patch.js` as the popup data/runtime compatibility layer, not as a DOM-diff layer over bundled popup UI.
+- Keep bundled popup assets in the repo as rollback artifacts, but not as the active popup ownership surface.
 
 ### Why
-- Popup read-time normalization caused repeated writes and hit Chrome `MAX_WRITE_OPERATIONS_PER_HOUR` quota.
-- The legacy popup reads first-run flags through serialized truthy values, so raw booleans are not sufficient for compatibility.
+- Old popup fixes had become too expensive because ownership was split across:
+  - bundled popup layout logic
+  - runtime DOM injection
+  - storage compatibility bridges
+  - text/anchor discovery patches
+- A controlled runtime popup shell is easier to debug and maintain.
 
 ### Stable Defaults
-- Storage get path: normalize and return only; no implicit writeback
-- Storage set path: de-duplicate unchanged payloads
-- Popup first-run flags: store as legacy-compatible string `"true"`
+- Popup boot chain is:
+  - `popup.html`
+  - `runtime.patch.js`
+  - `popup-runtime.js`
+- Popup settings are controlled from in-memory state plus explicit persistence APIs.
+- Popup should not depend on reading old bundled popup DOM state back out.
+
+## 2026-04-20 | GasGx-UI-v6.1 Visual System Adoption
+
+### Decision
+- Use GasGx-UI-v6.1 as the visual system for popup and runtime-injected LinkedIn controls.
+- Keep a shared token-driven style model instead of isolated green-theme fragments.
+
+### Stable Defaults
+- Primary aurora-green buttons must use dark high-contrast text.
+- Header controls stay ghosted by default.
+- Inputs and textareas use recessed dark surfaces in dark mode.
+- Cards, toggles, segmented tabs, and pills share the same border/radius/accent rules.
+
+### Why
+- Runtime-owned UI surfaces need one consistent token system to avoid style drift and reduce future UI fix cost.
+
+## 2026-04-20 | Legacy Content Bundle Recovery Strategy
+
+### Decision
+- For comment creation and auto-send issues, prefer recovering the legacy content bundle path over expanding full runtime takeover.
+- Patch only the exact legacy content behaviors that are clearly broken:
+  - hard truncation
+  - submit-button early return
+  - paragraph-aware write/send behavior
+
+### Why
+- The historical working path for comment creation lived inside the old packaged content bundle.
+- Directly replacing the whole flow in runtime patch created too many moving parts and made regressions harder to isolate.
+
+### Trade-off
+- The project now intentionally keeps mixed ownership:
+  - runtime-owned popup shell
+  - runtime compatibility/data layer
+  - patched legacy content bundle
+- Future work must be explicit about which runtime surface owns the behavior being fixed.
+
+## 2026-04-20 | Prompt-First Preference Enforcement
+
+### Decision
+- Treat LinkedIn AI preferences as prompt constraints first, not as post-generation truncation rules.
+- Keep post-processing as a guardrail, but move the main burden to:
+  - stronger prompt structure
+  - output validation
+  - one repair retry
+
+### Why
+- Hard local trimming produced visibly broken output such as half words and cut-off sentences.
+- The user requirement is for AI to generate directly toward the requested shape, especially for:
+  - paragraph count
+  - 120-200 characters per paragraph
+  - English-only output
+  - mention / emoji / ending preferences
+
+### Stable Defaults
+- Comment generation now uses:
+  - hard prompt constraints
+  - output validation
+  - one repair retry on failure
+  - final preference enforcement as last guardrail
+- Reply generation follows the same pattern with reply-specific rules.

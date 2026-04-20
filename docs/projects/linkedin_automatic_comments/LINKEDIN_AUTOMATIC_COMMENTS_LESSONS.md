@@ -164,3 +164,45 @@
 - Go directly to one of these deeper fixes in the next thread:
   - intercept bundled `PreferencesModel.load/save`
   - replace the legacy preferences surface with a fully controlled runtime/native implementation
+
+## 2026-04-20 | Mixed Ownership Made Small UI Bugs Expensive
+
+### Pitfall
+- We spent too long fixing a small number of visible controls because popup and content behavior were split across:
+  - bundled popup/content code
+  - runtime DOM injection
+  - compatibility storage shims
+  - prompt-layer behavior
+- This caused repeated partial fixes that each addressed only one ownership layer.
+
+### What Worked
+- Explicitly picking one owner per surface reduced churn:
+  - popup: runtime-owned shell
+  - content comment flow: recover legacy bundle path with minimal targeted fixes
+  - AI behavior: strengthen prompt and validation instead of stacking DOM-only fixes
+
+### Avoid Next Time
+- Before fixing a bug in this extension, first identify which surface owns it:
+  - popup shell
+  - runtime compatibility layer
+  - legacy content bundle
+  - AI prompt/validation layer
+- Do not keep mixing fixes across all four in one pass.
+
+## 2026-04-20 | Prompt Weakness Causes Better-Looking Bugs Than Hard Truncation, But Still Needs Repair Loop
+
+### Pitfall
+- Weak prompt constraints let AI output drift away from user preferences even when the UI looked correct.
+- Hard local truncation fixed shape superficially but produced visibly broken text such as half words and unfinished sentences.
+
+### What Worked
+- Converting preferences into explicit prompt rules plus output validation and one repair retry created a safer middle ground.
+- This keeps the main shaping responsibility in the model while still giving the runtime one controlled recovery attempt.
+
+### Avoid Next Time
+- For AI text generation in this project, do not rely on hard clipping as the primary enforcement mechanism.
+- Use this order:
+  - prompt constraints
+  - output validation
+  - one repair retry
+  - final guardrail cleanup only if still necessary

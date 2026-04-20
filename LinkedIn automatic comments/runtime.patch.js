@@ -12,10 +12,14 @@
   const AUTO_SEND_ENABLED_KEY = "ce_auto_send_enabled";
   const DELAY_MIN_SEC_KEY = "ce_auto_send_delay_min_sec";
   const DELAY_MAX_SEC_KEY = "ce_auto_send_delay_max_sec";
+  const AUTO_SEND_CACHE_KEY = "ce_auto_send_popup_cache";
+  const AUTO_SEND_CACHE_AT_KEY = "ce_auto_send_popup_cache_at";
   const RANDOM_TONE_ENABLED_KEY = "ce_random_tone_enabled";
   const RANDOM_LENGTH_ENABLED_KEY = "ce_random_length_enabled";
+  const RANDOM_STRATEGY_CACHE_KEY = "ce_random_strategy_popup_cache";
+  const RANDOM_STRATEGY_CACHE_AT_KEY = "ce_random_strategy_popup_cache_at";
   const REPLY_PROMPT_HINT_KEY = "ce_reply_prompt_hint";
-  const DEFAULT_AUTO_SEND_ENABLED = true;
+  const DEFAULT_AUTO_SEND_ENABLED = false;
   const DEFAULT_DELAY_MIN_SEC = 2;
   const DEFAULT_DELAY_MAX_SEC = 7;
   const DEFAULT_RANDOM_TONE_ENABLED = false;
@@ -26,6 +30,8 @@
   const GASGX_LOCAL_SIGNED_IN_KEY = "ce_gasgx_local_signed_in";
   const LEGACY_PREFERENCES_STORAGE_KEY = "preferences";
   const LEGACY_PREFERENCES_CANONICAL_KEY = "ce_legacy_preferences_canonical";
+  const LEGACY_PREFERENCES_CACHE_KEY = "ce_legacy_preferences_popup_cache";
+  const LEGACY_PREFERENCES_CACHE_AT_KEY = "ce_legacy_preferences_popup_cache_at";
   const LEGACY_TRUE_RAW = "true";
   const SPARK_SETTINGS_KEY = "ce.sparkSettings";
   const SPARK_CONFIG_RESOURCE_PATH = "config/spark.gasgx.json";
@@ -99,15 +105,19 @@
   const GATE_TEXT_PATTERN = /(free\s*trial|max(?:imum)?\s*usage|maximum\s*usage\s*allowed|upgrade|subscribe|already\s*a\s*subscriber|reached\s*the\s*maximum\s*usage|active\s*commentron\s*subscription|you\s*don.?t\s*have\s*an\s*active\s*commentron\s*subscription|sign-?in\s+using\s+the\s+extension\s+window|newer\s*commentron\s*version|please\s*update\s*commentron|update\s*commentron)/i;
 
   let autoSendEnabled = DEFAULT_AUTO_SEND_ENABLED;
+  let autoSendSettingsLoaded = false;
   let autoSendDelayMinSec = DEFAULT_DELAY_MIN_SEC;
   let autoSendDelayMaxSec = DEFAULT_DELAY_MAX_SEC;
   let randomToneEnabled = DEFAULT_RANDOM_TONE_ENABLED;
   let randomLengthEnabled = DEFAULT_RANDOM_LENGTH_ENABLED;
+  let randomStrategyUpdatedAt = 0;
   let replyPromptHint = DEFAULT_REPLY_PROMPT_HINT;
   let sparkConfigPromise = null;
   let legacyPreferencesSyncTimer = 0;
   let legacyPreferencesWatchTimer = 0;
   let legacyPreferencesLastSnapshot = "";
+  let legacyPreferencesWriteQueue = Promise.resolve();
+  let legacyContentBundlePatched = false;
   let gasgxDerivedStorageSyncPromise = null;
   let gasgxDerivedStorageLastRunAt = 0;
   let gasgxDerivedStorageLastSignature = "";
@@ -539,15 +549,39 @@
   }
 
   function resolveCommentLength(preferences) {
+    const desiredRaw = preferences?.__ceDesiredCommentLength;
+    if (typeof desiredRaw === "number" && Number.isFinite(desiredRaw)) {
+      return Math.max(1, Math.min(3, Math.round(desiredRaw)));
+    }
+    if (typeof desiredRaw === "string") {
+      const parsedDesired = Number(desiredRaw);
+      if (Number.isFinite(parsedDesired)) {
+        return Math.max(1, Math.min(3, Math.round(parsedDesired)));
+      }
+    }
     const raw = preferences?.commentLength;
-    if (typeof raw === "number") return raw;
+    if (typeof raw === "number") return Math.max(1, Math.min(3, Math.round(raw)));
     if (typeof raw === "string") {
+      if (/一段|one\s*paragraph/i.test(raw)) return 1;
+      if (/二段|two\s*paragraph/i.test(raw)) return 2;
+      if (/三段|three\s*paragraph/i.test(raw)) return 3;
       if (/super\s*short|supershort/i.test(raw)) return 1;
       if (/brief/i.test(raw)) return 2;
       if (/concise|in-?length|inlength|in\s*length/i.test(raw)) return 3;
-      if (/multi|detailed/i.test(raw)) return 5;
     }
-    return 3;
+    return 2;
+  }
+
+  function adaptPreferencesForLegacyContentBundle(preferences) {
+    const normalized = sanitizeLegacyPreferences(
+      sparkIsPlainObject(preferences) ? preferences : getDefaultLegacyPreferences()
+    );
+    const desiredLength = resolveCommentLength(normalized);
+    return {
+      ...normalized,
+      commentLength: desiredLength <= 1 ? 4 : 5,
+      __ceDesiredCommentLength: desiredLength
+    };
   }
 
   function pickRandomItem(list, fallback) {
@@ -576,7 +610,7 @@
   function resolveEffectiveCommentLength(preferences) {
     const current = resolveCommentLength(preferences);
     if (!randomLengthEnabled) return current;
-    return pickRandomItem([1, 2, 3, 4, 5], current);
+    return pickRandomItem([1, 2, 3], current);
   }
 
   function resolveCommentGenerationProfile(preferences) {
@@ -587,6 +621,40 @@
     };
   }
 
+  function resolveVoiceGenderInstruction(value) {
+    const normalized = sparkToString(value, "NotSpecified").trim();
+    if (/^male$/i.test(normalized)) {
+      return "If the language naturally marks gender, keep the first-person voice subtly masculine and professional. Do not use stereotypes.";
+    }
+    if (/^female$/i.test(normalized)) {
+      return "If the language naturally marks gender, keep the first-person voice subtly feminine and professional. Do not use stereotypes.";
+    }
+    return "Keep the voice natural and gender-neutral unless the context clearly implies otherwise.";
+  }
+
+  function resolveIndustryInstruction(value) {
+    const normalized = sparkToString(value, "").trim();
+    if (!normalized || /^notspecified$/i.test(normalized)) return "";
+    return `Use wording, priorities, and examples that sound credible to LinkedIn readers in the ${normalized} space without becoming jargon-heavy.`;
+  }
+
+  function resolveLinkedInUiLanguageInstruction(pageLang, useEnglish) {
+    const normalized = normalizeLinkedInPageLang(pageLang);
+    if (useEnglish || !normalized) return "";
+    if (normalized === "zh-CN") {
+      return "The current LinkedIn page is in Chinese, so keep the wording natural for Chinese LinkedIn readers.";
+    }
+    return "The current LinkedIn page is in English, so keep the wording natural for English-speaking LinkedIn readers.";
+  }
+
+  function resolveReplyHintInstruction(input) {
+    const hint = normalizeReplyPromptHint(
+      sparkToString(input?.replyHint, sparkToString(replyPromptHint, ""))
+    );
+    if (!hint) return "";
+    return `Treat this as a mandatory extra reply instruction: ${hint}`;
+  }
+
   function normalizeSparkOutput(text) {
     return sparkToString(text, "")
       .replace(/^\s*```(?:json|text)?/i, "")
@@ -594,6 +662,15 @@
       .replace(/\r\n/g, "\n")
       .replace(/\n{3,}/g, "\n\n")
       .trim();
+  }
+
+  function debugCommentTrace(stage, payload) {
+    try {
+      const summary = payload && typeof payload === "object" ? payload : { value: payload };
+      console.info("[CE comment trace]", stage, summary);
+    } catch (_err) {
+      // Ignore debug logging failures.
+    }
   }
 
   function isEnabledLike(value) {
@@ -653,13 +730,13 @@
     return `${mention} ${normalized}`.trim();
   }
 
-  function resolveCommentWordLimit(preferences) {
+  function resolveCommentParagraphCount(preferences) {
     const level = resolveCommentLength(preferences);
-    if (level <= 1) return 18;
-    if (level === 2) return 30;
-    if (level === 3) return 45;
-    if (level === 4) return 70;
-    return 120;
+    return Math.max(1, Math.min(3, level));
+  }
+
+  function resolveCommentCharacterLimit(preferences) {
+    return resolveCommentParagraphCount(preferences) * 200;
   }
 
   function resolveReplyWordLimit(preferences) {
@@ -690,6 +767,189 @@
     return out;
   }
 
+  function splitCommentParagraphs(text) {
+    return normalizeSparkOutput(text)
+      .split(/\n{2,}/)
+      .map((part) => sparkToString(part, "").replace(/\s+/g, " ").trim())
+      .filter(Boolean);
+  }
+
+  function escapeHtmlText(text) {
+    return sparkToString(text, "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#39;");
+  }
+
+  function dispatchEditorInput(element, inputType, data) {
+    if (!element) return;
+    try {
+      element.dispatchEvent(new InputEvent("input", {
+        bubbles: true,
+        inputType,
+        data
+      }));
+      return;
+    } catch (_err) {}
+    try {
+      element.dispatchEvent(new Event("input", { bubbles: true }));
+    } catch (_err) {}
+  }
+
+  function dispatchEditorBeforeInput(element, inputType, data) {
+    if (!element) return;
+    try {
+      element.dispatchEvent(new InputEvent("beforeinput", {
+        bubbles: true,
+        cancelable: true,
+        inputType,
+        data
+      }));
+    } catch (_err) {}
+  }
+
+  function dispatchEditorLifecycleEvents(element, text) {
+    if (!element) return;
+    const payload = sparkToString(text, "");
+    dispatchEditorBeforeInput(element, "insertText", payload);
+    dispatchEditorInput(element, "insertText", payload);
+    try {
+      element.dispatchEvent(new Event("change", { bubbles: true }));
+    } catch (_err) {}
+    try {
+      element.dispatchEvent(new KeyboardEvent("keyup", {
+        bubbles: true,
+        key: "Enter"
+      }));
+    } catch (_err) {}
+  }
+
+  function moveCaretToEnd(element) {
+    if (!element) return;
+    try {
+      const selection = window.getSelection?.();
+      if (!selection) return;
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    } catch (_err) {}
+  }
+
+  function clearEditableContent(element) {
+    if (!element) return;
+    try {
+      element.focus();
+    } catch (_err) {}
+    try {
+      const selection = window.getSelection?.();
+      if (selection) {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        selection.removeAllRanges();
+        selection.addRange(range);
+      }
+    } catch (_err) {}
+    try {
+      document.execCommand("delete", false, null);
+    } catch (_err) {}
+    try {
+      element.innerHTML = "";
+    } catch (_err) {
+      element.textContent = "";
+    }
+    moveCaretToEnd(element);
+  }
+
+  function readEditableParagraphCount(element) {
+    const raw = sparkToString(element?.innerText || element?.textContent, "")
+      .replace(/\u00A0/g, " ")
+      .replace(/\r\n/g, "\n");
+    return raw
+      .split(/\n+/)
+      .map((part) => part.replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+      .length;
+  }
+
+  function tryExecInsertParagraphs(element, paragraphs) {
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    clearEditableContent(element);
+    try {
+      element.focus();
+    } catch (_err) {}
+    moveCaretToEnd(element);
+
+    try {
+      for (let index = 0; index < paragraphs.length; index += 1) {
+        if (index > 0) {
+          document.execCommand("insertParagraph", false, null);
+        }
+        document.execCommand("insertText", false, paragraphs[index]);
+      }
+      dispatchEditorInput(element, "insertParagraph", paragraphs.join("\n\n"));
+      return readEditableParagraphCount(element) >= paragraphs.length;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function tryHtmlInsertParagraphs(element, paragraphs) {
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    clearEditableContent(element);
+    const html = paragraphs.map((part) => `<p>${escapeHtmlText(part)}</p>`).join("");
+
+    try {
+      element.focus();
+    } catch (_err) {}
+    moveCaretToEnd(element);
+
+    try {
+      document.execCommand("insertHTML", false, html);
+    } catch (_err) {
+      try {
+        element.innerHTML = html;
+      } catch (_innerErr) {
+        return false;
+      }
+    }
+
+    moveCaretToEnd(element);
+    dispatchEditorInput(element, "insertParagraph", paragraphs.join("\n\n"));
+    return readEditableParagraphCount(element) >= paragraphs.length;
+  }
+
+  function pasteCommentIntoLinkedInEditor(element, text) {
+    if (!element) return;
+    const paragraphs = splitCommentParagraphs(text);
+    if (!paragraphs.length) {
+      clearEditableContent(element);
+      dispatchEditorInput(element, "deleteContentBackward", "");
+      return;
+    }
+
+    let pasted = tryExecInsertParagraphs(element, paragraphs);
+    if (!pasted) {
+      pasted = tryHtmlInsertParagraphs(element, paragraphs);
+    }
+    if (!pasted) {
+      clearEditableContent(element);
+      element.textContent = paragraphs.join("\n\n");
+      moveCaretToEnd(element);
+      dispatchEditorInput(element, "insertText", paragraphs.join("\n\n"));
+    }
+    dispatchEditorLifecycleEvents(element, paragraphs.join("\n\n"));
+
+    debugCommentTrace("paste-verify", {
+      requestedParagraphs: paragraphs.length,
+      actualParagraphs: readEditableParagraphCount(element),
+      actualText: sparkToString(element?.innerText || element?.textContent, "").trim()
+    });
+  }
+
   function splitSentences(text) {
     const normalized = sparkToString(text, "").replace(/\s+/g, " ").trim();
     if (!normalized) return [];
@@ -699,19 +959,135 @@
       .filter(Boolean);
   }
 
-  function ensureThreeParagraphs(text) {
-    const normalized = normalizeSparkOutput(text);
-    if (!normalized) return normalized;
-    const existing = normalized.split(/\n{2,}/).map((p) => p.trim()).filter(Boolean);
-    if (existing.length >= 3) return existing.join("\n\n");
+  function containsCjk(text) {
+    return /[\u3400-\u9FFF]/u.test(sparkToString(text, ""));
+  }
 
-    const sentences = splitSentences(normalized);
-    if (sentences.length >= 3) {
-      return [sentences[0], sentences[1], sentences.slice(2).join(" ")].filter(Boolean).join("\n\n");
+  function looksMostlyEnglish(text) {
+    const normalized = sparkToString(text, "").trim();
+    if (!normalized) return false;
+    if (containsCjk(normalized)) return false;
+    return /[A-Za-z]/.test(normalized);
+  }
+
+  function resolveCommentOutputEnglish(input, text) {
+    return true;
+  }
+
+  function trimParagraphToMaxChars(text, maxChars = 200) {
+    const normalized = sparkToString(text, "").replace(/\s+/g, " ").trim();
+    if (!normalized) return normalized;
+    if (normalized.length <= maxChars) return normalized;
+    const clipped = normalized.slice(0, maxChars);
+    const minPreferredCut = Math.max(1, Math.floor(maxChars * 0.72));
+    let cutIndex = -1;
+
+    try {
+      const sentenceMatches = Array.from(clipped.matchAll(/[.!?。！？](?=\s|$)/gu));
+      if (sentenceMatches.length) {
+        const lastMatch = sentenceMatches[sentenceMatches.length - 1];
+        cutIndex = Number(lastMatch.index) + String(lastMatch[0] || "").length;
+      }
+    } catch (_err) {}
+
+    if (!Number.isFinite(cutIndex) || cutIndex < minPreferredCut) {
+      const lastSpace = clipped.lastIndexOf(" ");
+      if (lastSpace >= minPreferredCut) {
+        cutIndex = lastSpace;
+      }
     }
 
-    const base = normalized.replace(/\n+/g, " ").trim();
-    return [base, "I especially appreciate the practical execution details.", "Looking forward to the next milestone updates."].join("\n\n");
+    const safeText = cutIndex >= minPreferredCut ? clipped.slice(0, cutIndex) : clipped;
+    return safeText.trim().replace(/[，,、;；:：\-–—\s]+$/u, "").trim();
+  }
+
+  function buildParagraphFallback(index, total, useEnglish) {
+    if (useEnglish) {
+      const samples = [
+        "A practical takeaway here is how clearly the idea can be applied in real work.",
+        "I like that this focuses on execution instead of staying at the abstract level.",
+        "This also opens up a useful next step for teams trying to move faster."
+      ];
+      return trimParagraphToMaxChars(samples[index % samples.length], 200);
+    }
+    const samples = [
+      "很认同这个思路，真正有价值的是它能直接落到实际执行里。",
+      "我尤其喜欢这里强调的方法感，不只是观点本身，而是可操作性很强。",
+      "如果继续展开下去，这个方向对团队协作和结果推进都会很有帮助。"
+    ];
+    return trimParagraphToMaxChars(samples[index % samples.length], 200);
+  }
+
+  function extendParagraphToMinChars(text, index, useEnglish = false, minChars = 120, maxChars = 200) {
+    let normalized = trimParagraphToMaxChars(text, maxChars);
+    if (!normalized) {
+      normalized = buildParagraphFallback(index, 3, useEnglish);
+    }
+
+    const extras = useEnglish
+      ? [
+          "It also feels relevant because the point is immediately usable in day-to-day execution.",
+          "That practical angle is what makes the post more credible and worth engaging with.",
+          "There is enough substance here to spark a more meaningful discussion with the broader team."
+        ]
+      : [
+          "而且这种表达不是停留在概念层面，放到真实工作里也很容易找到对应的应用场景。",
+          "这也是我觉得它特别有价值的原因，因为观点和执行之间的连接被讲得比较清楚。",
+          "如果从团队协作和实际结果推进的角度看，这个思路也确实很值得继续展开。"
+        ];
+
+    let cursor = 0;
+    while (normalized.length < minChars) {
+      const addition = extras[cursor % extras.length];
+      const next = `${normalized} ${addition}`.replace(/\s+/g, " ").trim();
+      const trimmed = trimParagraphToMaxChars(next, maxChars);
+      if (!trimmed || trimmed === normalized) break;
+      normalized = trimmed;
+      cursor += 1;
+    }
+
+    if (normalized.length < minChars) {
+      const fallback = trimParagraphToMaxChars(buildParagraphFallback(index, 3, useEnglish), maxChars);
+      if (fallback && fallback !== normalized) {
+        const combined = trimParagraphToMaxChars(`${normalized} ${fallback}`, maxChars);
+        if (combined) normalized = combined;
+      }
+    }
+
+    return normalized;
+  }
+
+  function ensureParagraphCount(text, count, useEnglish = false) {
+    const normalized = normalizeSparkOutput(text);
+    if (!normalized) return normalized;
+    const targetCount = Math.max(1, Math.min(3, Math.round(sparkToNumber(count, 1))));
+    const existing = normalized.split(/\n{2,}/).map((p) => trimParagraphToMaxChars(p, 200)).filter(Boolean);
+    if (existing.length >= targetCount) {
+      return existing
+        .slice(0, targetCount)
+        .map((part, index) => extendParagraphToMinChars(part, index, useEnglish, 120, 200))
+        .filter(Boolean)
+        .join("\n\n");
+    }
+
+    const sentences = splitSentences(normalized);
+    if (sentences.length >= targetCount) {
+      return sentences
+        .slice(0, targetCount - 1)
+        .concat([sentences.slice(targetCount - 1).join(" ")])
+        .map((part, index) => extendParagraphToMinChars(part, index, useEnglish, 120, 200))
+        .filter(Boolean)
+        .join("\n\n");
+    }
+
+    const paragraphs = [trimParagraphToMaxChars(normalized.replace(/\n+/g, " ").trim(), 200)].filter(Boolean);
+    while (paragraphs.length < targetCount) {
+      paragraphs.push(buildParagraphFallback(paragraphs.length, targetCount, useEnglish));
+    }
+    return paragraphs
+      .map((part, index) => extendParagraphToMinChars(part, index, useEnglish, 120, 200))
+      .filter(Boolean)
+      .join("\n\n");
   }
 
   function enforceEmojiByPreference(text, pref) {
@@ -725,19 +1101,18 @@
     const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
     const author = sparkToString(input?.postAuthor, "").trim();
     const length = Number(input?.__ceEffectiveLength) || resolveCommentLength(pref);
+    const paragraphCount = resolveCommentParagraphCount({ ...pref, commentLength: length });
     let out = normalizeSparkOutput(text);
     if (!out) return out;
-
-    const commentWordLimit = resolveCommentWordLimit(pref);
-    out = truncateToWords(out, commentWordLimit);
+    const useEnglish = resolveCommentOutputEnglish(input, out);
 
     if (isEnabledLike(pref.commentMentionPostAuthor)) {
       out = ensureMentionPrefix(out, author);
     }
 
     out = enforceEmojiByPreference(out, pref);
-    if (isEmojiPreferenceEnabled(pref) && length >= 5) {
-      out = ensureThreeParagraphs(out);
+    out = ensureParagraphCount(out, paragraphCount, useEnglish);
+    if (isEmojiPreferenceEnabled(pref) && paragraphCount >= 3) {
       out = ensureMultiEmoji(out, 3);
     }
 
@@ -767,44 +1142,82 @@
     const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
     const profile = sparkIsPlainObject(input?.__ceGenerationProfile) ? input.__ceGenerationProfile : {};
     const length = Number(profile.length) || resolveEffectiveCommentLength(pref);
-    const useEnglish = !!pref.engageInEnglish;
+    const useEnglish = true;
     const mentionAuthor = !!pref.commentMentionPostAuthor;
     const useEmoji = !!pref.commentUseEmojis;
     const endQuestion = !!pref.commentEndWithQuestion;
     const tone = sparkToString(profile.tone, resolveCommentTone(pref));
     const author = sparkToString(input?.postAuthor, "").trim();
     const postText = sparkToString(input?.postText, "").trim();
+    const voiceGenderGuide = resolveVoiceGenderInstruction(pref.voiceGender);
+    const industryGuide = resolveIndustryInstruction(pref.commentIndustry);
+    const linkedInUiGuide = resolveLinkedInUiLanguageInstruction(input?.linkedInUiLanguage || currentLang, useEnglish);
 
-    const lengthGuide = length >= 5
-      ? "Write at least 3 short paragraphs with meaningful details."
-      : length >= 4
-        ? "Write one medium-length paragraph with concrete points."
-        : length <= 2
-          ? "Write a short but specific comment in 1-2 sentences."
-          : "Write a concise comment in about 2-3 sentences.";
+    const lengthGuide = length === 1
+      ? "Output exactly 1 paragraph. Keep that paragraph between 120 and 200 characters."
+      : length === 2
+        ? "Output exactly 2 paragraphs. Keep each paragraph between 120 and 200 characters."
+        : "Output exactly 3 paragraphs. Keep each paragraph between 120 and 200 characters.";
 
-    const languageGuide = useEnglish
-      ? "Use English."
-      : "Use the same language as the original post.";
+    const languageGuide = "Use English only. Do not output any Chinese or any other non-English sentence.";
+    const mentionGuide = mentionAuthor && author
+      ? `Start the first paragraph naturally with @${author}.`
+      : "Do not force @mentions.";
+    const emojiGuide = useEmoji
+      ? (length >= 3
+        ? "Use emojis naturally across the full comment, with at least 3 total emojis overall."
+        : "Use emojis naturally, with at least 2 total emojis overall.")
+      : "Do not use emoji.";
+    const endingGuide = endQuestion
+      ? "End the final paragraph with one natural question."
+      : "Do not force a question ending.";
+    const linkedInGuide = linkedInUiGuide || "Stay aligned with LinkedIn feed discussion style and professional wording.";
 
     return {
-      systemPrompt: "You are an expert LinkedIn engagement writer. Return only the final comment text.",
+      systemPrompt: "You are a senior LinkedIn engagement writer. Follow every structure and preference constraint exactly. Think silently, self-check silently, and return only the final LinkedIn comment text.",
       prompt:
-`Write a high-quality LinkedIn comment.
-Rules:
-- Be specific and insightful, avoid generic filler.
-- Do not copy the original post sentence by sentence.
-- No markdown code blocks, no quotes, no explanations.
-- Tone: ${tone}.
+`Write a high-quality LinkedIn feed comment for the post below.
+
+Hard output requirements:
 - ${lengthGuide}
+- Separate paragraphs with a single blank line.
+- Count characters per paragraph including spaces and punctuation, but excluding the blank line between paragraphs.
+- Target roughly 140-180 characters per paragraph so the final text safely stays within the 120-200 range.
+- Every paragraph must end as a complete thought.
+- Never cut off a word, never leave a sentence unfinished, and never end with a dangling fragment.
+- If any paragraph would be too long, rewrite it shorter. Do not trim or compress it by dropping the ending.
+- Return plain text only. No bullets, no numbering, no labels like "Paragraph 1", no hashtags, no quotation marks, no markdown, and no explanations.
+
+Preference profile:
+- Tone: ${tone}.
+- ${voiceGenderGuide}
 - ${languageGuide}
-- ${mentionAuthor && author ? `Start with @${author} naturally.` : "Do not force @mentions."}
-- ${useEmoji ? (length >= 5 ? "Use emojis in multiple places across the comment (at least 3 total)." : "Use emojis in multiple places (at least 2 total).") : "Do not use emoji."}
-- ${endQuestion ? "End with one natural question." : "Do not force a question ending."}
+- ${linkedInGuide}
+- ${mentionGuide}
+- ${emojiGuide}
+- ${endingGuide}
+${industryGuide ? `- ${industryGuide}` : ""}
+
+Quality requirements:
+- Sound like a real LinkedIn professional reacting to a published post.
+- Be specific and insightful instead of generic praise.
+- Focus on one or two concrete takeaways from the post and why they matter.
+- Do not copy the post sentence by sentence or paraphrase it mechanically.
+- Avoid weak filler such as "Great post" unless it is followed by a concrete observation.
+- Keep the wording native to LinkedIn comments: thoughtful, concise, credible, and easy to paste directly into the feed.
+
+Self-check before answering:
+1. Paragraph count is exactly ${length}.
+2. Every paragraph is between 120 and 200 characters.
+3. No paragraph ends mid-word or mid-sentence.
+4. The full comment is entirely in English.
+5. The final text is ready to paste into LinkedIn as-is.
 
 Post author: ${author || "(unknown)"}
 Post content:
-${postText || "(empty)"}`
+${postText || "(empty)"}
+
+Return only the final comment text.` 
     };
   }
 
@@ -819,24 +1232,57 @@ ${postText || "(empty)"}`
     const postText = sparkToString(input?.postText, "").trim();
     const commentText = sparkToString(input?.commentText, "").trim();
     const me = sparkToString(input?.me, "").trim();
+    const voiceGenderGuide = resolveVoiceGenderInstruction(pref.voiceGender);
+    const industryGuide = resolveIndustryInstruction(pref.commentIndustry);
+    const replyHintGuide = resolveReplyHintInstruction(input);
+    const linkedInUiGuide = resolveLinkedInUiLanguageInstruction(input?.linkedInUiLanguage || currentLang, useEnglish);
 
     const languageGuide = useEnglish
-      ? "Use English."
+      ? "Use English only."
       : "Use the same language as the thread.";
+    const lengthGuide = keepShort
+      ? "Keep the reply brief: 1-2 sentences, ideally around 20-35 words, and never above 40 words."
+      : "Keep the reply concise but fuller: 2-4 sentences, ideally around 45-70 words, and never above 80 words.";
+    const endingGuide = endQuestion
+      ? "End with one natural question."
+      : "Do not force a question ending.";
+    const ackGuide = ackMyPost
+      ? "If this is my own post context, open with brief acknowledgment before adding the main reply point."
+      : "Do not over-emphasize acknowledgment if it does not help the thread.";
+    const linkedInGuide = linkedInUiGuide || "Stay aligned with LinkedIn thread wording and professional discussion style.";
 
     return {
-      systemPrompt: "You are an expert LinkedIn conversation assistant. Return only the final reply text.",
+      systemPrompt: "You are a senior LinkedIn reply writer for public LinkedIn threads. Obey every preference exactly, think silently, self-check silently, and return only the final reply text.",
       prompt:
 `Write a LinkedIn reply to an existing comment.
-Rules:
-- Keep the reply natural and context-aware.
-- Do not repeat the same sentence patterns.
-- No markdown code blocks, no quotes, no explanations.
+
+Hard output requirements:
+- Return exactly one reply and nothing else.
+- ${lengthGuide}
+- Every sentence must end cleanly. Never cut off a word, phrase, or sentence.
+- Return plain text only. No hashtags, no quotation marks, no markdown, no explanations, and no bullet formatting.
+
+Preference profile:
 - Tone: ${tone}.
-- ${keepShort ? "Keep it brief (<= 40 words)." : "You may use up to 80 words."}
+- ${voiceGenderGuide}
 - ${languageGuide}
-- ${endQuestion ? "End with one natural question." : "No forced question ending."}
-- ${ackMyPost ? "If this is my own post context, prioritize acknowledgment first." : "Do not over-emphasize acknowledgment."}
+- ${linkedInGuide}
+- ${endingGuide}
+- ${ackGuide}
+${industryGuide ? `- ${industryGuide}` : ""}
+${replyHintGuide ? `- ${replyHintGuide}` : ""}
+
+Quality requirements:
+- Keep the reply natural, professional, and context-aware for a public LinkedIn discussion.
+- Respond to the actual comment, not just the post in general.
+- Avoid repeating the same sentence patterns or sounding robotic.
+- The reply should feel useful, warm, and credible for LinkedIn.
+
+Self-check before answering:
+1. The reply follows the requested language exactly.
+2. The reply respects the requested length limit.
+3. The reply ends cleanly with no cut-off text.
+4. The reply is ready to paste directly into the thread.
 
 My name: ${me || "(unknown)"}
 Post author: ${postAuthor || "(unknown)"}
@@ -851,7 +1297,7 @@ ${commentText || "(empty)"}
 
   function buildCommentFallbackText(input, profile) {
     const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
-    const useEnglish = !!pref.engageInEnglish;
+    const useEnglish = true;
     const author = sparkToString(input?.postAuthor, "").trim();
     const mention = isEnabledLike(pref.commentMentionPostAuthor) && author ? `@${author} ` : "";
     const length = Number(profile?.length) || resolveEffectiveCommentLength(pref);
@@ -860,17 +1306,17 @@ ${commentText || "(empty)"}
       const p1 = `${mention}Thanks for sharing this update. I appreciate the clear perspective.`;
       const p2 = "One valuable takeaway is how this can be translated into practical, day-to-day execution.";
       const p3 = "Would love to see one concrete follow-up example in your next update.";
-      if (length >= 5) return `${p1}\n\n${p2}\n\n${p3}`;
-      if (length <= 2) return `${p1}`;
-      return `${p1} ${p2}`;
+      if (length >= 3) return `${trimParagraphToMaxChars(p1, 200)}\n\n${trimParagraphToMaxChars(p2, 200)}\n\n${trimParagraphToMaxChars(p3, 200)}`;
+      if (length === 1) return trimParagraphToMaxChars(`${p1} ${p2}`, 200);
+      return `${trimParagraphToMaxChars(p1, 200)}\n\n${trimParagraphToMaxChars(p2, 200)}`;
     }
 
     const p1 = `${mention}感谢你的分享，这个观点很有启发。`;
     const p2 = "我很认同其中强调的实践价值，落地层面也很有参考意义。";
     const p3 = "如果方便的话，也期待你后续补充一个更具体的案例。";
-    if (length >= 5) return `${p1}\n\n${p2}\n\n${p3}`;
-    if (length <= 2) return `${p1}`;
-    return `${p1}${p2}`;
+    if (length >= 3) return `${trimParagraphToMaxChars(p1, 200)}\n\n${trimParagraphToMaxChars(p2, 200)}\n\n${trimParagraphToMaxChars(p3, 200)}`;
+    if (length === 1) return trimParagraphToMaxChars(`${p1}${p2}`, 200);
+    return `${trimParagraphToMaxChars(p1, 200)}\n\n${trimParagraphToMaxChars(p2, 200)}`;
   }
 
   function buildReplyFallbackText(input) {
@@ -885,6 +1331,171 @@ ${commentText || "(empty)"}
     return keepShort
       ? "感谢你的评论，很有价值。"
       : "感谢你的评论，很有价值，也给了我新的思考角度。";
+  }
+
+  function endsLikeCompleteThought(text) {
+    const normalized = sparkToString(text, "").trim();
+    if (!normalized) return false;
+    if (/[.!?。！？…]["')\]]*$/u.test(normalized)) return true;
+    if (/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]["')\]]*$/u.test(normalized)) return true;
+    return false;
+  }
+
+  function validateCommentOutput(text, input) {
+    const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
+    const author = sparkToString(input?.postAuthor, "").trim();
+    const expectedLength = Number(input?.__ceEffectiveLength) || resolveCommentLength(pref);
+    const expectedParagraphs = resolveCommentParagraphCount({ ...pref, commentLength: expectedLength });
+    const normalized = normalizeSparkOutput(text);
+    const paragraphs = splitCommentParagraphs(normalized);
+    const issues = [];
+    const requiredEmojiCount = isEmojiPreferenceEnabled(pref)
+      ? (expectedParagraphs >= 3 ? 3 : 2)
+      : 0;
+
+    if (!normalized) {
+      issues.push("The comment is empty.");
+      return { ok: false, issues, paragraphCount: 0, paragraphLengths: [] };
+    }
+
+    if (paragraphs.length !== expectedParagraphs) {
+      issues.push(`Expected exactly ${expectedParagraphs} paragraph(s), but got ${paragraphs.length}.`);
+    }
+
+    paragraphs.forEach((paragraph, index) => {
+      const charLength = sparkToString(paragraph, "").length;
+      if (charLength < 120 || charLength > 200) {
+        issues.push(`Paragraph ${index + 1} must be 120-200 characters, but it is ${charLength}.`);
+      }
+      if (!endsLikeCompleteThought(paragraph)) {
+        issues.push(`Paragraph ${index + 1} must end as a complete sentence or complete thought.`);
+      }
+    });
+
+    if (containsCjk(normalized)) {
+      issues.push("The full comment must be English only.");
+    }
+
+    if (author && isEnabledLike(pref.commentMentionPostAuthor) && !normalized.startsWith(`@${author}`)) {
+      issues.push(`The comment must begin naturally with @${author}.`);
+    }
+
+    if (requiredEmojiCount > 0 && countEmoji(normalized) < requiredEmojiCount) {
+      issues.push(`Use at least ${requiredEmojiCount} emoji(s) overall.`);
+    }
+    if (requiredEmojiCount === 0 && containsEmoji(normalized)) {
+      issues.push("Do not use emoji.");
+    }
+
+    if (isEnabledLike(pref.commentEndWithQuestion)) {
+      const lastParagraph = paragraphs[paragraphs.length - 1] || "";
+      if (!/[?？]["')\]]*$/u.test(lastParagraph.trim())) {
+        issues.push("The final paragraph must end with one natural question.");
+      }
+    }
+
+    return {
+      ok: issues.length === 0,
+      issues,
+      paragraphCount: paragraphs.length,
+      paragraphLengths: paragraphs.map((part) => sparkToString(part, "").length)
+    };
+  }
+
+  function validateReplyOutput(text, input) {
+    const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
+    const normalized = normalizeSparkOutput(text);
+    const issues = [];
+    const wordCount = tokenizeWords(normalized).length;
+    const maxWords = resolveReplyWordLimit(pref);
+
+    if (!normalized) {
+      issues.push("The reply is empty.");
+      return { ok: false, issues, wordCount: 0 };
+    }
+
+    if (wordCount > maxWords) {
+      issues.push(`The reply must stay within ${maxWords} words, but it currently has ${wordCount}.`);
+    }
+
+    if (isEnabledLike(pref.engageInEnglish) && containsCjk(normalized)) {
+      issues.push("The reply must be English only.");
+    }
+
+    if (!endsLikeCompleteThought(normalized)) {
+      issues.push("The reply must end as a complete sentence or complete thought.");
+    }
+
+    if (isEnabledLike(pref.replyEndWithQuestion) && !/[?？]["')\]]*$/u.test(normalized)) {
+      issues.push("The reply must end with one natural question.");
+    }
+
+    return {
+      ok: issues.length === 0,
+      issues,
+      wordCount
+    };
+  }
+
+  function buildValidationIssueText(issues) {
+    if (!Array.isArray(issues) || issues.length === 0) return "- The output did not satisfy the required rules.";
+    return issues.map((issue) => `- ${sparkToString(issue, "").trim()}`).filter(Boolean).join("\n");
+  }
+
+  function buildCommentRepairPrompt(input, failedText, issues) {
+    const base = buildCommentPrompt(input);
+    return {
+      systemPrompt: "You are fixing a LinkedIn comment draft that failed strict structural validation. Preserve the best ideas, but obey every output rule exactly. Return only the corrected comment text.",
+      prompt: `${base.prompt}
+
+Draft that failed validation:
+${sparkToString(failedText, "(empty)")}
+
+Validation failures to fix:
+${buildValidationIssueText(issues)}
+
+Rewrite the draft so it fully satisfies every rule above.
+Return only the corrected comment text.`
+    };
+  }
+
+  function buildReplyRepairPrompt(input, failedText, issues) {
+    const base = buildReplyPrompt(input);
+    return {
+      systemPrompt: "You are fixing a LinkedIn reply draft that failed strict validation. Preserve the best intent, but obey every output rule exactly. Return only the corrected reply text.",
+      prompt: `${base.prompt}
+
+Draft that failed validation:
+${sparkToString(failedText, "(empty)")}
+
+Validation failures to fix:
+${buildValidationIssueText(issues)}
+
+Rewrite the draft so it fully satisfies every rule above.
+Return only the corrected reply text.`
+    };
+  }
+
+  async function buildEffectiveLinkedInAiInput(input, options = {}) {
+    const safeInput = sparkIsPlainObject(input) ? input : {};
+    const includeReplyHint = sparkToBoolean(options?.includeReplyHint, false);
+    const storedPreferences = await loadLegacyPreferences();
+    if (includeReplyHint) {
+      await loadReplyPromptHint();
+    }
+    return {
+      ...safeInput,
+      preferences: sanitizeLegacyPreferences({
+        ...storedPreferences,
+        ...(sparkIsPlainObject(safeInput.preferences) ? safeInput.preferences : {})
+      }),
+      linkedInUiLanguage: normalizeLinkedInPageLang(
+        sparkToString(safeInput.linkedInUiLanguage, document.documentElement?.lang || navigator.language || "")
+      ),
+      replyHint: includeReplyHint
+        ? normalizeReplyPromptHint(sparkToString(safeInput.replyHint, replyPromptHint || ""))
+        : sparkToString(safeInput.replyHint, "")
+    };
   }
 
   function setupSparkRuntime() {
@@ -906,12 +1517,13 @@ ${commentText || "(empty)"}
       return normalizeSparkOutput(text);
     };
     window.__ceSparkGenerateComment = async (input) => {
-      const safeInput = input || {};
+      const safeInput = await buildEffectiveLinkedInAiInput(input, { includeReplyHint: false });
       const profile = resolveCommentGenerationProfile(safeInput.preferences);
-      const prompt = buildCommentPrompt({
+      const commentInput = {
         ...safeInput,
         __ceGenerationProfile: profile
-      });
+      };
+      const prompt = buildCommentPrompt(commentInput);
       let text = "";
       try {
         text = await callSparkModel({
@@ -921,13 +1533,63 @@ ${commentText || "(empty)"}
       } catch (_err) {
         text = buildCommentFallbackText(safeInput, profile);
       }
-      return enforceCommentByPreference(text, {
+      debugCommentTrace("model-output", {
+        requestedLength: profile.length,
+        rawLength: sparkToString(text, "").length,
+        rawParagraphs: sparkToString(text, "").split(/\n{2,}/).filter(Boolean).length,
+        rawText: sparkToString(text, "")
+      });
+      let finalText = enforceCommentByPreference(text, {
         ...safeInput,
         __ceEffectiveLength: profile.length
       });
+      let validation = validateCommentOutput(finalText, {
+        ...safeInput,
+        __ceEffectiveLength: profile.length
+      });
+      if (!validation.ok) {
+        debugCommentTrace("validation-fail", {
+          scope: "comment",
+          requestedLength: profile.length,
+          issues: validation.issues,
+          paragraphCount: validation.paragraphCount,
+          paragraphLengths: validation.paragraphLengths,
+          candidateText: finalText
+        });
+        try {
+          const repairedText = await callSparkModel({
+            ...buildCommentRepairPrompt(commentInput, finalText, validation.issues),
+            timeoutMs: 22000
+          });
+          debugCommentTrace("repair-output", {
+            scope: "comment",
+            repairedLength: sparkToString(repairedText, "").length,
+            repairedParagraphs: sparkToString(repairedText, "").split(/\n{2,}/).filter(Boolean).length,
+            repairedText: sparkToString(repairedText, "")
+          });
+          finalText = enforceCommentByPreference(repairedText, {
+            ...safeInput,
+            __ceEffectiveLength: profile.length
+          });
+          validation = validateCommentOutput(finalText, {
+            ...safeInput,
+            __ceEffectiveLength: profile.length
+          });
+        } catch (_repairErr) {}
+      }
+      debugCommentTrace("post-enforce", {
+        requestedLength: profile.length,
+        validationPassed: validation.ok,
+        validationIssues: validation.issues,
+        finalLength: sparkToString(finalText, "").length,
+        finalParagraphs: sparkToString(finalText, "").split(/\n{2,}/).filter(Boolean).length,
+        finalText
+      });
+      return finalText;
     };
     window.__ceSparkGenerateReply = async (input) => {
-      const prompt = buildReplyPrompt(input || {});
+      const safeInput = await buildEffectiveLinkedInAiInput(input, { includeReplyHint: true });
+      const prompt = buildReplyPrompt(safeInput);
       let text = "";
       try {
         text = await callSparkModel({
@@ -935,9 +1597,27 @@ ${commentText || "(empty)"}
           timeoutMs: 35000
         });
       } catch (_err) {
-        text = buildReplyFallbackText(input || {});
+        text = buildReplyFallbackText(safeInput);
       }
-      return enforceReplyByPreference(text, input || {});
+      let finalText = enforceReplyByPreference(text, safeInput);
+      let validation = validateReplyOutput(finalText, safeInput);
+      if (!validation.ok) {
+        debugCommentTrace("validation-fail", {
+          scope: "reply",
+          issues: validation.issues,
+          wordCount: validation.wordCount,
+          candidateText: finalText
+        });
+        try {
+          const repairedText = await callSparkModel({
+            ...buildReplyRepairPrompt(safeInput, finalText, validation.issues),
+            timeoutMs: 22000
+          });
+          finalText = enforceReplyByPreference(repairedText, safeInput);
+          validation = validateReplyOutput(finalText, safeInput);
+        } catch (_repairErr) {}
+      }
+      return finalText;
     };
   }
 
@@ -1297,6 +1977,107 @@ ${commentText || "(empty)"}
     return next;
   }
 
+  async function probeActiveLinkedInProfile() {
+    try {
+      const tabs = await chrome?.tabs?.query?.({ active: true, currentWindow: true });
+      const tab = Array.isArray(tabs) ? tabs[0] : null;
+      const tabId = Number(tab?.id);
+      const url = sparkToString(tab?.url, "");
+      if (!Number.isFinite(tabId) || !/linkedin\.com/i.test(url)) {
+        return await loadPersistedLinkedInProfile();
+      }
+
+      const results = await chrome?.scripting?.executeScript?.({
+        target: { tabId },
+        func: () => {
+          const toText = (value) => {
+            if (value === undefined || value === null) return "";
+            return String(value).trim();
+          };
+          const parseSeat = (href) => {
+            const raw = toText(href);
+            if (!raw) return "";
+            try {
+              const url = new URL(raw, window.location.origin);
+              const match = url.pathname.match(/\/in\/([^/?#]+)/i);
+              return match ? decodeURIComponent(match[1]) : "";
+            } catch (_err) {
+              return "";
+            }
+          };
+          const pickText = (selectors) => {
+            for (const selector of selectors) {
+              const node = document.querySelector(selector);
+              const text = toText(node?.textContent || node?.getAttribute?.("alt"));
+              if (text) return text;
+            }
+            return "";
+          };
+          const pickAttr = (selectors, attr) => {
+            for (const selector of selectors) {
+              const node = document.querySelector(selector);
+              const value = toText(node?.getAttribute?.(attr));
+              if (value) return value;
+            }
+            return "";
+          };
+          return {
+            seat: parseSeat(
+              pickAttr([
+                "a[data-control-name='nav.settings_view_profile'][href*='/in/']",
+                "a.global-nav__secondary-link[href*='/in/']",
+                ".feed-identity-module a[href*='/in/']",
+                "a[href*='linkedin.com/in/']"
+              ], "href")
+            ),
+            me: pickText([
+              ".feed-identity-module__actor-meta strong",
+              ".feed-identity-module__actor-meta div",
+              "a[data-control-name='nav.settings_view_profile'] span[aria-hidden='true']",
+              "img.global-nav__me-photo"
+            ]),
+            imageUrl: pickAttr([
+              "img.global-nav__me-photo",
+              ".feed-identity-module img",
+              "img.presence-entity__image"
+            ], "src")
+          };
+        }
+      });
+
+      const profile = sanitizeLinkedInProfile(Array.isArray(results) ? results[0]?.result : null);
+      if (hasLinkedInProfileData(profile)) {
+        await persistLinkedInProfile(profile);
+        return profile;
+      }
+    } catch (_err) {}
+
+    return await loadPersistedLinkedInProfile();
+  }
+
+  async function probeActiveLinkedInPageLanguage() {
+    try {
+      const tabs = await chrome?.tabs?.query?.({ active: true, currentWindow: true });
+      const tab = Array.isArray(tabs) ? tabs[0] : null;
+      const tabId = Number(tab?.id);
+      const url = sparkToString(tab?.url, "");
+      if (!Number.isFinite(tabId) || !/linkedin\.com/i.test(url)) {
+        return "";
+      }
+      const results = await chrome?.scripting?.executeScript?.({
+        target: { tabId },
+        func: () => {
+          const htmlLang = document.documentElement?.getAttribute("lang") || document.documentElement?.lang || "";
+          const navLang = navigator.language || "";
+          return String(htmlLang || navLang || "").trim();
+        }
+      });
+      return normalizeLinkedInPageLang(Array.isArray(results) ? results[0]?.result : "");
+    } catch (_err) {
+      return "";
+    }
+  }
+
   function getDefaultLegacyPreferences() {
     return {
       commentLength: 2,
@@ -1321,7 +2102,7 @@ ${commentText || "(empty)"}
     return {
       ...base,
       ...source,
-      commentLength: Math.max(1, Math.min(5, Math.round(sparkToNumber(source.commentLength, base.commentLength)))),
+      commentLength: Math.max(1, Math.min(3, Math.round(sparkToNumber(source.commentLength, base.commentLength)))),
       commentTone: sparkToString(source.commentTone, base.commentTone).trim() || base.commentTone,
       commentIndustry: sparkToString(source.commentIndustry, base.commentIndustry).trim() || base.commentIndustry,
       voiceGender: sparkToString(source.voiceGender, base.voiceGender).trim() || base.voiceGender,
@@ -1339,9 +2120,21 @@ ${commentText || "(empty)"}
 
   async function loadLegacyPreferences() {
     const storage = chrome?.storage?.local;
-    if (!storage?.get) return getDefaultLegacyPreferences();
-    const canonical = await loadCanonicalLegacyPreferences(storage);
-    if (canonical) return canonical;
+    const cachedRaw = readLocalStorageValue(LEGACY_PREFERENCES_CACHE_KEY, "");
+    const cachedAt = sparkToNumber(readLocalStorageValue(LEGACY_PREFERENCES_CACHE_AT_KEY, "0"), 0);
+    const cached = cachedRaw
+      ? sanitizeLegacyPreferences(parseStoredObject(cachedRaw, getDefaultLegacyPreferences()))
+      : null;
+    if (!storage?.get) return cached || getDefaultLegacyPreferences();
+    const canonicalRaw = await rawStorageGet(storage, LEGACY_PREFERENCES_CANONICAL_KEY);
+    const canonicalValue = canonicalRaw?.[LEGACY_PREFERENCES_CANONICAL_KEY];
+    const canonicalAt = sparkToNumber(canonicalRaw?.ce_legacy_preferences_canonical_at, 0);
+    if (cached && cachedAt >= canonicalAt) {
+      return cached;
+    }
+    if (canonicalValue) {
+      return sanitizeLegacyPreferences(parseStoredObject(canonicalValue, getDefaultLegacyPreferences()));
+    }
     const raw = await rawStorageGet(storage, LEGACY_PREFERENCES_STORAGE_KEY);
     return sanitizeLegacyPreferences(parseStoredObject(raw?.[LEGACY_PREFERENCES_STORAGE_KEY], getDefaultLegacyPreferences()));
   }
@@ -1349,15 +2142,25 @@ ${commentText || "(empty)"}
   async function persistLegacyPreferences(patch) {
     const storage = chrome?.storage?.local;
     if (!storage?.set || !sparkIsPlainObject(patch)) return getDefaultLegacyPreferences();
-    const current = await loadLegacyPreferences();
-    const next = sanitizeLegacyPreferences({
-      ...current,
-      ...patch
-    });
-    await setStorageValue(storage, {
-      [LEGACY_PREFERENCES_STORAGE_KEY]: stringifyLegacyStoredObject(next)
-    });
-    return next;
+    legacyPreferencesWriteQueue = legacyPreferencesWriteQueue
+      .catch(() => {})
+      .then(async () => {
+        const current = await loadLegacyPreferences();
+        const persistedAt = Date.now();
+        const next = sanitizeLegacyPreferences({
+          ...current,
+          ...patch
+        });
+        writeLocalStorageValue(LEGACY_PREFERENCES_CACHE_KEY, stringifyStoredObject(next));
+        writeLocalStorageValue(LEGACY_PREFERENCES_CACHE_AT_KEY, String(persistedAt));
+        await setStorageValue(storage, {
+          [LEGACY_PREFERENCES_STORAGE_KEY]: stringifyLegacyStoredObject(next),
+          [LEGACY_PREFERENCES_CANONICAL_KEY]: stringifyStoredObject(next),
+          ce_legacy_preferences_canonical_at: persistedAt
+        });
+        return await loadLegacyPreferences();
+      });
+    return await legacyPreferencesWriteQueue;
   }
 
   async function loadGasGxSignedOutFlag() {
@@ -2037,6 +2840,14 @@ ${commentText || "(empty)"}
     return navigator.language && navigator.language.toLowerCase().startsWith("zh") ? "zh-CN" : "en";
   }
 
+  function normalizeLinkedInPageLang(lang) {
+    const normalized = sparkToString(lang, "").trim().toLowerCase();
+    if (!normalized) return "";
+    if (normalized.startsWith("zh")) return "zh-CN";
+    if (normalized.startsWith("en")) return "en";
+    return "";
+  }
+
   function clampDelaySecond(value, fallback) {
     const n = Number(value);
     if (!Number.isFinite(n)) return fallback;
@@ -2112,6 +2923,16 @@ ${commentText || "(empty)"}
 
     const normalized = setAutoSendDelayRange(autoSendDelayMinSec, autoSendDelayMaxSec);
     autoSendEnabled = normalizeAutoSendEnabled(autoSendEnabled);
+    const persistedAt = Date.now();
+    writeLocalStorageValue(
+      AUTO_SEND_CACHE_KEY,
+      stringifyStoredObject({
+        enabled: autoSendEnabled,
+        minSec: normalized.min,
+        maxSec: normalized.max
+      })
+    );
+    writeLocalStorageValue(AUTO_SEND_CACHE_AT_KEY, String(persistedAt));
 
     return new Promise((resolve) => {
       try {
@@ -2119,7 +2940,8 @@ ${commentText || "(empty)"}
           {
             [AUTO_SEND_ENABLED_KEY]: autoSendEnabled,
             [DELAY_MIN_SEC_KEY]: normalized.min,
-            [DELAY_MAX_SEC_KEY]: normalized.max
+            [DELAY_MAX_SEC_KEY]: normalized.max,
+            ce_auto_send_settings_at: persistedAt
           },
           () => resolve()
         );
@@ -2131,9 +2953,16 @@ ${commentText || "(empty)"}
 
   function loadAutoSendDelayRange() {
     const storage = chrome?.storage?.local;
+    const cachedRaw = readLocalStorageValue(AUTO_SEND_CACHE_KEY, "");
+    const cachedAt = sparkToNumber(readLocalStorageValue(AUTO_SEND_CACHE_AT_KEY, "0"), 0);
+    const cached = cachedRaw ? parseStoredObject(cachedRaw, null) : null;
     if (!storage?.get) {
-      autoSendEnabled = DEFAULT_AUTO_SEND_ENABLED;
-      setAutoSendDelayRange(DEFAULT_DELAY_MIN_SEC, DEFAULT_DELAY_MAX_SEC);
+      autoSendEnabled = normalizeAutoSendEnabled(cached?.enabled);
+      if (!cachedRaw) {
+        autoSendEnabled = DEFAULT_AUTO_SEND_ENABLED;
+      }
+      setAutoSendDelayRange(cached?.minSec ?? DEFAULT_DELAY_MIN_SEC, cached?.maxSec ?? DEFAULT_DELAY_MAX_SEC);
+      autoSendSettingsLoaded = true;
       return Promise.resolve();
     }
 
@@ -2143,17 +2972,27 @@ ${commentText || "(empty)"}
           {
             [AUTO_SEND_ENABLED_KEY]: DEFAULT_AUTO_SEND_ENABLED,
             [DELAY_MIN_SEC_KEY]: DEFAULT_DELAY_MIN_SEC,
-            [DELAY_MAX_SEC_KEY]: DEFAULT_DELAY_MAX_SEC
+            [DELAY_MAX_SEC_KEY]: DEFAULT_DELAY_MAX_SEC,
+            ce_auto_send_settings_at: 0
           },
           (obj) => {
+            if (cached && cachedAt >= sparkToNumber(obj?.ce_auto_send_settings_at, 0)) {
+              autoSendEnabled = normalizeAutoSendEnabled(cached?.enabled);
+              setAutoSendDelayRange(cached?.minSec, cached?.maxSec);
+              autoSendSettingsLoaded = true;
+              resolve();
+              return;
+            }
             autoSendEnabled = normalizeAutoSendEnabled(obj?.[AUTO_SEND_ENABLED_KEY]);
             setAutoSendDelayRange(obj?.[DELAY_MIN_SEC_KEY], obj?.[DELAY_MAX_SEC_KEY]);
+            autoSendSettingsLoaded = true;
             resolve();
           }
         );
       } catch (_err) {
         autoSendEnabled = DEFAULT_AUTO_SEND_ENABLED;
         setAutoSendDelayRange(DEFAULT_DELAY_MIN_SEC, DEFAULT_DELAY_MAX_SEC);
+        autoSendSettingsLoaded = true;
         resolve();
       }
     });
@@ -2165,9 +3004,31 @@ ${commentText || "(empty)"}
     return Math.floor(minMs + Math.random() * (maxMs - minMs + 1));
   }
 
+  function hydrateAutoSendFromLocalCache() {
+    const cachedRaw = readLocalStorageValue(AUTO_SEND_CACHE_KEY, "");
+    if (!cachedRaw) return false;
+    const cached = parseStoredObject(cachedRaw, null);
+    if (!cached || typeof cached !== "object") return false;
+    autoSendEnabled = normalizeAutoSendEnabled(cached?.enabled);
+    setAutoSendDelayRange(cached?.minSec, cached?.maxSec);
+    autoSendSettingsLoaded = true;
+    return true;
+  }
+
   function setupAutoSendDelayRuntime() {
-    window.__ceGetAutoSendDelayMs = getAutoSendDelayMs;
-    window.__ceIsAutoSendEnabled = () => !!autoSendEnabled;
+    hydrateAutoSendFromLocalCache();
+    window.__ceGetAutoSendDelayMs = () => {
+      if (!autoSendSettingsLoaded) {
+        hydrateAutoSendFromLocalCache();
+      }
+      return getAutoSendDelayMs();
+    };
+    window.__ceIsAutoSendEnabled = () => {
+      if (!autoSendSettingsLoaded) {
+        hydrateAutoSendFromLocalCache();
+      }
+      return !!autoSendEnabled;
+    };
     void loadAutoSendDelayRange();
     setInterval(() => {
       void loadAutoSendDelayRange();
@@ -2179,12 +3040,22 @@ ${commentText || "(empty)"}
     if (!storage?.set) return Promise.resolve();
     randomToneEnabled = normalizeFeatureToggle(randomToneEnabled, DEFAULT_RANDOM_TONE_ENABLED);
     randomLengthEnabled = normalizeFeatureToggle(randomLengthEnabled, DEFAULT_RANDOM_LENGTH_ENABLED);
+    randomStrategyUpdatedAt = Date.now();
+    writeLocalStorageValue(
+      RANDOM_STRATEGY_CACHE_KEY,
+      stringifyStoredObject({
+        randomToneEnabled,
+        randomLengthEnabled
+      })
+    );
+    writeLocalStorageValue(RANDOM_STRATEGY_CACHE_AT_KEY, String(randomStrategyUpdatedAt));
     return new Promise((resolve) => {
       try {
         storage.set(
           {
             [RANDOM_TONE_ENABLED_KEY]: randomToneEnabled,
-            [RANDOM_LENGTH_ENABLED_KEY]: randomLengthEnabled
+            [RANDOM_LENGTH_ENABLED_KEY]: randomLengthEnabled,
+            ce_random_strategy_settings_at: randomStrategyUpdatedAt
           },
           () => resolve()
         );
@@ -2196,20 +3067,36 @@ ${commentText || "(empty)"}
 
   function loadRandomStrategySettings() {
     const storage = chrome?.storage?.local;
+    const cachedRaw = readLocalStorageValue(RANDOM_STRATEGY_CACHE_KEY, "");
+    const cachedAt = sparkToNumber(readLocalStorageValue(RANDOM_STRATEGY_CACHE_AT_KEY, "0"), 0);
+    const cached = cachedRaw ? parseStoredObject(cachedRaw, null) : null;
     if (!storage?.get) {
-      randomToneEnabled = DEFAULT_RANDOM_TONE_ENABLED;
-      randomLengthEnabled = DEFAULT_RANDOM_LENGTH_ENABLED;
+      randomToneEnabled = normalizeFeatureToggle(cached?.randomToneEnabled, DEFAULT_RANDOM_TONE_ENABLED);
+      randomLengthEnabled = normalizeFeatureToggle(cached?.randomLengthEnabled, DEFAULT_RANDOM_LENGTH_ENABLED);
       return Promise.resolve();
     }
+
+    const requestStartedAt = Date.now();
 
     return new Promise((resolve) => {
       try {
         storage.get(
           {
             [RANDOM_TONE_ENABLED_KEY]: DEFAULT_RANDOM_TONE_ENABLED,
-            [RANDOM_LENGTH_ENABLED_KEY]: DEFAULT_RANDOM_LENGTH_ENABLED
+            [RANDOM_LENGTH_ENABLED_KEY]: DEFAULT_RANDOM_LENGTH_ENABLED,
+            ce_random_strategy_settings_at: 0
           },
           (obj) => {
+            if (requestStartedAt < randomStrategyUpdatedAt) {
+              resolve();
+              return;
+            }
+            if (cached && cachedAt >= sparkToNumber(obj?.ce_random_strategy_settings_at, 0)) {
+              randomToneEnabled = normalizeFeatureToggle(cached?.randomToneEnabled, DEFAULT_RANDOM_TONE_ENABLED);
+              randomLengthEnabled = normalizeFeatureToggle(cached?.randomLengthEnabled, DEFAULT_RANDOM_LENGTH_ENABLED);
+              resolve();
+              return;
+            }
             randomToneEnabled = normalizeFeatureToggle(obj?.[RANDOM_TONE_ENABLED_KEY], DEFAULT_RANDOM_TONE_ENABLED);
             randomLengthEnabled = normalizeFeatureToggle(obj?.[RANDOM_LENGTH_ENABLED_KEY], DEFAULT_RANDOM_LENGTH_ENABLED);
             resolve();
@@ -2281,6 +3168,340 @@ ${commentText || "(empty)"}
     setInterval(() => {
       void loadReplyPromptHint();
     }, 15_000);
+  }
+
+  function findLegacyParcelRequire() {
+    try {
+      const globalObj = typeof globalThis !== "undefined" ? globalThis : window;
+      for (const key of Object.getOwnPropertyNames(globalObj)) {
+        if (!/^parcelRequire/i.test(key)) continue;
+        const candidate = globalObj[key];
+        if (typeof candidate === "function" && candidate.isParcelRequire) {
+          return candidate;
+        }
+      }
+    } catch (_err) {}
+    return null;
+  }
+
+  function patchLegacyAutomationPreferences(bundleRequire) {
+    try {
+      const preferencesModule = bundleRequire?.("cNKw6");
+      const PreferencesModel = preferencesModule?.PreferencesModel;
+      if (!PreferencesModel || PreferencesModel.__ceAutomationPreferencesPatched) return true;
+
+      const originalLoad = typeof PreferencesModel.load === "function"
+        ? PreferencesModel.load.bind(PreferencesModel)
+        : null;
+
+      if (originalLoad && !PreferencesModel.__ceLoadPatched) {
+        PreferencesModel.load = async () => {
+          const loaded = sanitizeLegacyPreferences(
+            await originalLoad().catch(() => getDefaultLegacyPreferences())
+          );
+          PreferencesModel.__ceLastRawPreferences = loaded;
+          return adaptPreferencesForLegacyContentBundle(loaded);
+        };
+        Object.defineProperty(PreferencesModel, "__ceLoadPatched", {
+          value: true,
+          configurable: true
+        });
+      }
+
+      PreferencesModel.createAutomationPreferences = (voiceGender, reengagementCooldown) => {
+        const basePreferences = sanitizeLegacyPreferences(
+          sparkIsPlainObject(PreferencesModel.__ceLastRawPreferences)
+            ? PreferencesModel.__ceLastRawPreferences
+            : getDefaultLegacyPreferences()
+        );
+
+        return adaptPreferencesForLegacyContentBundle({
+          ...basePreferences,
+          voiceGender: sparkToString(voiceGender, basePreferences.voiceGender).trim() || basePreferences.voiceGender,
+          reengagementCooldown: sparkToString(
+            reengagementCooldown,
+            basePreferences.reengagementCooldown
+          ).trim() || basePreferences.reengagementCooldown
+        });
+      };
+
+      Object.defineProperty(PreferencesModel, "__ceAutomationPreferencesPatched", {
+        value: true,
+        configurable: true
+      });
+      return true;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function patchLegacyCommentScraper(bundleRequire) {
+    try {
+      const { commentScraper } = bundleRequire?.("3gkXb") || {};
+      if (!commentScraper || commentScraper.__cePasteCommentPatched) return true;
+
+      commentScraper.pasteComment = function patchedPasteComment(inputBox, text) {
+        const finalText = normalizeSparkOutput(text);
+        const paragraphs = splitCommentParagraphs(finalText);
+        const html = paragraphs.map((part) => `<p>${escapeHtmlText(part)}</p>`).join("");
+        try {
+          inputBox.focus();
+        } catch (_err) {}
+
+        try {
+          inputBox.innerHTML = html || escapeHtmlText(finalText);
+        } catch (_err) {
+          inputBox.textContent = paragraphs.join("\n\n");
+        }
+
+        moveCaretToEnd(inputBox);
+        dispatchEditorLifecycleEvents(inputBox, paragraphs.join("\n\n") || finalText);
+        debugCommentTrace("paste-legacy", {
+          finalLength: finalText.length,
+          finalParagraphs: paragraphs.length,
+          finalText
+        });
+      };
+
+      Object.defineProperty(commentScraper, "__cePasteCommentPatched", {
+        value: true,
+        configurable: true
+      });
+      return true;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function patchLegacyCommentCreator(bundleRequire) {
+    try {
+      const commentCreator = bundleRequire?.("7DfH5")?.commentCreator;
+      if (!commentCreator || commentCreator.__ceCreateCommentPatched) return true;
+
+      const { dev } = bundleRequire("aCTJn");
+      const { digerr } = bundleRequire("euMK0");
+      const { helper } = bundleRequire("f03J7");
+      const { profiler } = bundleRequire("4xGxE");
+      const { toast } = bundleRequire("2A88X");
+      const types = bundleRequire("92lQT");
+      const { PreferencesModel } = bundleRequire("cNKw6");
+      const sharedTypes = bundleRequire("lWcfI");
+      const { UIModel } = bundleRequire("bPAMv");
+      const { api } = bundleRequire("llJQG");
+      const { versioning } = bundleRequire("d94Ng");
+      const { commentScraper } = bundleRequire("3gkXb");
+
+      if (!commentScraper.__cePasteCommentPatched) {
+        commentScraper.pasteComment = function patchedPasteComment(inputBox, text) {
+          const finalText = sparkToString(text, "");
+          try {
+            console.info("[CE comment trace]", "paste-comment", {
+              finalLength: finalText.length,
+              finalParagraphs: splitCommentParagraphs(finalText).length,
+              finalText
+            });
+          } catch (_err) {}
+          pasteCommentIntoLinkedInEditor(inputBox, finalText);
+        };
+        Object.defineProperty(commentScraper, "__cePasteCommentPatched", {
+          value: true,
+          configurable: true
+        });
+      }
+
+      commentCreator.createComment = async function patchedCreateComment(button) {
+        const finish = async () => {
+          this.inProgress = false;
+          commentScraper.removeSpinner(button);
+        };
+
+        try {
+          if (!(await UIModel.load()).enabled || await versioning.isNewerVersionExists()) return;
+          if (this.inProgress) {
+            toast.info("Please wait for the previous comment to be generated.");
+            return;
+          }
+
+          this.inProgress = true;
+          commentScraper.displaySpinner(button);
+
+          let preferences = await PreferencesModel.load();
+          const isAutomation = button.hasAttribute(types.DataAttribute.IsAutomation);
+
+          const profile = await profiler.loadProfile();
+          profiler.updateProfileOccasionally();
+          if (!profile?.seat) {
+            toast.info("Failed to locate current LinkedIn user 😢<br>Maybe refresh will help?");
+            await finish();
+            return;
+          }
+
+          const container = commentScraper.getPostContainer(button);
+          if (!container) {
+            toast.info("Failed to read current post.");
+            await finish();
+            return;
+          }
+
+          const inputBox = await commentScraper.getCommentInputBoxElement(container);
+          if (!inputBox) {
+            toast.info("Couldn't find comment text box.");
+            await finish();
+            return;
+          }
+
+          const postAuthor = preferences.commentMentionPostAuthor
+            ? commentScraper.getPostAuthor(container)
+            : null;
+          const postText = commentScraper.getPostText(container);
+          if (!postText) {
+            toast.info("Couldn't read post text.");
+            await finish();
+            return;
+          }
+
+          const postAuthorSeat = commentScraper.getPostAuthorSeat(container);
+          const urn = commentScraper.getPostUrn(container);
+          let commentText = "";
+          try {
+            commentText = await api.generateComment(
+              postAuthorSeat,
+              urn,
+              postAuthor,
+              postText,
+              preferences
+            );
+          } catch (_err) {
+            const fallbackProfile = resolveCommentGenerationProfile(preferences);
+            commentText = buildCommentFallbackText({
+              postAuthor,
+              postText,
+              preferences
+            }, fallbackProfile);
+            commentText = enforceCommentByPreference(commentText, {
+              postAuthor,
+              postText,
+              preferences,
+              __ceEffectiveLength: fallbackProfile.length
+            });
+          }
+
+          commentText = normalizeSparkOutput(commentText);
+          if (typeof commentText === "string") {
+            commentText = commentText
+              .replace(/^\s*Great point\s*:\s*/i, "")
+              .replace(/\s*\.\.\.\s*$/u, "")
+              .replace(/(?:话题标(?:签)?|标签)\s*[:：]?\s*(?=[#＃])/g, "")
+              .replace(/＃/g, "#")
+              .replace(/#\s+/g, "#")
+              .trim();
+          }
+
+          if (typeof commentText !== "string" || !commentText.trim()) {
+            throw new Error("API generateComment normalized to empty result");
+          }
+
+          commentScraper.pasteComment(inputBox, commentText);
+          const submitButton = await commentScraper.getSubmitButton(container);
+          if (!submitButton) {
+            await finish();
+            return;
+          }
+
+          if (!submitButton.hasAttribute(types.DataAttribute.AlreadyRegistered)) {
+            submitButton.setAttribute(types.DataAttribute.AlreadyRegistered, "true");
+            submitButton.addEventListener("click", () => {
+              api.engaged(postAuthorSeat, urn, types.EngagementType.Comment, isAutomation).catch((error) =>
+                api.logFrontError("commentCreator.createComment - failed calling api.engaged", error)
+              );
+              dev.successToast("Engagement succeeded.");
+              if (isAutomation) return;
+              const link = urn ? `https://www.linkedin.com/feed/update/${urn}` : window.location.href;
+              api.peep(types.EngagementType.Comment, link).catch((error) =>
+                api.logFrontError("commentCreator.createComment - failed calling api.peep", error)
+              );
+            });
+          }
+
+          if (!autoSendSettingsLoaded) {
+            await loadAutoSendDelayRange();
+          }
+
+          (() => {
+            let delayMs = 2_000 + Math.floor(Math.random() * 5_000);
+            let enabled = true;
+            try {
+              if (typeof window.__ceIsAutoSendEnabled === "function") {
+                enabled = !!window.__ceIsAutoSendEnabled();
+              }
+            } catch (_err) {}
+            if (!enabled) return;
+            try {
+              if (typeof window.__ceGetAutoSendDelayMs === "function") {
+                const nextDelay = window.__ceGetAutoSendDelayMs();
+                if (Number.isFinite(nextDelay) && nextDelay >= 0) {
+                  delayMs = nextDelay;
+                }
+              }
+            } catch (_err) {}
+            setTimeout(() => {
+              try {
+                if (submitButton && typeof submitButton.click === "function" && !submitButton.disabled) {
+                  submitButton.click();
+                }
+              } catch (_err) {}
+            }, delayMs);
+          })();
+
+          await finish();
+          await helper.delay(1_000);
+        } catch (error) {
+          const message = digerr.getMessage(error);
+          if (message === sharedTypes.ErrorText.ExtensionContextInvalidated) {
+            window.location.reload();
+            await finish();
+            return;
+          }
+          if (
+            message.startsWith(sharedTypes.ErrorText.YourFreeTrialHasExpired) ||
+            message.startsWith(sharedTypes.ErrorText.YouHaveReachedTheMaximumUsageAllowed) ||
+            message.startsWith(sharedTypes.ErrorText.YouHaveAlreadyEngaged) ||
+            GATE_TEXT_PATTERN.test(message)
+          ) {
+            await finish();
+            return;
+          }
+          if (message.includes(sharedTypes.ErrorText.YouCanReset)) {
+            const nextUi = await UIModel.load();
+            nextUi.isResetSeatsVisible = true;
+            await UIModel.save(nextUi);
+            await finish();
+            return;
+          }
+          toast.error(message);
+          api.logFrontError("commentCreator.createComment", error);
+          await finish();
+        }
+      };
+
+      Object.defineProperty(commentCreator, "__ceCreateCommentPatched", {
+        value: true,
+        configurable: true
+      });
+      return true;
+    } catch (_err) {
+      return false;
+    }
+  }
+
+  function patchLegacyContentBundleBehavior() {
+    if (legacyContentBundlePatched) return;
+    const bundleRequire = findLegacyParcelRequire();
+    if (!bundleRequire) return;
+
+    const automationPatched = patchLegacyAutomationPreferences(bundleRequire);
+    const commentScraperPatched = patchLegacyCommentScraper(bundleRequire);
+    legacyContentBundlePatched = automationPatched && commentScraperPatched;
   }
 
   function getStorageValue(area, key) {
@@ -3854,19 +5075,19 @@ ${commentText || "(empty)"}
 
   function getVisibleLegacyCheckboxes() {
     return Array.from(document.querySelectorAll("#__plasmo input[type='checkbox']"))
-      .filter((input) => !input.closest("#ce-preferences-auto-send-root, #ce-reply-prompt-hint-root"))
+      .filter((input) => !input.closest("#ce-controlled-preferences-root, #ce-preferences-auto-send-root, #ce-reply-prompt-hint-root"))
       .filter((input) => isVisibleElement(input));
   }
 
   function getVisibleLegacySelects() {
     return Array.from(document.querySelectorAll("#__plasmo select"))
-      .filter((select) => !select.closest("#ce-preferences-auto-send-root, #ce-reply-prompt-hint-root"))
+      .filter((select) => !select.closest("#ce-controlled-preferences-root, #ce-preferences-auto-send-root, #ce-reply-prompt-hint-root"))
       .filter((select) => isVisibleElement(select));
   }
 
   function getVisibleLegacyRanges() {
     return Array.from(document.querySelectorAll("#__plasmo input[type='range']"))
-      .filter((input) => !input.closest("#ce-preferences-auto-send-root, #ce-reply-prompt-hint-root"))
+      .filter((input) => !input.closest("#ce-controlled-preferences-root, #ce-preferences-auto-send-root, #ce-reply-prompt-hint-root"))
       .filter((input) => isVisibleElement(input));
   }
 
@@ -4419,50 +5640,68 @@ ${commentText || "(empty)"}
     const style = document.createElement("style");
     style.id = "ce-gasgx-auth-style";
     style.textContent = `
-      #${GASGX_AUTH_OVERLAY_ID} { position: fixed; inset: 0; z-index: 2147483646; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, rgba(9,17,28,0.96), rgba(16,47,34,0.94)); padding: 18px; }
+      :root {
+        --ce-ui-bg-main: #0f0f0f;
+        --ce-ui-bg-card: rgba(32,32,32,0.82);
+        --ce-ui-bg-ghost: rgba(255,255,255,0.04);
+        --ce-ui-bg-input: #0f0f0f;
+        --ce-ui-text-primary: #e0e0e0;
+        --ce-ui-text-secondary: #888888;
+        --ce-ui-text-on-primary: #0f0f0f;
+        --ce-ui-border: #333333;
+        --ce-ui-accent: #5dd62c;
+        --ce-ui-accent-15: rgba(93,214,44,0.15);
+        --ce-ui-accent-24: rgba(93,214,44,0.24);
+        --ce-ui-success: #28a745;
+        --ce-ui-warning: #ff9900;
+        --ce-ui-danger: #ff3366;
+        --ce-ui-shadow: 0 8px 24px rgba(0,0,0,0.8);
+        --ce-ui-font: "Inter", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+      }
+      #${GASGX_AUTH_OVERLAY_ID} { position: fixed; inset: 0; z-index: 2147483646; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, rgba(9,17,28,0.96), rgba(16,47,34,0.94)); padding: 18px; font-family: var(--ce-ui-font); }
       #${GASGX_AUTH_OVERLAY_ID}[data-mode="hidden"] { display: none; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-card { width: min(100%, 360px); border-radius: 18px; padding: 20px; background: rgba(8,13,22,0.94); border: 1px solid rgba(102,255,153,0.22); box-shadow: 0 18px 50px rgba(0,0,0,0.34); color: #f6fff7; font-family: "Segoe UI", sans-serif; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-card { width: min(100%, 360px); border-radius: 18px; padding: 20px; background: var(--ce-ui-bg-card); backdrop-filter: blur(12px); border: 1px solid var(--ce-ui-accent-24); box-shadow: var(--ce-ui-shadow); color: var(--ce-ui-text-primary); }
       #${GASGX_AUTH_OVERLAY_ID} .ce-card-loading { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px 20px; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-loading-spinner { width: 34px; height: 34px; margin-bottom: 14px; border-radius: 50%; border: 3px solid rgba(102,255,153,0.16); border-top-color: #66ff99; animation: ce-gasgx-spin 0.9s linear infinite; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-loading-spinner { width: 34px; height: 34px; margin-bottom: 14px; border-radius: 50%; border: 3px solid var(--ce-ui-accent-15); border-top-color: var(--ce-ui-accent); animation: ce-gasgx-spin 0.9s linear infinite; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-subtitle { font-size: 12px; line-height: 1.5; color: rgba(230,244,234,0.75); margin-bottom: 16px; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-error { min-height: 18px; color: #ff9f9f; font-size: 12px; margin-bottom: 10px; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-success { color: #9df5b1; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-subtitle { font-size: 12px; line-height: 1.5; color: var(--ce-ui-text-secondary); margin-bottom: 16px; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-error { min-height: 18px; color: #ffdce5; font-size: 12px; margin-bottom: 10px; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-success { color: var(--ce-ui-success); }
       #${GASGX_AUTH_OVERLAY_ID} .ce-inline-status { display: inline-flex; align-items: center; gap: 8px; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-inline-spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid rgba(102,255,153,0.2); border-top-color: #66ff99; animation: ce-gasgx-spin 0.9s linear infinite; flex: 0 0 auto; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-inline-spinner { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--ce-ui-accent-15); border-top-color: var(--ce-ui-accent); animation: ce-gasgx-spin 0.9s linear infinite; flex: 0 0 auto; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-label { font-size: 12px; color: rgba(230,244,234,0.86); }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-input { width: 100%; border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; background: rgba(255,255,255,0.06); color: #fff; padding: 10px 12px; font-size: 13px; box-sizing: border-box; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-input:focus { outline: none; border-color: rgba(102,255,153,0.6); box-shadow: 0 0 0 3px rgba(102,255,153,0.14); }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-label { font-size: 12px; color: var(--ce-ui-text-secondary); }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-input { width: 100%; border: 1px solid var(--ce-ui-border); border-radius: 12px; background: var(--ce-ui-bg-input); color: var(--ce-ui-text-primary); padding: 10px 12px; font-size: 13px; box-sizing: border-box; box-shadow: inset 0 2px 6px rgba(0,0,0,0.6); }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-input:focus { outline: none; border-color: var(--ce-ui-accent); box-shadow: inset 0 2px 6px rgba(0,0,0,0.45), 0 0 0 3px var(--ce-ui-accent-15); }
       #${GASGX_AUTH_OVERLAY_ID} .ce-row { display: flex; gap: 10px; align-items: center; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-btn { appearance: none; border: 0; border-radius: 12px; padding: 10px 14px; cursor: pointer; font-size: 13px; font-weight: 700; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-btn-primary { background: #66ff99; color: #0b1c12; flex: 1; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-link { color: #8cf8b5; text-decoration: none; font-size: 12px; }
-      #${GASGX_AUTH_BADGE_ID} { position: fixed; top: 8px; right: 8px; z-index: 2147483645; display: none; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 999px; background: rgba(5,18,13,0.88); color: #dffff0; border: 1px solid rgba(102,255,153,0.22); font-family: "Segoe UI", sans-serif; font-size: 11px; }
-      #${GASGX_AUTH_BADGE_ID} button { appearance: none; border: 0; border-radius: 999px; padding: 4px 8px; cursor: pointer; font-size: 11px; background: rgba(255,255,255,0.1); color: #fff; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-btn { appearance: none; border: 0; border-radius: 12px; padding: 10px 14px; cursor: pointer; font-size: 13px; font-weight: 800; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-btn-primary { background: var(--ce-ui-accent); color: var(--ce-ui-text-on-primary); flex: 1; }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-link { color: var(--ce-ui-accent); text-decoration: none; font-size: 12px; }
+      #${GASGX_AUTH_BADGE_ID} { position: fixed; top: 8px; right: 8px; z-index: 2147483645; display: none; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 999px; background: rgba(32,32,32,0.88); color: var(--ce-ui-text-primary); border: 1px solid var(--ce-ui-accent-24); font-family: var(--ce-ui-font); font-size: 11px; }
+      #${GASGX_AUTH_BADGE_ID} button { appearance: none; border: 0; border-radius: 999px; padding: 4px 8px; cursor: pointer; font-size: 11px; background: var(--ce-ui-accent); color: var(--ce-ui-text-on-primary); }
       #${GASGX_ACCOUNT_PANEL_ID} { margin: 14px 0 18px; }
-      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-card { border-radius: 16px; padding: 14px 16px; background: rgba(8,20,14,0.42); border: 1px solid rgba(102,255,153,0.22); box-shadow: inset 0 1px 0 rgba(255,255,255,0.04); }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-card { border-radius: 16px; padding: 14px 16px; background: var(--ce-ui-bg-card); backdrop-filter: blur(12px); border: 1px solid var(--ce-ui-accent-24); box-shadow: var(--ce-ui-shadow); }
       #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
-      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-title { font-size: 14px; font-weight: 700; color: #f3fff5; }
-      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-email { margin-top: 4px; font-size: 12px; color: rgba(223,255,240,0.82); word-break: break-all; }
-      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-pill { flex-shrink: 0; border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 700; color: #d7ffe4; background: rgba(102,255,153,0.14); border: 1px solid rgba(102,255,153,0.24); }
-      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-summary { font-size: 12px; line-height: 1.55; color: rgba(230,244,234,0.82); }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-title { font-size: 14px; font-weight: 800; color: var(--ce-ui-text-primary); }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-email { margin-top: 4px; font-size: 12px; color: var(--ce-ui-text-secondary); word-break: break-all; }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-pill { flex-shrink: 0; border-radius: 999px; padding: 4px 10px; font-size: 11px; font-weight: 800; color: var(--ce-ui-accent); background: var(--ce-ui-accent-15); border: 1px solid var(--ce-ui-accent-24); }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-summary { font-size: 12px; line-height: 1.55; color: var(--ce-ui-text-secondary); }
       #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-actions { display: flex; gap: 10px; align-items: center; margin-top: 12px; flex-wrap: wrap; }
       #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-link,
-      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-btn { appearance: none; border: 0; border-radius: 12px; font-size: 12px; font-weight: 700; line-height: 1; text-decoration: none; cursor: pointer; }
-      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-link { padding: 10px 12px; color: #8cf8b5; background: rgba(255,255,255,0.06); }
-      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-btn { padding: 10px 14px; color: #0b1c12; background: #66ff99; }
-      #ce-preferences-auto-send-root.ce-preferences-auto-send { position: relative; z-index: 8; margin-top: 12px; padding: 12px 10px 4px; border-top: 1px solid rgba(102,255,153,0.12); pointer-events: auto; }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-btn { appearance: none; border: 0; border-radius: 12px; font-size: 12px; font-weight: 800; line-height: 1; text-decoration: none; cursor: pointer; }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-link { padding: 10px 12px; color: var(--ce-ui-text-primary); background: transparent; border: 1px solid var(--ce-ui-border); }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-btn { padding: 10px 14px; color: var(--ce-ui-text-on-primary); background: var(--ce-ui-accent); }
+      #ce-preferences-auto-send-root.ce-preferences-auto-send { position: relative; z-index: 8; margin-top: 12px; padding: 14px 12px 4px; border-radius: 14px; background: var(--ce-ui-bg-card); border: 1px solid var(--ce-ui-accent-24); pointer-events: auto; box-shadow: var(--ce-ui-shadow); }
       #ce-preferences-auto-send-root .ce-pref-row { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; pointer-events: auto; }
-      #ce-preferences-auto-send-root .ce-pref-toggle { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; pointer-events: auto; user-select: none; color: rgba(243,255,245,0.92); font-size: 13px; line-height: 1.4; }
-      #ce-preferences-auto-send-root .ce-pref-toggle input[type="checkbox"] { appearance: auto; width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: #66ff99; pointer-events: auto; flex: 0 0 auto; }
-      #ce-preferences-auto-send-root .ce-pref-delay-row { flex-wrap: wrap; color: rgba(230,244,234,0.82); font-size: 13px; }
-      #ce-preferences-auto-send-root .ce-pref-delay-row input[type="number"] { width: 54px; height: 24px; padding: 2px 6px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.12); background: rgba(0,0,0,0.28); color: #f3fff5; box-sizing: border-box; pointer-events: auto; }
+      #ce-preferences-auto-send-root .ce-pref-toggle { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; pointer-events: auto; user-select: none; color: var(--ce-ui-text-primary); font-size: 13px; line-height: 1.4; }
+      #ce-preferences-auto-send-root .ce-pref-toggle input[type="checkbox"] { appearance: auto; width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: var(--ce-ui-accent); pointer-events: auto; flex: 0 0 auto; }
+      #ce-preferences-auto-send-root .ce-pref-delay-row { flex-wrap: wrap; color: var(--ce-ui-text-secondary); font-size: 13px; }
+      #ce-preferences-auto-send-root .ce-pref-delay-row input[type="number"] { width: 54px; height: 28px; padding: 2px 6px; border-radius: 8px; border: 1px solid var(--ce-ui-border); background: var(--ce-ui-bg-input); color: var(--ce-ui-text-primary); box-sizing: border-box; pointer-events: auto; box-shadow: inset 0 2px 6px rgba(0,0,0,0.6); }
       #ce-reply-prompt-hint-root.ce-pref-field { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-      #ce-reply-prompt-hint-label.ce-pref-field-label { display: block; font-size: 13px; font-weight: 600; line-height: 1.4; color: rgba(230,244,234,0.88); }
-      #ce-reply-prompt-hint-input.ce-pref-field-textarea { width: 100%; min-height: 78px; padding: 12px 14px; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; background: rgba(0,0,0,0.24); color: #f3fff5; font-size: 13px; line-height: 1.5; box-sizing: border-box; resize: vertical; }
-      #ce-reply-prompt-hint-input.ce-pref-field-textarea::placeholder { color: rgba(230,244,234,0.42); }
-      #ce-reply-prompt-hint-input.ce-pref-field-textarea:focus { outline: none; border-color: rgba(102,255,153,0.72); box-shadow: 0 0 0 2px rgba(102,255,153,0.12); }
+      #ce-reply-prompt-hint-label.ce-pref-field-label { display: block; font-size: 13px; font-weight: 700; line-height: 1.4; color: var(--ce-ui-text-primary); }
+      #ce-reply-prompt-hint-input.ce-pref-field-textarea { width: 100%; min-height: 78px; padding: 12px 14px; border: 1px solid var(--ce-ui-border); border-radius: 12px; background: var(--ce-ui-bg-input); color: var(--ce-ui-text-primary); font-size: 13px; line-height: 1.5; box-sizing: border-box; resize: vertical; box-shadow: inset 0 2px 6px rgba(0,0,0,0.6); }
+      #ce-reply-prompt-hint-input.ce-pref-field-textarea::placeholder { color: var(--ce-ui-text-secondary); }
+      #ce-reply-prompt-hint-input.ce-pref-field-textarea:focus { outline: none; border-color: var(--ce-ui-accent); box-shadow: inset 0 2px 6px rgba(0,0,0,0.45), 0 0 0 2px var(--ce-ui-accent-15); }
       @keyframes ce-gasgx-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     `;
     document.head.appendChild(style);
@@ -4578,6 +5817,7 @@ ${commentText || "(empty)"}
   function initContentContext() {
     const run = async () => {
       try {
+        patchLegacyContentBundleBehavior();
         await syncGasGxDerivedStorage();
         suppressGateToastApis();
         hideGateToasts();
@@ -4605,23 +5845,26 @@ ${commentText || "(empty)"}
   }
 
   function initPopupContext() {
-    applyTheme(currentMode);
-    applyLanguage(currentLang);
-    void persistPopupFirstRunFlags();
-    mountControls();
-    queueApplyRuntime();
-
-    const renderAuth = () => {
-      window.requestAnimationFrame(() => {
-        renderGasGxPopupAuth();
-      });
+    const applyPopupShellTheme = (mode) => {
+      currentMode = normalizeTheme(mode);
+      document.documentElement.setAttribute("data-theme", currentMode);
+      localStorage.setItem(MODE_KEY, currentMode);
+      return currentMode;
     };
 
-    void Promise.all([
-      loadPersistedGasGxAuthSnapshot(),
-      loadGasGxSignedOutFlag(),
-      loadGasGxLocalSignedInFlag()
-    ]).then(async ([persisted, signedOut, localSignedIn]) => {
+    const applyPopupShellLanguage = (lang) => {
+      currentLang = normalizeLang(lang);
+      document.documentElement.setAttribute("data-lang", currentLang);
+      localStorage.setItem(LANG_KEY, currentLang);
+      return currentLang;
+    };
+
+    const resolvePopupAuthSnapshot = async () => {
+      const [persisted, signedOut, localSignedIn] = await Promise.all([
+        loadPersistedGasGxAuthSnapshot(),
+        loadGasGxSignedOutFlag(),
+        loadGasGxLocalSignedInFlag()
+      ]);
       const restoredSnapshot = sanitizeGasGxAuthSnapshot({
         ...persisted,
         status: localSignedIn ? "enabled" : persisted?.status,
@@ -4636,40 +5879,130 @@ ${commentText || "(empty)"}
         }
         gasgxAuthState.snapshot = restoredSnapshot;
         gasgxAuthState.loaded = true;
-        renderAuth();
-        queueApplyRuntime();
-        return;
+        return restoredSnapshot;
       }
 
-      gasgxAuthState.snapshot = sanitizeGasGxAuthSnapshot({
+      const nextSnapshot = sanitizeGasGxAuthSnapshot({
         ...persisted,
         status: signedOut ? "anonymous" : persisted?.status
       });
+      gasgxAuthState.snapshot = nextSnapshot;
       gasgxAuthState.loaded = true;
-      renderAuth();
-    }).catch(() => {
-      renderAuth();
-    });
+      return nextSnapshot;
+    };
 
-    void syncGasGxDerivedStorage().then(() => {
-      renderAuth();
-    }).catch(() => {
-      renderAuth();
-    });
+    const loadPopupState = async () => {
+      const authSnapshot = await resolvePopupAuthSnapshot();
+      await Promise.all([
+        loadAutoSendDelayRange(),
+        loadRandomStrategySettings(),
+        loadReplyPromptHint(),
+        syncGasGxDerivedStorage()
+      ]).catch(() => {});
 
-    window.addEventListener(GASGX_AUTH_CHANGED_EVENT, renderAuth);
+      const [preferences, linkedInProfile, linkedInUiLanguage] = await Promise.all([
+        loadLegacyPreferences(),
+        probeActiveLinkedInProfile(),
+        probeActiveLinkedInPageLanguage()
+      ]);
 
-    if (!document.body) return;
-    const observer = new MutationObserver(() => {
-      queueApplyRuntime();
-    });
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      characterData: true,
-      attributes: true,
-      attributeFilter: ["title", "aria-label", "placeholder", "class", "disabled"]
-    });
+      if (linkedInUiLanguage && linkedInUiLanguage !== currentLang) {
+        applyPopupShellLanguage(linkedInUiLanguage);
+      }
+
+      return {
+        themeMode: currentMode,
+        lang: currentLang,
+        linkedInProfile,
+        gasgxAuth: sanitizeGasGxAuthSnapshot(authSnapshot),
+        preferences,
+        randomStrategy: {
+          randomToneEnabled: !!randomToneEnabled,
+          randomLengthEnabled: !!randomLengthEnabled
+        },
+        autoSend: {
+          enabled: !!autoSendEnabled,
+          minSec: autoSendDelayMinSec,
+          maxSec: autoSendDelayMaxSec
+        },
+        replyHint: replyPromptHint || ""
+      };
+    };
+
+    const saveRandomStrategy = async (next) => {
+      const patch = next && typeof next === "object" ? next : {};
+      randomToneEnabled = normalizeFeatureToggle(patch.randomToneEnabled, randomToneEnabled);
+      randomLengthEnabled = normalizeFeatureToggle(patch.randomLengthEnabled, randomLengthEnabled);
+      await persistRandomStrategySettings();
+      return {
+        randomToneEnabled: !!randomToneEnabled,
+        randomLengthEnabled: !!randomLengthEnabled
+      };
+    };
+
+    const saveAutoSend = async (next) => {
+      const patch = next && typeof next === "object" ? next : {};
+      autoSendEnabled = normalizeAutoSendEnabled(
+        sparkHasOwn(patch, "enabled") ? patch.enabled : autoSendEnabled
+      );
+      setAutoSendDelayRange(
+        sparkHasOwn(patch, "minSec") ? patch.minSec : autoSendDelayMinSec,
+        sparkHasOwn(patch, "maxSec") ? patch.maxSec : autoSendDelayMaxSec
+      );
+      await persistAutoSendSettings();
+      return {
+        enabled: !!autoSendEnabled,
+        minSec: autoSendDelayMinSec,
+        maxSec: autoSendDelayMaxSec
+      };
+    };
+
+    const saveReplyHint = async (value) => {
+      replyPromptHint = normalizeReplyPromptHint(value);
+      await persistReplyPromptHint();
+      return replyPromptHint;
+    };
+
+    const openGasGx = async () => {
+      if (chrome?.tabs?.create) {
+        return await chrome.tabs.create({ url: GASGX_EXTENSION_CONTACT_URL });
+      }
+      window.open(GASGX_EXTENSION_CONTACT_URL, "_blank", "noopener,noreferrer");
+      return null;
+    };
+
+    const signOutGasGx = async () => {
+      gasgxDerivedStorageLastRunAt = 0;
+      gasgxDerivedStorageLastSignature = "";
+      await handleGasGxPopupSignOut();
+      return await loadPopupState();
+    };
+
+    const subscribeAuthChanged = (callback) => {
+      if (typeof callback !== "function") return () => {};
+      const listener = () => {
+        void loadPopupState().then((state) => callback(state)).catch(() => {});
+      };
+      window.addEventListener(GASGX_AUTH_CHANGED_EVENT, listener);
+      return () => window.removeEventListener(GASGX_AUTH_CHANGED_EVENT, listener);
+    };
+
+    applyPopupShellTheme(currentMode);
+    applyPopupShellLanguage(currentLang);
+    void persistPopupFirstRunFlags();
+    window.__cePopupRuntime = {
+      loadState: loadPopupState,
+      setTheme: async (mode) => applyPopupShellTheme(mode),
+      setLanguage: async (lang) => applyPopupShellLanguage(lang),
+      savePreferences: async (patch) => await persistLegacyPreferences(patch),
+      saveRandomStrategy,
+      saveAutoSend,
+      saveReplyHint,
+      openGasGx,
+      signOutGasGx,
+      subscribeAuthChanged
+    };
+    void syncGasGxDerivedStorage().catch(() => {});
   }
 
   void syncGasGxDerivedStorage();

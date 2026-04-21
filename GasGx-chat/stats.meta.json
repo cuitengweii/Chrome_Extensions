@@ -1,0 +1,179 @@
+{
+  "options": {
+    "chunks": {
+      "js": [
+        "static/js/12081.js",
+        "static/js/65525.js",
+        "static/js/45872.js",
+        "static/js/9580.js",
+        "static/js/88416.js",
+        "static/js/48152.js",
+        "static/js/57219.js",
+        "static/js/69165.js",
+        "static/js/11548.js",
+        "static/js/18642.js",
+        "static/js/options.js"
+      ],
+      "css": [
+        "static/css/40903.css",
+        "static/css/57219.css",
+        "static/css/18642.css",
+        "static/css/options.css"
+      ]
+    },
+    "async_chunks": {
+      "js": [],
+      "css": [],
+      "css_count": 439,
+      "js_count": 953
+    }
+  },
+  "popup": {
+    "chunks": {
+      "js": [
+        "static/js/popup.js"
+      ],
+      "css": []
+    },
+    "async_chunks": {
+      "js": [],
+      "css": [],
+      "css_count": 0,
+      "js_count": 0
+    }
+  },
+  "side_panel": {
+    "chunks": {
+      "js": [
+        "static/js/9580.js",
+        "static/js/48820.js",
+        "static/js/23315.js",
+        "static/js/18642.js",
+        "static/js/91805.js",
+        "static/js/side_panel.js"
+      ],
+      "css": [
+        "static/css/18642.css",
+        "static/css/side_panel.css"
+      ]
+    },
+    "async_chunks": {
+      "js": [],
+      "css": [],
+      "css_count": 439,
+      "js_count": 953
+    }
+  },
+  "background": {
+    "chunks": {
+      "js": [
+        "static/js/background.js"
+      ],
+      "css": []
+    },
+    "async_chunks": {
+      "js": [],
+      "css": [],
+      "css_count": 0,
+      "js_count": 0
+    }
+  },
+  "inject": {
+    "chunks": {
+      "js": [
+        "static/js/inject.js"
+      ],
+      "css": []
+    },
+    "async_chunks": {
+      "js": [],
+      "css": [],
+      "css_count": 0,
+      "js_count": 0
+    }
+  },
+  "content": {
+    "chunks": {
+      "js": [
+        "static/js/45872.js",
+        "static/js/9580.js",
+        "static/js/48820.js",
+        "static/js/82758.js",
+        "static/js/29384.js",
+        "static/js/11548.js",
+        "static/js/23315.js",
+        "static/js/18642.js",
+        "static/js/34053.js",
+        "static/js/79128.js",
+        "static/js/91805.js",
+        "static/js/content.js"
+      ],
+      "css": [
+        "static/css/18642.css",
+        "static/css/content.css"
+      ]
+    },
+    "async_chunks": {
+      "js": [],
+      "css": [],
+      "css_count": 439,
+      "js_count": 953
+    }
+  },
+  "preinject": {
+    "chunks": {
+      "js": [
+        "static/js/preinject.js"
+      ],
+      "css": []
+    },
+    "async_chunks": {
+      "js": [],
+      "css": [],
+      "css_count": 0,
+      "js_count": 0
+    }
+  },
+  "subframe_scripts": {
+    "chunks": {
+      "js": [
+        "static/js/subframe_scripts.js"
+      ],
+      "css": []
+    },
+    "async_chunks": {
+      "js": [],
+      "css": [],
+      "css_count": 0,
+      "js_count": 0
+    }
+  },
+  "subframe_scripts_selection": {
+    "chunks": {
+      "js": [
+        "static/js/subframe_scripts_selection.js"
+      ],
+      "css": []
+    },
+    "async_chunks": {
+      "js": [],
+      "css": [],
+      "css_count": 0,
+      "js_count": 0
+    }
+  },
+  "homepage_scripts": {
+    "chunks": {
+      "js": [
+        "static/js/homepage_scripts.js"
+      ],
+      "css": []
+    },
+    "async_chunks": {
+      "js": [],
+      "css": [],
+      "css_count": 0,
+      "js_count": 0
+    }
+  }
+}

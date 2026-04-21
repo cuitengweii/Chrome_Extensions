@@ -1,0 +1,27 @@
+version: 1
+web:
+  dir: .
+  runtime: worker
+  isCustomServer: false
+routes:
+  - src: /options/**
+    dest:
+      type: web
+      path: options.html
+      ssr: false
+      redirect: ""
+      stream: false
+  - src: /popup/**
+    dest:
+      type: web
+      path: popup.html
+      ssr: false
+      redirect: ""
+      stream: false
+  - src: /side_panel/**
+    dest:
+      type: web
+      path: side_panel.html
+      ssr: false
+      redirect: ""
+      stream: false

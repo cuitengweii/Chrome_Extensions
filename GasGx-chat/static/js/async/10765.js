@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkflow_web_extension=self.webpackChunkflow_web_extension||[]).push([["10765"],{290401:function(e,i,n){n.r(i),n.d(i,{receiveWritingRecognitionCardMatcher:()=>r});var t=n(725546),c=n(665943),r={pluginIdentifier:n(688573).i,matchPlugin:e=>!(0,t.V)(e)&&(0,c.z7f)(e)}}}]);
+//# sourceMappingURL=10765.js.map

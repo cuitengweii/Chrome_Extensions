@@ -1,0 +1,60 @@
+{
+   "action": {
+      "default_icon": {
+         "128": "assets/icon.png",
+         "16": "assets/icon.png",
+         "32": "assets/icon.png",
+         "48": "assets/icon.png"
+      },
+      "default_title": ""
+   },
+   "background": {
+      "service_worker": "static/js/background.js",
+      "type": "module"
+   },
+   "commands": {
+   },
+   "content_scripts": [ {
+      "exclude_matches": [ "https://www.doubao.com/chat/**", "https://www.cici.com/chat/**", "https://www.ciciai.com/chat/**", "https://www.dola.com/chat/**", "https://*.bing.com/**" ],
+      "js": [ "static/js/45872.js", "static/js/9580.js", "static/js/48820.js", "static/js/82758.js", "static/js/29384.js", "static/js/11548.js", "static/js/23315.js", "static/js/18642.js", "static/js/34053.js", "static/js/79128.js", "static/js/91805.js", "static/js/content.js" ],
+      "matches": [ "\u003Call_urls>" ],
+      "run_at": "document_end"
+   }, {
+      "js": [ "static/js/preinject.js" ],
+      "matches": [ "\u003Call_urls>" ],
+      "run_at": "document_start"
+   }, {
+      "js": [ "static/js/homepage_scripts.js" ],
+      "matches": [ "https://www.doubao.com/chat/**", "https://www.cici.com/chat/**", "https://www.ciciai.com/chat/**", "https://www.dola.com/chat/**" ],
+      "run_at": "document_start"
+   } ],
+   "default_locale": "zh_CN",
+   "description": "__MSG_description__",
+   "externally_connectable": {
+      "matches": [ "https://*.doubao.com/*", "https://*.cici.com/*", "https://*.ciciai.com/*", "https://*.dola.com/*", "https://*.larkoffice.com/*", "https://*.feishu.cn/*" ]
+   },
+   "host_permissions": [ "\u003Call_urls>" ],
+   "icons": {
+      "128": "assets/icon.png",
+      "16": "assets/icon.png",
+      "32": "assets/icon.png",
+      "48": "assets/icon.png"
+   },
+   "key": "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAzasto5qjDQJOxFW3yEGK0f6gTPh3nTYPHptoPPXRbWNRzhxEXxciNXYYVEtcm5pEbkEEoIjkHxtyT1uABE+neZKYr6bYGQVnREHy9ABe0tWOZGslUErd+d1Tfw8m/P/+twd9jrGgD3IVgHbp3hatxM0BOUOEaQ0xdW5EVppYI9GtshkusqxfiIEZHnfXq7JoH2Uxa4+8jX2oihjUTikXthUjX2Kry+F7rRZUgfHhENH2hS+lU7cmYOnmuw0K1L0f6uWRbj5lrgKENgT7AB78d34xmR1gJaOEqHEbJ+vnlSR8cVlKw1ptiakVha7xTRqlFwJ2sJBMzrRjdVUP6TEXZQIDAQAB",
+   "manifest_version": 3,
+   "name": "__MSG_name__",
+   "options_ui": {
+      "open_in_tab": true,
+      "page": "options.html"
+   },
+   "permissions": [ "storage", "cookies", "tabs", "webRequest", "sidePanel", "scripting", "contextMenus", "declarativeNetRequest", "declarativeNetRequestWithHostAccess", "declarativeNetRequestFeedback", "webNavigation" ],
+   "side_panel": {
+      "default_path": "side_panel.html"
+   },
+   "update_url": "https://clients2.google.com/service/update2/crx",
+   "version": "1.37.0",
+   "web_accessible_resources": [ {
+      "matches": [ "\u003Call_urls>" ],
+      "resources": [ "assets/icon*.png", "static/css/*", "static/svg/*", "static/image/*", "configs/*", "cdn-media-assets/*", "*.json" ]
+   } ]
+}

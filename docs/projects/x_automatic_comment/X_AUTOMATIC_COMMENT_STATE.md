@@ -278,6 +278,22 @@
    - `$env:NODE_PATH='C:\Temp\xac-playwright-runtime\node_modules'; node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.js` passed.
    - `python D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-e2e-regression.py` passed.
 
+## 2026-04-21 Brand Rename + Timeline Button Copy
+1. Branding update:
+   - extension manifest name changed from `X Automatic Comment` to `GasGx To X`.
+   - action title updated to `GasGx To X`.
+   - manifest description aligned to GasGx branding.
+2. UI copy update (`D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js`):
+   - English panel title updated to `GasGx To X`, subtitle to `GasGx Comment Workflow`.
+   - Chinese panel title updated to `GasGx To X`, subtitle to `GasGx 评论工作流`.
+   - inline timeline button text changed:
+     - English: `GasGx Comment`
+     - Chinese: `GasGx评论`
+3. Validation:
+   - `node --check D:\code\Chrome_Extensions\X Automatic Comment\xac-content.js` passed.
+   - `node D:\code\Chrome_Extensions\X Automatic Comment\tools\xac-smoke-check.js` passed.
+   - Playwright e2e re-run currently unstable in local Windows environment and failed while waiting for `#xac-root` on X page load.
+
 ## Next Step
 1. 在真实 X 页面做一次人工回归：
    - 名称替换 `never/smart/always`

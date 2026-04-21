@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkflow_web_extension=self.webpackChunkflow_web_extension||[]).push([["4506"],{998744:function(e,n,o){function l(e){}function t(e,n,o){}o.r(n),o.d(n,{handleCollect:()=>l,handleRemoveCollection:()=>t})}}]);
+//# sourceMappingURL=4506.js.map

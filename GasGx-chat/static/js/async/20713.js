@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkflow_web_extension=self.webpackChunkflow_web_extension||[]).push([["20713"],{847197:function(e,n,t){t.r(n),t.d(n,{receiveImageTextCreationMessageContentMatcher:()=>i});var a=t(928905),i={pluginIdentifier:t(887822).J,matchPlugin:e=>e.content_type===a.zc.SamanthaCanvasInput}}}]);
+//# sourceMappingURL=20713.js.map

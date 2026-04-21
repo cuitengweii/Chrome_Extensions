@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkflow_web_extension=self.webpackChunkflow_web_extension||[]).push([["53891"],{294943:function(e,t,r){r.r(t),r.d(t,{TextareaWidthMeasure:()=>u});var n=r(397458),s=r(652983),u=(0,s.forwardRef)(function(e,t){var r=(0,s.useRef)(null);return(0,s.useImperativeHandle)(t,()=>({setText(e){r.current&&(r.current.innerText=e)},getTextWidth(){var e;return null===(e=r.current)||void 0===e?void 0:e.offsetWidth}})),(0,n.jsx)("span",{className:"text-USCXew",ref:r})})}}]);
+//# sourceMappingURL=53891.js.map

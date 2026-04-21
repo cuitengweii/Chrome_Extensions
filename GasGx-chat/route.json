@@ -1,0 +1,55 @@
+{
+  "routes": [
+    {
+      "urlPath": "/options",
+      "entryName": "options",
+      "entryPath": "options.html",
+      "isSPA": true,
+      "isStream": false,
+      "isSSR": false,
+      "isRSC": false,
+      "redirect": "",
+      "responseHeader": [],
+      "extra": {
+        "entryName": "options",
+        "loadableManifest": ""
+      },
+      "isSpa": true,
+      "specialHeader": []
+    },
+    {
+      "urlPath": "/popup",
+      "entryName": "popup",
+      "entryPath": "popup.html",
+      "isSPA": true,
+      "isStream": false,
+      "isSSR": false,
+      "isRSC": false,
+      "redirect": "",
+      "responseHeader": [],
+      "extra": {
+        "entryName": "popup",
+        "loadableManifest": ""
+      },
+      "isSpa": true,
+      "specialHeader": []
+    },
+    {
+      "urlPath": "/side_panel",
+      "entryName": "side_panel",
+      "entryPath": "side_panel.html",
+      "isSPA": true,
+      "isStream": false,
+      "isSSR": false,
+      "isRSC": false,
+      "redirect": "",
+      "responseHeader": [],
+      "extra": {
+        "entryName": "side_panel",
+        "loadableManifest": ""
+      },
+      "isSpa": true,
+      "specialHeader": []
+    }
+  ]
+}

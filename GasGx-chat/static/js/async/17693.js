@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkflow_web_extension=self.webpackChunkflow_web_extension||[]).push([["17693"],{800571:function(e,n,i){i.r(n),i.d(n,{imageThinkingReceiveMessageBoxPluginMatcher:()=>l});var t=i(412994),l={pluginIdentifier:i(993105).S,matchPlugin:e=>{var{loading_style:n}=(null==e?void 0:e.content_obj)||(null==e?void 0:e.ext)||{};return(0,t.R)(e)&&"loading_generate_image"===n}}}}]);
+//# sourceMappingURL=17693.js.map

@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkflow_web_extension=self.webpackChunkflow_web_extension||[]).push([["8905"],{480415:function(e,t,r){r.r(t),r.d(t,{ArtifactContentBlockMatcher:()=>o});var c=r(429772),n=r(597006),o={pluginIdentifier:r(208049).d,matchContentBlock(e,t){if(!(null==t?void 0:t.resourceType))return!1;var r=[c.$A.ArtifactResourceType_CanvasPage,c.$A.ArtifactResourceType_StepWritingOtterPage,c.$A.ArtifactResourceType_Docx,c.$A.ArtifactResourceType_StepDocx];return e===n.zc.BLOCK_ARTIFACT&&r.includes(t.resourceType)}}}}]);
+//# sourceMappingURL=8905.js.map

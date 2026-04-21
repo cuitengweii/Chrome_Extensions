@@ -1,12 +1,12 @@
 {
   "manifest_version": 3,
-  "name": "X Automatic Comment",
+  "name": "GasGx To X",
   "version": "11.1.0",
-  "description": "Automatic comment assistant for X/Twitter with bilingual UI, Google login, and AI support.",
+  "description": "GasGx comment assistant for X/Twitter with bilingual UI, Google login, and AI support.",
   "author": "GasGx + Xtensions Clone",
   "action": {
     "default_popup": "popup.html",
-    "default_title": "X Automatic Comment",
+    "default_title": "GasGx To X",
     "default_icon": {
       "16": "xac-logo-16.png",
       "32": "xac-logo-32.png",

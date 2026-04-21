@@ -171,10 +171,10 @@
   ]
   const I18N = {
     en: {
-      title: 'X Automatic Comment', sub: 'Profile + Context + Auto Reply', open: 'Open', close: 'Close', lang: 'Language',
+      title: 'GasGx To X', sub: 'GasGx Comment Workflow', open: 'Open', close: 'Close', lang: 'Language',
       profile: 'Profile', newP: 'New', delP: 'Delete', mode: 'Mode', modeSafe: 'Safe', modeSpicy: 'Spicy', modeViral: 'Viral',
       goal: 'Goal', len: 'Length', ci: 'Custom instructions', persona: 'Persona', autoPost: 'Auto-post after generate',
-      max: 'Max auto replies (0 = unlimited)', start: 'Start Auto Reply', stop: 'Stop Auto Reply', reply: 'AI Reply', quotaLeft: '{count} left',
+      max: 'Max auto replies (0 = unlimited)', start: 'Start Auto Reply', stop: 'Stop Auto Reply', reply: 'GasGx Comment', quotaLeft: '{count} left',
       gen: 'Generating', ok: 'Inserted', fail: 'Failed', login: 'Google login required', signIn: 'Sign in with Google',
       logout: 'Logout',
       working: 'Working...', saving: 'Saving settings...', loggingIn: 'Signing in with Google...',
@@ -460,10 +460,10 @@
       debugSystemPrompt: 'You are a comment debugging assistant. Return only one post-ready reply and no explanation.'
     },
     zh: {
-      title: 'X Automatic Comment', sub: '人设 + 上下文 + 自动回复', open: '展开', close: '收起', lang: '语言',
+      title: 'GasGx To X', sub: 'GasGx 评论工作流', open: '展开', close: '收起', lang: '语言',
       profile: '人设', newP: '新建', delP: '删除', mode: '模式', modeSafe: '稳健', modeSpicy: '激进', modeViral: '爆款',
       goal: '目标', len: '长度', ci: '自定义指令', persona: '人设记忆', autoPost: '生成后自动发送',
-      max: '自动回复上限(0=不限)', start: '开始自动回复', stop: '停止自动回复', reply: 'AI回复', quotaLeft: '剩余{count}次',
+      max: '自动回复上限(0=不限)', start: '开始自动回复', stop: '停止自动回复', reply: 'GasGx评论', quotaLeft: '剩余{count}次',
       gen: '生成中', ok: '已写入', fail: '失败', login: '需要先完成 Google 登录', signIn: 'Google 登录',
       logout: '登出',
       working: '处理中...', saving: '正在保存设置...', loggingIn: '正在登录 Google...',

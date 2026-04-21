@@ -295,6 +295,19 @@
     `;
   }
 
+  function renderBrandHeader(copy) {
+    return `
+      <div class="ce-brand-cluster">
+        <div class="ce-brand-badge" aria-hidden="true">GX</div>
+        <div class="ce-brand-block">
+          <div class="ce-brand-kicker">LinkedIn Console</div>
+          <div class="ce-brand">${escapeHtml(copy.brand)}</div>
+          <div class="ce-brand-subtitle">${escapeHtml(copy.strapline)}</div>
+        </div>
+      </div>
+    `;
+  }
+
   function renderAccountTab() {
     const profile = state?.linkedInProfile || {};
     const gasgx = getGasGxCardState(state?.gasgxAuth);
@@ -412,10 +425,10 @@
       <div class="ce-shell">
         <div class="ce-shell-bg" aria-hidden="true"></div>
         <header class="ce-header header-container">
-          <div class="ce-brand-block">
-            <div class="ce-brand">${escapeHtml(t("brand"))}</div>
-            <div class="ce-brand-subtitle">${escapeHtml(t("strapline"))}</div>
-          </div>
+          ${renderBrandHeader({
+            brand: t("brand"),
+            strapline: t("strapline")
+          })}
           <div class="ce-runtime-controls">
             <button type="button" class="ce-runtime-btn" id="toggle-theme" title="${escapeHtml(getThemeButtonTitle())}">${escapeHtml(getThemeButtonLabel())}</button>
             <button type="button" class="ce-runtime-btn" id="toggle-lang" title="${escapeHtml(getLanguageButtonTitle())}">${escapeHtml(getLanguageButtonLabel())}</button>
@@ -440,10 +453,7 @@
       <div class="ce-shell">
         <div class="ce-shell-bg" aria-hidden="true"></div>
         <header class="ce-header">
-          <div class="ce-brand-block">
-            <div class="ce-brand">${escapeHtml(getCopy("en").brand)}</div>
-            <div class="ce-brand-subtitle">${escapeHtml(getCopy("en").strapline)}</div>
-          </div>
+          ${renderBrandHeader(getCopy("en"))}
         </header>
         <main class="ce-main">
           <article class="ce-card ce-loading-card">
@@ -460,10 +470,7 @@
       <div class="ce-shell">
         <div class="ce-shell-bg" aria-hidden="true"></div>
         <header class="ce-header">
-          <div class="ce-brand-block">
-            <div class="ce-brand">${escapeHtml(getCopy("en").brand)}</div>
-            <div class="ce-brand-subtitle">${escapeHtml(getCopy("en").strapline)}</div>
-          </div>
+          ${renderBrandHeader(getCopy("en"))}
         </header>
         <main class="ce-main">
           <article class="ce-card ce-error-card">

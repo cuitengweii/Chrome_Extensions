@@ -73,6 +73,28 @@
 ### Why
 - Runtime-owned UI surfaces need one consistent token system to avoid style drift and reduce future UI fix cost.
 
+## 2026-04-21 | Sales Console UI Alignment
+
+### Decision
+- Align extension-owned UI surfaces to the `sales-work.html` control-console style:
+  - ultra-dark workspace background
+  - dense panel cards with soft glass layering
+  - lime accent as the only primary action color
+  - compact uppercase micro-labels plus heavier title hierarchy
+- Apply the same visual tokens to both:
+  - popup runtime shell (`popup-runtime.js` + `popup-custom.css`)
+  - runtime-injected LinkedIn preference/account controls in `runtime.patch.js`
+
+### Stable Defaults
+- Popup header should render as a compact console brand block with a left badge, title cluster, and pill-shaped runtime controls.
+- Cards and injected account panels should prefer neutral dark borders over bright accent outlines.
+- Secondary actions remain ghosted; primary actions remain lime-filled with dark text.
+- Input surfaces stay recessed and dark in dark mode, with accent focus rings.
+
+### Why
+- The project now has more than one runtime-owned page surface, so UI divergence has become a maintenance problem.
+- A shared reference style is cheaper to preserve than ad hoc local styling across popup and injected controls.
+
 ## 2026-04-20 | Legacy Content Bundle Recovery Strategy
 
 ### Decision

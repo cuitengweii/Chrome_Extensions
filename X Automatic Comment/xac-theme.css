@@ -150,9 +150,9 @@ body:is(.xac-theme-dark, .xac-theme-light) button {
 
 body:is(.xac-theme-dark, .xac-theme-light) .ant-btn-primary,
 body:is(.xac-theme-dark, .xac-theme-light) button.ant-btn-primary {
-  background: var(--primary-green) !important;
-  border-color: var(--primary-green) !important;
-  color: #ffffff !important;
+  background: var(--accent-aurora) !important;
+  border-color: var(--accent-aurora) !important;
+  color: var(--text-on-primary) !important;
   box-shadow: 0 0 12px rgba(var(--accent-aurora-rgb), 0.4);
 }
 
@@ -161,6 +161,27 @@ body:is(.xac-theme-dark, .xac-theme-light) .ant-btn-primary:focus-visible {
   background: var(--accent-aurora) !important;
   border-color: var(--accent-aurora) !important;
   animation: breathing 2s ease-in-out infinite;
+}
+
+body:is(.xac-theme-dark, .xac-theme-light) .ant-btn-primary svg,
+body:is(.xac-theme-dark, .xac-theme-light) .ant-btn-primary i {
+  color: var(--text-on-primary) !important;
+  fill: var(--text-on-primary) !important;
+}
+
+body:is(.xac-theme-dark, .xac-theme-light) .xac-header .ant-btn,
+body:is(.xac-theme-dark, .xac-theme-light) .header-container .ant-btn,
+body:is(.xac-theme-dark, .xac-theme-light) .header-container .ant-select-selector {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--text-secondary) !important;
+}
+
+body:is(.xac-theme-dark, .xac-theme-light) .xac-header .ant-btn:hover,
+body:is(.xac-theme-dark, .xac-theme-light) .header-container .ant-btn:hover {
+  background: rgba(var(--accent-aurora-rgb), 0.15) !important;
+  color: var(--accent-aurora) !important;
 }
 
 body:is(.xac-theme-dark, .xac-theme-light) .ant-typography,

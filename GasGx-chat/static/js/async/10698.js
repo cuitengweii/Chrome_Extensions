@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkflow_web_extension=self.webpackChunkflow_web_extension||[]).push([["10698"],{489826:function(e,n,i){i.r(n),i.d(n,{extMindmapReceiveMessageBoxPluginMatcher:()=>t});var s=i(665943),t={pluginIdentifier:i(270870).q,matchPlugin:e=>!!(e&&(0,s.q4z)(e))}}}]);
+//# sourceMappingURL=10698.js.map

@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkflow_web_extension=self.webpackChunkflow_web_extension||[]).push([["83518"],{972067:function(e,n,t){t.r(n),t.d(n,{receiveFPAWidgetContentMatcher:()=>c});var i=t(129913),o=t(218366),c={pluginIdentifier:t(957579).H,matchPlugin:e=>(null==e?void 0:e.content_type)===o.ContentType.Widget&&!(0,i.T5)(e)}}}]);
+//# sourceMappingURL=83518.js.map

@@ -1,0 +1,36 @@
+:root {
+  color-scheme: dark;
+  --bg-main: #0f0f0f;
+  --bg-card: #202020;
+  --text-primary: #e0e0e0;
+  --text-secondary: #888888;
+  --text-on-primary: #0f0f0f;
+  --border-line: #333333;
+  --accent-aurora: #5dd62c;
+  --accent-aurora-rgb: 93, 214, 44;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg-main: #f5f7fa;
+    --bg-card: #ffffff;
+    --text-primary: #1a1a1a;
+    --text-secondary: #666666;
+    --text-on-primary: #ffffff;
+    --border-line: #ebeef5;
+    --accent-aurora: #00b853;
+    --accent-aurora-rgb: 0, 184, 83;
+  }
+}
+
+html,
+body,
+#ce-popup-root {
+  background:
+    radial-gradient(circle at top left, rgba(var(--accent-aurora-rgb), 0.15), transparent 30%),
+    radial-gradient(circle at bottom right, rgba(0, 163, 255, 0.12), transparent 26%),
+    var(--bg-main) !important;
+  color: var(--text-primary) !important;
+  font-family: "Inter", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+}

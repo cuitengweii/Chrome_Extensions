@@ -1,0 +1,133 @@
+:root {
+  color-scheme: dark;
+  --bg-main: #0f0f0f;
+  --bg-card: #202020;
+  --text-primary: #e0e0e0;
+  --text-secondary: #888888;
+  --text-on-primary: #0f0f0f;
+  --border-line: #333333;
+  --accent-aurora: #5dd62c;
+  --accent-aurora-rgb: 93, 214, 44;
+  --accent-aurora-rgb-40: rgba(93, 214, 44, 0.4);
+  --surface-glass: rgba(32, 32, 32, 0.72);
+  --shadow-main: 0 8px 24px rgba(0, 0, 0, 0.8);
+  --input-shadow: inset 0 2px 6px rgba(0, 0, 0, 0.6);
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    --bg-main: #f5f7fa;
+    --bg-card: #ffffff;
+    --text-primary: #1a1a1a;
+    --text-secondary: #666666;
+    --text-on-primary: #ffffff;
+    --border-line: #ebeef5;
+    --accent-aurora: #00b853;
+    --accent-aurora-rgb: 0, 184, 83;
+    --accent-aurora-rgb-40: rgba(0, 184, 83, 0.4);
+    --surface-glass: rgba(255, 255, 255, 0.82);
+    --shadow-main: 0 4px 12px rgba(0, 0, 0, 0.05);
+    --input-shadow: none;
+  }
+}
+
+html,
+body {
+  background:
+    radial-gradient(circle at top left, rgba(var(--accent-aurora-rgb), 0.14), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(0, 163, 255, 0.12), transparent 30%),
+    var(--bg-main) !important;
+  color: var(--text-primary) !important;
+  font-family: "Inter", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+}
+
+.popup-shell,
+.page-shell,
+.app-shell,
+.sidebar,
+.main,
+.panel,
+.panel-card,
+.hero,
+.hero-card,
+.status-card,
+.topbar {
+  background: var(--surface-glass) !important;
+  color: var(--text-primary) !important;
+  border-color: var(--border-line) !important;
+  box-shadow: var(--shadow-main) !important;
+}
+
+.top-bar .icon-button,
+.topbar .icon-btn,
+.header-main-actions .icon-button,
+.top-actions .secondary,
+.locale-wrap select {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  color: var(--text-secondary) !important;
+}
+
+.top-bar .icon-button:hover,
+.topbar .icon-btn:hover,
+.header-main-actions .icon-button:hover,
+.top-actions .secondary:hover {
+  background: rgba(var(--accent-aurora-rgb), 0.15) !important;
+  color: var(--accent-aurora) !important;
+}
+
+input,
+select,
+textarea,
+.themed-select,
+.dropdown-content,
+.notebook-picker {
+  background: var(--bg-main) !important;
+  color: var(--text-primary) !important;
+  border: 1px solid var(--border-line) !important;
+  box-shadow: var(--input-shadow) !important;
+}
+
+.dropdown-item:hover,
+[role="option"]:hover,
+[role="option"][aria-selected="true"],
+.picker-item:hover,
+.nav-item:hover,
+.nav-item.active {
+  background: rgba(var(--accent-aurora-rgb), 0.15) !important;
+  color: var(--accent-aurora) !important;
+  border-left: 2px solid var(--accent-aurora) !important;
+}
+
+.primary-button,
+button.primary,
+button.primary-button,
+#upgradeButton,
+#runNow,
+#openManager,
+#saveRule,
+#refreshNotebooks,
+#createPromptButton {
+  background: var(--accent-aurora) !important;
+  color: var(--text-on-primary) !important;
+  border: none !important;
+  box-shadow: 0 0 12px var(--accent-aurora-rgb-40) !important;
+}
+
+.secondary-button,
+button.secondary,
+.compact-button:not(.primary-button),
+.utility-button:not(.primary-button) {
+  background: transparent !important;
+  color: var(--text-secondary) !important;
+}
+
+.secondary-button:hover,
+button.secondary:hover,
+.compact-button:not(.primary-button):hover,
+.utility-button:not(.primary-button):hover {
+  background: rgba(var(--accent-aurora-rgb), 0.15) !important;
+  color: var(--accent-aurora) !important;
+}

@@ -1,0 +1,2 @@
+"use strict";(self.webpackChunkflow_web_extension=self.webpackChunkflow_web_extension||[]).push([["41358"],{359224:function(e,n,t){t.r(n),t.d(n,{receiveSearchResultContentMatcher:()=>s});var r=t(725546),i=t(665943),s={pluginIdentifier:t(962306).d,matchPlugin(e){if((0,r.V)(e))return!1;var n=(0,i.Yb1)(e);return(0,i.s27)(e)&&!(0,i.mT2)(e)&&!(0,i.pp8)(e)||n||(0,i.$sc)(e)}}}}]);
+//# sourceMappingURL=41358.js.map

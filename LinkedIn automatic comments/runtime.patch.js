@@ -19,6 +19,8 @@
   const RANDOM_STRATEGY_CACHE_KEY = "ce_random_strategy_popup_cache";
   const RANDOM_STRATEGY_CACHE_AT_KEY = "ce_random_strategy_popup_cache_at";
   const REPLY_PROMPT_HINT_KEY = "ce_reply_prompt_hint";
+  const REPLY_PROMPT_HINT_CACHE_KEY = "ce_reply_prompt_hint_popup_cache";
+  const REPLY_PROMPT_HINT_CACHE_AT_KEY = "ce_reply_prompt_hint_popup_cache_at";
   const DEFAULT_AUTO_SEND_ENABLED = false;
   const DEFAULT_DELAY_MIN_SEC = 2;
   const DEFAULT_DELAY_MAX_SEC = 7;
@@ -108,6 +110,7 @@
   let autoSendSettingsLoaded = false;
   let autoSendDelayMinSec = DEFAULT_DELAY_MIN_SEC;
   let autoSendDelayMaxSec = DEFAULT_DELAY_MAX_SEC;
+  let autoSendDebugHintTimer = 0;
   let randomToneEnabled = DEFAULT_RANDOM_TONE_ENABLED;
   let randomLengthEnabled = DEFAULT_RANDOM_LENGTH_ENABLED;
   let randomStrategyUpdatedAt = 0;
@@ -2957,12 +2960,11 @@ Return only the corrected reply text.`
     const cachedAt = sparkToNumber(readLocalStorageValue(AUTO_SEND_CACHE_AT_KEY, "0"), 0);
     const cached = cachedRaw ? parseStoredObject(cachedRaw, null) : null;
     if (!storage?.get) {
-      autoSendEnabled = normalizeAutoSendEnabled(cached?.enabled);
-      if (!cachedRaw) {
-        autoSendEnabled = DEFAULT_AUTO_SEND_ENABLED;
-      }
-      setAutoSendDelayRange(cached?.minSec ?? DEFAULT_DELAY_MIN_SEC, cached?.maxSec ?? DEFAULT_DELAY_MAX_SEC);
-      autoSendSettingsLoaded = true;
+      applyAutoSendSnapshot(
+        cachedRaw ? cached?.enabled : DEFAULT_AUTO_SEND_ENABLED,
+        cached?.minSec ?? DEFAULT_DELAY_MIN_SEC,
+        cached?.maxSec ?? DEFAULT_DELAY_MAX_SEC
+      );
       return Promise.resolve();
     }
 
@@ -2977,22 +2979,20 @@ Return only the corrected reply text.`
           },
           (obj) => {
             if (cached && cachedAt >= sparkToNumber(obj?.ce_auto_send_settings_at, 0)) {
-              autoSendEnabled = normalizeAutoSendEnabled(cached?.enabled);
-              setAutoSendDelayRange(cached?.minSec, cached?.maxSec);
-              autoSendSettingsLoaded = true;
+              applyAutoSendSnapshot(cached?.enabled, cached?.minSec, cached?.maxSec);
               resolve();
               return;
             }
-            autoSendEnabled = normalizeAutoSendEnabled(obj?.[AUTO_SEND_ENABLED_KEY]);
-            setAutoSendDelayRange(obj?.[DELAY_MIN_SEC_KEY], obj?.[DELAY_MAX_SEC_KEY]);
-            autoSendSettingsLoaded = true;
+            applyAutoSendSnapshot(
+              obj?.[AUTO_SEND_ENABLED_KEY],
+              obj?.[DELAY_MIN_SEC_KEY],
+              obj?.[DELAY_MAX_SEC_KEY]
+            );
             resolve();
           }
         );
       } catch (_err) {
-        autoSendEnabled = DEFAULT_AUTO_SEND_ENABLED;
-        setAutoSendDelayRange(DEFAULT_DELAY_MIN_SEC, DEFAULT_DELAY_MAX_SEC);
-        autoSendSettingsLoaded = true;
+        applyAutoSendSnapshot(DEFAULT_AUTO_SEND_ENABLED, DEFAULT_DELAY_MIN_SEC, DEFAULT_DELAY_MAX_SEC);
         resolve();
       }
     });
@@ -3004,30 +3004,116 @@ Return only the corrected reply text.`
     return Math.floor(minMs + Math.random() * (maxMs - minMs + 1));
   }
 
+  function showAutoSendDebugHint(message) {
+    if (isPopupContext() || !document?.body) return;
+    const text = sparkToString(message, "").trim();
+    if (!text) return;
+
+    let node = document.getElementById("ce-auto-send-debug-hint");
+    if (!node) {
+      node = document.createElement("div");
+      node.id = "ce-auto-send-debug-hint";
+      node.style.position = "fixed";
+      node.style.right = "16px";
+      node.style.bottom = "16px";
+      node.style.zIndex = "2147483647";
+      node.style.maxWidth = "360px";
+      node.style.padding = "10px 12px";
+      node.style.borderRadius = "12px";
+      node.style.background = "rgba(12,14,12,0.94)";
+      node.style.border = "1px solid rgba(132,204,22,0.35)";
+      node.style.boxShadow = "0 16px 40px rgba(0,0,0,0.35)";
+      node.style.color = "#f4f7f1";
+      node.style.font = '12px/1.45 "Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif';
+      node.style.pointerEvents = "none";
+      document.body.appendChild(node);
+    }
+
+    node.textContent = text;
+    node.style.display = "block";
+    if (autoSendDebugHintTimer) {
+      clearTimeout(autoSendDebugHintTimer);
+      autoSendDebugHintTimer = 0;
+    }
+  }
+
+  function applyAutoSendSnapshot(enabled, minSec, maxSec, reason = "") {
+    autoSendEnabled = normalizeAutoSendEnabled(enabled);
+    setAutoSendDelayRange(minSec, maxSec);
+    autoSendSettingsLoaded = true;
+    const persistedAt = Date.now();
+    writeLocalStorageValue(
+      AUTO_SEND_CACHE_KEY,
+      stringifyStoredObject({
+        enabled: autoSendEnabled,
+        minSec: autoSendDelayMinSec,
+        maxSec: autoSendDelayMaxSec
+      })
+    );
+    writeLocalStorageValue(AUTO_SEND_CACHE_AT_KEY, String(persistedAt));
+    if (!isPopupContext()) {
+      const suffix = reason ? ` | ${reason}` : "";
+      showAutoSendDebugHint(
+        `Auto-send state: ${autoSendEnabled ? "ON" : "OFF"} (${autoSendDelayMinSec}~${autoSendDelayMaxSec}s)${suffix}`
+      );
+    }
+  }
+
   function hydrateAutoSendFromLocalCache() {
     const cachedRaw = readLocalStorageValue(AUTO_SEND_CACHE_KEY, "");
     if (!cachedRaw) return false;
     const cached = parseStoredObject(cachedRaw, null);
     if (!cached || typeof cached !== "object") return false;
-    autoSendEnabled = normalizeAutoSendEnabled(cached?.enabled);
-    setAutoSendDelayRange(cached?.minSec, cached?.maxSec);
-    autoSendSettingsLoaded = true;
+    applyAutoSendSnapshot(cached?.enabled, cached?.minSec, cached?.maxSec, "cached");
     return true;
   }
 
   function setupAutoSendDelayRuntime() {
     hydrateAutoSendFromLocalCache();
+    try {
+      const storageChanges = chrome?.storage?.onChanged;
+      if (storageChanges?.addListener && !storageChanges.__ceAutoSendPatched) {
+        storageChanges.addListener((changes, areaName) => {
+          if (areaName !== "local" || !changes || typeof changes !== "object") return;
+          const enabledChange = changes[AUTO_SEND_ENABLED_KEY];
+          const minChange = changes[DELAY_MIN_SEC_KEY];
+          const maxChange = changes[DELAY_MAX_SEC_KEY];
+          if (!enabledChange && !minChange && !maxChange) return;
+          applyAutoSendSnapshot(
+            enabledChange ? enabledChange.newValue : autoSendEnabled,
+            minChange ? minChange.newValue : autoSendDelayMinSec,
+            maxChange ? maxChange.newValue : autoSendDelayMaxSec,
+            "storage changed"
+          );
+        });
+        Object.defineProperty(storageChanges, "__ceAutoSendPatched", {
+          value: true,
+          configurable: true
+        });
+      }
+    } catch (_err) {}
+
     window.__ceGetAutoSendDelayMs = () => {
       if (!autoSendSettingsLoaded) {
         hydrateAutoSendFromLocalCache();
+        void loadAutoSendDelayRange();
       }
-      return getAutoSendDelayMs();
+      const delayMs = getAutoSendDelayMs();
+      showAutoSendDebugHint(
+        `Auto-send debug: ON, waiting ${Math.max(0, Math.round(delayMs / 100) / 10)}s (${autoSendDelayMinSec}~${autoSendDelayMaxSec}s)`
+      );
+      return delayMs;
     };
     window.__ceIsAutoSendEnabled = () => {
       if (!autoSendSettingsLoaded) {
         hydrateAutoSendFromLocalCache();
+        void loadAutoSendDelayRange();
       }
-      return !!autoSendEnabled;
+      const enabled = !!autoSendEnabled;
+      if (!enabled) {
+        showAutoSendDebugHint("Auto-send debug: OFF in this LinkedIn tab. Popup may be on, but the content page still sees disabled.");
+      }
+      return enabled;
     };
     void loadAutoSendDelayRange();
     setInterval(() => {
@@ -3121,13 +3207,17 @@ Return only the corrected reply text.`
 
   function persistReplyPromptHint() {
     const storage = chrome?.storage?.local;
-    if (!storage?.set) return Promise.resolve();
     replyPromptHint = normalizeReplyPromptHint(replyPromptHint);
+    const persistedAt = Date.now();
+    writeLocalStorageValue(REPLY_PROMPT_HINT_CACHE_KEY, replyPromptHint);
+    writeLocalStorageValue(REPLY_PROMPT_HINT_CACHE_AT_KEY, String(persistedAt));
+    if (!storage?.set) return Promise.resolve();
     return new Promise((resolve) => {
       try {
         storage.set(
           {
-            [REPLY_PROMPT_HINT_KEY]: replyPromptHint
+            [REPLY_PROMPT_HINT_KEY]: replyPromptHint,
+            ce_reply_prompt_hint_at: persistedAt
           },
           () => resolve()
         );
@@ -3139,8 +3229,15 @@ Return only the corrected reply text.`
 
   function loadReplyPromptHint() {
     const storage = chrome?.storage?.local;
+    const cachedHint = normalizeReplyPromptHint(
+      readLocalStorageValue(REPLY_PROMPT_HINT_CACHE_KEY, DEFAULT_REPLY_PROMPT_HINT)
+    );
+    const cachedAt = sparkToNumber(
+      readLocalStorageValue(REPLY_PROMPT_HINT_CACHE_AT_KEY, "0"),
+      0
+    );
     if (!storage?.get) {
-      replyPromptHint = DEFAULT_REPLY_PROMPT_HINT;
+      replyPromptHint = cachedHint;
       return Promise.resolve();
     }
 
@@ -3148,15 +3245,20 @@ Return only the corrected reply text.`
       try {
         storage.get(
           {
-            [REPLY_PROMPT_HINT_KEY]: DEFAULT_REPLY_PROMPT_HINT
+            [REPLY_PROMPT_HINT_KEY]: DEFAULT_REPLY_PROMPT_HINT,
+            ce_reply_prompt_hint_at: 0
           },
           (obj) => {
-            replyPromptHint = normalizeReplyPromptHint(obj?.[REPLY_PROMPT_HINT_KEY]);
+            const storedAt = sparkToNumber(obj?.ce_reply_prompt_hint_at, 0);
+            const storedHint = normalizeReplyPromptHint(obj?.[REPLY_PROMPT_HINT_KEY]);
+            replyPromptHint = cachedAt >= storedAt
+              ? cachedHint
+              : storedHint || cachedHint;
             resolve();
           }
         );
       } catch (_err) {
-        replyPromptHint = DEFAULT_REPLY_PROMPT_HINT;
+        replyPromptHint = cachedHint;
         resolve();
       }
     });
@@ -3309,6 +3411,133 @@ Return only the corrected reply text.`
         });
       }
 
+      const isSubmitButtonClickable = (button) => {
+        if (!button || typeof button.click !== "function") return false;
+        if (button.disabled) return false;
+        const ariaDisabled = sparkToString(button.getAttribute?.("aria-disabled"), "").trim().toLowerCase();
+        if (ariaDisabled === "true") return false;
+        return true;
+      };
+
+      const COMMENT_SUBMIT_SELECTORS = [
+        "button[data-view-name=comment-post]",
+        "button.comments-comment-box__submit-button--cr"
+      ];
+
+      const resolveCommentSubmitButton = (container, inputBox, initialButton, requireClickable) => {
+        const candidates = [];
+        const seen = new Set();
+        const inputRect = inputBox?.getBoundingClientRect?.() || null;
+        const scopes = [];
+
+        if (inputBox?.closest) {
+          const localRoot = inputBox.closest(".comments-comment-box, form, [data-view-name='comment-post'], [role='dialog']");
+          if (localRoot) scopes.push(localRoot);
+        }
+        if (container) scopes.push(container);
+
+        const pushCandidate = (node) => {
+          if (!node || seen.has(node)) return;
+          seen.add(node);
+          if (!isVisibleElement(node)) return;
+          if (requireClickable && !isSubmitButtonClickable(node)) return;
+          const rect = node.getBoundingClientRect?.();
+          if (!rect || !rect.width || !rect.height) return;
+          let score = 0;
+          if (inputRect) {
+            const verticalGap = Math.abs(rect.top - inputRect.bottom);
+            const horizontalGap = Math.abs(rect.left - inputRect.left);
+            score = verticalGap + horizontalGap * 0.35;
+            if (rect.top < inputRect.top - 24) score += 1200;
+          } else {
+            score = rect.top;
+          }
+          candidates.push({ node, score });
+        };
+
+        pushCandidate(initialButton);
+        for (const scope of scopes) {
+          for (const selector of COMMENT_SUBMIT_SELECTORS) {
+            const nodes = Array.from(scope?.querySelectorAll?.(selector) || []);
+            for (const node of nodes) pushCandidate(node);
+          }
+        }
+
+        candidates.sort((left, right) => left.score - right.score);
+        return candidates[0]?.node || null;
+      };
+
+      const triggerSubmitButtonClick = (button) => {
+        if (!button) return false;
+        const rect = button.getBoundingClientRect?.();
+        const clientX = rect ? rect.left + rect.width / 2 : 0;
+        const clientY = rect ? rect.top + rect.height / 2 : 0;
+        try {
+          button.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+        } catch (_err) {}
+        try {
+          button.focus?.({ preventScroll: true });
+        } catch (_err) {}
+
+        const mouseInit = {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          view: window,
+          button: 0,
+          buttons: 1,
+          clientX,
+          clientY
+        };
+
+        try {
+          if (typeof PointerEvent === "function") {
+            button.dispatchEvent(new PointerEvent("pointerdown", mouseInit));
+            button.dispatchEvent(new PointerEvent("pointerup", mouseInit));
+          }
+        } catch (_err) {}
+        try {
+          button.dispatchEvent(new MouseEvent("mouseover", mouseInit));
+          button.dispatchEvent(new MouseEvent("mousedown", mouseInit));
+          button.dispatchEvent(new MouseEvent("mouseup", mouseInit));
+        } catch (_err) {}
+        try {
+          // Use a single terminal click. Dispatching both a synthetic click event and
+          // button.click() can post successfully once, then trigger LinkedIn's retry toast.
+          button.click();
+          return true;
+        } catch (_err) {
+          return false;
+        }
+      };
+
+      const waitForSubmitButton = async (container, inputBox, initialButton, timeoutMs, intervalMs, requireClickable) => {
+        const startedAt = Date.now();
+        const maxWaitMs = Math.max(0, sparkToNumber(timeoutMs, 0));
+        const nextIntervalMs = Math.max(120, sparkToNumber(intervalMs, 250));
+        let currentButton = resolveCommentSubmitButton(container, inputBox, initialButton, requireClickable);
+
+        while (true) {
+          if (currentButton && (!requireClickable || isSubmitButtonClickable(currentButton))) {
+            return currentButton;
+          }
+          if (Date.now() - startedAt >= maxWaitMs) {
+            return currentButton;
+          }
+          await helper.delay(nextIntervalMs);
+          try {
+            currentButton = resolveCommentSubmitButton(
+              container,
+              inputBox,
+              await commentScraper.getSubmitButton(container),
+              requireClickable
+            );
+          } catch (_err) {
+            currentButton = currentButton || null;
+          }
+        }
+      };
+
       commentCreator.createComment = async function patchedCreateComment(button) {
         const finish = async () => {
           this.inProgress = false;
@@ -3324,6 +3553,10 @@ Return only the corrected reply text.`
 
           this.inProgress = true;
           commentScraper.displaySpinner(button);
+          await Promise.all([
+            loadAutoSendDelayRange(),
+            loadRandomStrategySettings()
+          ]);
 
           let preferences = await PreferencesModel.load();
           const isAutomation = button.hasAttribute(types.DataAttribute.IsAutomation);
@@ -3402,8 +3635,9 @@ Return only the corrected reply text.`
           }
 
           commentScraper.pasteComment(inputBox, commentText);
-          const submitButton = await commentScraper.getSubmitButton(container);
+          const submitButton = await waitForSubmitButton(container, inputBox, null, 4_000, 250, false);
           if (!submitButton) {
+            toast.info("Couldn't find comment send button.");
             await finish();
             return;
           }
@@ -3421,10 +3655,6 @@ Return only the corrected reply text.`
                 api.logFrontError("commentCreator.createComment - failed calling api.peep", error)
               );
             });
-          }
-
-          if (!autoSendSettingsLoaded) {
-            await loadAutoSendDelayRange();
           }
 
           (() => {
@@ -3445,11 +3675,46 @@ Return only the corrected reply text.`
               }
             } catch (_err) {}
             setTimeout(() => {
-              try {
-                if (submitButton && typeof submitButton.click === "function" && !submitButton.disabled) {
-                  submitButton.click();
+              void (async () => {
+                let readyButton = null;
+                try {
+                  readyButton = await waitForSubmitButton(container, inputBox, submitButton, 10_000, 400, true);
+                } catch (_err) {
+                  readyButton = submitButton;
                 }
-              } catch (_err) {}
+
+                const tracePayload = {
+                  delayMs,
+                  found: !!readyButton,
+                  disabled: !!readyButton?.disabled,
+                  ariaDisabled: sparkToString(readyButton?.getAttribute?.("aria-disabled"), "").trim()
+                };
+
+                try {
+                  if (isSubmitButtonClickable(readyButton)) {
+                    debugCommentTrace("auto-send-click", tracePayload);
+                    triggerSubmitButtonClick(readyButton);
+                    await helper.delay(1_200);
+                    const followUpButton = resolveCommentSubmitButton(container, inputBox, null, true);
+                    if (!followUpButton) return;
+                    const draftText = sparkToString(inputBox?.innerText || inputBox?.textContent, "").trim();
+                    debugCommentTrace("auto-send-still-open", {
+                      ...tracePayload,
+                      draftLength: draftText.length,
+                      draftPreview: draftText.slice(0, 120)
+                    });
+                    toast.info(
+                      "Auto-send attempted the visible Send button, but LinkedIn kept the composer open. Tell me whether manual click on Send works right now."
+                    );
+                    return;
+                  }
+                } catch (_err) {}
+
+                debugCommentTrace("auto-send-blocked", tracePayload);
+                toast.info(
+                  "Auto-send is enabled, but LinkedIn didn't expose a clickable Send button. Keep the draft open and tell me whether Send is missing or disabled."
+                );
+              })();
             }, delayMs);
           })();
 
@@ -3501,7 +3766,9 @@ Return only the corrected reply text.`
 
     const automationPatched = patchLegacyAutomationPreferences(bundleRequire);
     const commentScraperPatched = patchLegacyCommentScraper(bundleRequire);
-    legacyContentBundlePatched = automationPatched && commentScraperPatched;
+    const commentCreatorPatched = patchLegacyCommentCreator(bundleRequire);
+    legacyContentBundlePatched =
+      automationPatched && commentScraperPatched && commentCreatorPatched;
   }
 
   function getStorageValue(area, key) {
@@ -5641,26 +5908,26 @@ Return only the corrected reply text.`
     style.id = "ce-gasgx-auth-style";
     style.textContent = `
       :root {
-        --ce-ui-bg-main: #0f0f0f;
-        --ce-ui-bg-card: rgba(32,32,32,0.82);
-        --ce-ui-bg-ghost: rgba(255,255,255,0.04);
-        --ce-ui-bg-input: #0f0f0f;
-        --ce-ui-text-primary: #e0e0e0;
-        --ce-ui-text-secondary: #888888;
-        --ce-ui-text-on-primary: #0f0f0f;
-        --ce-ui-border: #333333;
-        --ce-ui-accent: #5dd62c;
-        --ce-ui-accent-15: rgba(93,214,44,0.15);
-        --ce-ui-accent-24: rgba(93,214,44,0.24);
+        --ce-ui-bg-main: #0c0e0c;
+        --ce-ui-bg-card: rgba(20,22,20,0.86);
+        --ce-ui-bg-ghost: rgba(255,255,255,0.03);
+        --ce-ui-bg-input: #0b0d0b;
+        --ce-ui-text-primary: #f4f7f1;
+        --ce-ui-text-secondary: #7b8578;
+        --ce-ui-text-on-primary: #091009;
+        --ce-ui-border: rgba(255,255,255,0.1);
+        --ce-ui-accent: #84cc16;
+        --ce-ui-accent-15: rgba(132,204,22,0.15);
+        --ce-ui-accent-24: rgba(132,204,22,0.24);
         --ce-ui-success: #28a745;
         --ce-ui-warning: #ff9900;
         --ce-ui-danger: #ff3366;
-        --ce-ui-shadow: 0 8px 24px rgba(0,0,0,0.8);
-        --ce-ui-font: "Inter", "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+        --ce-ui-shadow: 0 24px 48px rgba(0,0,0,0.45);
+        --ce-ui-font: "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif;
       }
-      #${GASGX_AUTH_OVERLAY_ID} { position: fixed; inset: 0; z-index: 2147483646; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, rgba(9,17,28,0.96), rgba(16,47,34,0.94)); padding: 18px; font-family: var(--ce-ui-font); }
+      #${GASGX_AUTH_OVERLAY_ID} { position: fixed; inset: 0; z-index: 2147483646; display: flex; align-items: center; justify-content: center; background: linear-gradient(180deg, rgba(12,14,12,0.96), rgba(20,22,20,0.94)); padding: 18px; font-family: var(--ce-ui-font); }
       #${GASGX_AUTH_OVERLAY_ID}[data-mode="hidden"] { display: none; }
-      #${GASGX_AUTH_OVERLAY_ID} .ce-card { width: min(100%, 360px); border-radius: 18px; padding: 20px; background: var(--ce-ui-bg-card); backdrop-filter: blur(12px); border: 1px solid var(--ce-ui-accent-24); box-shadow: var(--ce-ui-shadow); color: var(--ce-ui-text-primary); }
+      #${GASGX_AUTH_OVERLAY_ID} .ce-card { width: min(100%, 360px); border-radius: 22px; padding: 22px; background: var(--ce-ui-bg-card); backdrop-filter: blur(14px); border: 1px solid var(--ce-ui-border); box-shadow: var(--ce-ui-shadow); color: var(--ce-ui-text-primary); }
       #${GASGX_AUTH_OVERLAY_ID} .ce-card-loading { display: flex; flex-direction: column; align-items: center; text-align: center; padding: 24px 20px; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-loading-spinner { width: 34px; height: 34px; margin-bottom: 14px; border-radius: 50%; border: 3px solid var(--ce-ui-accent-15); border-top-color: var(--ce-ui-accent); animation: ce-gasgx-spin 0.9s linear infinite; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-title { font-size: 18px; font-weight: 700; margin-bottom: 6px; }
@@ -5677,10 +5944,10 @@ Return only the corrected reply text.`
       #${GASGX_AUTH_OVERLAY_ID} .ce-btn { appearance: none; border: 0; border-radius: 12px; padding: 10px 14px; cursor: pointer; font-size: 13px; font-weight: 800; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-btn-primary { background: var(--ce-ui-accent); color: var(--ce-ui-text-on-primary); flex: 1; }
       #${GASGX_AUTH_OVERLAY_ID} .ce-link { color: var(--ce-ui-accent); text-decoration: none; font-size: 12px; }
-      #${GASGX_AUTH_BADGE_ID} { position: fixed; top: 8px; right: 8px; z-index: 2147483645; display: none; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 999px; background: rgba(32,32,32,0.88); color: var(--ce-ui-text-primary); border: 1px solid var(--ce-ui-accent-24); font-family: var(--ce-ui-font); font-size: 11px; }
+      #${GASGX_AUTH_BADGE_ID} { position: fixed; top: 8px; right: 8px; z-index: 2147483645; display: none; gap: 8px; align-items: center; padding: 8px 10px; border-radius: 999px; background: rgba(20,22,20,0.9); color: var(--ce-ui-text-primary); border: 1px solid var(--ce-ui-border); font-family: var(--ce-ui-font); font-size: 11px; }
       #${GASGX_AUTH_BADGE_ID} button { appearance: none; border: 0; border-radius: 999px; padding: 4px 8px; cursor: pointer; font-size: 11px; background: var(--ce-ui-accent); color: var(--ce-ui-text-on-primary); }
       #${GASGX_ACCOUNT_PANEL_ID} { margin: 14px 0 18px; }
-      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-card { border-radius: 16px; padding: 14px 16px; background: var(--ce-ui-bg-card); backdrop-filter: blur(12px); border: 1px solid var(--ce-ui-accent-24); box-shadow: var(--ce-ui-shadow); }
+      #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-card { border-radius: 18px; padding: 14px 16px; background: var(--ce-ui-bg-card); backdrop-filter: blur(14px); border: 1px solid var(--ce-ui-border); box-shadow: var(--ce-ui-shadow); }
       #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-head { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 10px; }
       #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-title { font-size: 14px; font-weight: 800; color: var(--ce-ui-text-primary); }
       #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-email { margin-top: 4px; font-size: 12px; color: var(--ce-ui-text-secondary); word-break: break-all; }
@@ -5691,7 +5958,7 @@ Return only the corrected reply text.`
       #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-btn { appearance: none; border: 0; border-radius: 12px; font-size: 12px; font-weight: 800; line-height: 1; text-decoration: none; cursor: pointer; }
       #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-link { padding: 10px 12px; color: var(--ce-ui-text-primary); background: transparent; border: 1px solid var(--ce-ui-border); }
       #${GASGX_ACCOUNT_PANEL_ID} .ce-gasgx-account-btn { padding: 10px 14px; color: var(--ce-ui-text-on-primary); background: var(--ce-ui-accent); }
-      #ce-preferences-auto-send-root.ce-preferences-auto-send { position: relative; z-index: 8; margin-top: 12px; padding: 14px 12px 4px; border-radius: 14px; background: var(--ce-ui-bg-card); border: 1px solid var(--ce-ui-accent-24); pointer-events: auto; box-shadow: var(--ce-ui-shadow); }
+      #ce-preferences-auto-send-root.ce-preferences-auto-send { position: relative; z-index: 8; margin-top: 12px; padding: 14px 12px 4px; border-radius: 18px; background: var(--ce-ui-bg-card); border: 1px solid var(--ce-ui-border); pointer-events: auto; box-shadow: var(--ce-ui-shadow); }
       #ce-preferences-auto-send-root .ce-pref-row { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; pointer-events: auto; }
       #ce-preferences-auto-send-root .ce-pref-toggle { display: inline-flex; align-items: center; gap: 10px; cursor: pointer; pointer-events: auto; user-select: none; color: var(--ce-ui-text-primary); font-size: 13px; line-height: 1.4; }
       #ce-preferences-auto-send-root .ce-pref-toggle input[type="checkbox"] { appearance: auto; width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: var(--ce-ui-accent); pointer-events: auto; flex: 0 0 auto; }

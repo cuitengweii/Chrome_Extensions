@@ -77,3 +77,15 @@
 - 2026-03-29 loadability hardening:
   - rebuilt clean unpacked `manifest.json` (removed `key` / `update_url`, normalized name encoding)
   - ensured full runtime artifact set is included for local loading
+
+## 2026-04-25 GasGx Matrix Route Sync
+- New stable project route added: `D:\code\Chrome_Extensions\gasgx matrix`
+- Project-level docs routing:
+  - `D:\code\Chrome_Extensions\docs\projects\gasgx_matrix\GASGX_MATRIX_STATE.md`
+  - `D:\code\Chrome_Extensions\docs\projects\gasgx_matrix\GASGX_MATRIX_DECISIONS.md`
+  - `D:\code\Chrome_Extensions\docs\projects\gasgx_matrix\GASGX_MATRIX_LESSONS.md`
+- Project classification:
+  - standalone Python video-generation tool
+  - Streamlit operator UI
+  - FFmpeg / ffprobe rendering pipeline
+  - local-first batch cyber-industrial output workflow

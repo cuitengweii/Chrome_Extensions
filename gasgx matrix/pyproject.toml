@@ -1,0 +1,29 @@
+[project]
+name = "gasgx-vibe-matrix"
+version = "0.1.0"
+description = "GasGx Vibe-Matrix batch cyber-industrial remix tool"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "streamlit>=1.44.0",
+  "librosa>=0.10.2",
+  "numpy>=1.26.0",
+  "Pillow>=10.0.0",
+  "requests>=2.31.0",
+]
+
+[project.scripts]
+gasgx-matrix = "gasgx_matrix.cli:main"
+
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "app"}
+
+[tool.setuptools.packages.find]
+where = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

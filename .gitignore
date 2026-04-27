@@ -1,0 +1,14 @@
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# GasGx Matrix local media/runtime artifacts
+gasgx matrix/data/incoming/**/*.mp4
+gasgx matrix/data/incoming/**/*.mov
+gasgx matrix/data/incoming/**/*.mkv
+gasgx matrix/data/incoming/**/*.avi
+gasgx matrix/data/incoming/**/*.m4v
+gasgx matrix/data/library/
+gasgx matrix/outputs/

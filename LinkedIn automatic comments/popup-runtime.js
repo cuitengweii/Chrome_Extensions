@@ -152,12 +152,20 @@
   let errorMessage = "";
   let removeAuthListener = () => {};
 
+  function isGasGxVerified(auth = state?.gasgxAuth) {
+    return auth?.status === "enabled" && !!auth?.profileEnabled;
+  }
+
   function getCopy(lang) {
     return COPY[lang] || COPY.en;
   }
 
   function t(key) {
     return getCopy(state?.lang || "en")[key] || key;
+  }
+
+  function i18nText(en, zh) {
+    return state?.lang === "zh-CN" ? zh : en;
   }
 
   function escapeHtml(value) {
@@ -174,7 +182,7 @@
   }
 
   function getThemeButtonLabel() {
-    return state?.themeMode === "dark" ? "L" : "D";
+    return state?.themeMode === "dark" ? "☀" : "🌙";
   }
 
   function getThemeButtonTitle() {
@@ -207,34 +215,24 @@
   function getGasGxCardState(auth) {
     const safe = auth || {};
     const enabled = safe.status === "enabled" && !!safe.profileEnabled;
-    const blocked = safe.status === "signed_in_but_not_enabled";
     const hasError = safe.status === "auth_error";
-    const primaryAction = enabled
-      ? { id: "auth-action", label: t("signOut") }
-      : (safe.email || blocked || hasError)
-        ? { id: "auth-action", label: t("switchAccount") }
-        : null;
+    const primaryAction = enabled ? { id: "auth-action", label: t("signOut") } : null;
 
     return {
       enabled,
-      blocked,
       hasError,
       statusText: enabled
         ? t("statusEnabled")
-        : blocked
-          ? t("statusBlocked")
-          : hasError
-            ? t("statusError")
-            : t("statusAnonymous"),
+        : hasError
+          ? t("statusError")
+          : t("statusAnonymous"),
       summaryText: enabled
         ? t("gasgxSummaryEnabled")
-        : blocked
-          ? t("gasgxSummaryBlocked")
-          : hasError
-            ? (safe.errorMessage || t("gasgxSummaryError"))
-            : t("gasgxSummaryAnonymous"),
+        : hasError
+          ? (state?.lang === "zh-CN" ? t("gasgxSummaryError") : (safe.errorMessage || t("gasgxSummaryError")))
+          : t("gasgxSummaryAnonymous"),
       primaryAction,
-      emailText: safe.email || t("gasgxNoEmail")
+      emailText: enabled ? (safe.email || t("gasgxNoEmail")) : t("gasgxNoEmail")
     };
   }
 
@@ -298,11 +296,12 @@
   function renderBrandHeader(copy) {
     return `
       <div class="ce-brand-cluster">
-        <div class="ce-brand-badge" aria-hidden="true">GX</div>
+        <div class="ce-brand-badge" aria-hidden="true">
+          <img class="ce-brand-badge-img" src="/assets/logo.png" alt="">
+        </div>
         <div class="ce-brand-block">
           <div class="ce-brand-kicker">LinkedIn Console</div>
           <div class="ce-brand">${escapeHtml(copy.brand)}</div>
-          <div class="ce-brand-subtitle">${escapeHtml(copy.strapline)}</div>
         </div>
       </div>
     `;
@@ -311,6 +310,7 @@
   function renderAccountTab() {
     const profile = state?.linkedInProfile || {};
     const gasgx = getGasGxCardState(state?.gasgxAuth);
+    const verifyPending = pendingAction === "verify-gasgx-login";
     const avatarHtml = profile.imageUrl
       ? `<img class="ce-avatar-image" src="${escapeHtml(profile.imageUrl)}" alt="${escapeHtml(profile.me || "LinkedIn")}">`
       : `<div class="ce-avatar-fallback">${escapeHtml((profile.me || "?").slice(0, 1).toUpperCase())}</div>`;
@@ -320,12 +320,6 @@
 
     return `
       <section class="ce-panel-grid">
-        <article class="ce-card ce-card-hero">
-          <div class="ce-overline">${escapeHtml(t("accountOverview"))}</div>
-          <div class="ce-hero-title">${escapeHtml(t("tabsAccount"))}</div>
-          <div class="ce-hero-subtitle">${escapeHtml(t("accountSummary"))}</div>
-        </article>
-
         <article class="ce-card">
           <div class="ce-card-label">${escapeHtml(t("linkedinTitle"))}</div>
           <div class="ce-profile-row">
@@ -342,15 +336,32 @@
           <div class="ce-card-head">
             <div class="ce-card-head-main">
               <div class="ce-card-title">${escapeHtml(t("gasgxTitle"))}</div>
-              <div class="ce-card-subtitle">${escapeHtml(gasgx.emailText)}</div>
-              <div class="ce-card-note">${escapeHtml(t("gasgxNote"))}</div>
+              ${gasgx.enabled ? `<div class="ce-card-subtitle">${escapeHtml(gasgx.emailText)}</div>` : ""}
+              <div class="ce-card-note">${escapeHtml(gasgx.enabled ? t("gasgxNote") : i18nText("Complete one-time GasGx login verification to unlock preferences.", "请先完成一次 GasGx 登录验证，再使用偏好设置。"))}</div>
             </div>
-            <span class="ce-status-pill ${getStatusClass(gasgx)}">${escapeHtml(gasgx.statusText)}</span>
+            ${gasgx.enabled ? `<span class="ce-status-pill ${getStatusClass(gasgx)}">${escapeHtml(gasgx.statusText)}</span>` : ""}
           </div>
-          <div class="ce-card-body">${escapeHtml(gasgx.summaryText)}</div>
+          ${gasgx.enabled
+            ? `<div class="ce-card-body">${escapeHtml(gasgx.summaryText)}</div>`
+            : (errorMessage ? `<div class="ce-card-body ce-card-error">${escapeHtml(errorMessage)}</div>` : "")
+          }
+          ${gasgx.enabled ? "" : `
+            <div class="ce-settings-grid" style="margin-top: 12px;">
+              <label class="ce-field">
+                <span class="ce-field-label">${escapeHtml(i18nText("GasGx Email", "GasGx 邮箱"))}</span>
+                <input class="ce-input" type="email" id="gasgx-login-email" autocomplete="username" placeholder="${escapeHtml(i18nText("Please enter your GasGx email", "请输入 GasGx 邮箱"))}" value="${escapeHtml(state?.gasgxAuth?.email || "")}" ${verifyPending ? "disabled" : ""}>
+              </label>
+              <label class="ce-field">
+                <span class="ce-field-label">${escapeHtml(i18nText("Password", "密码"))}</span>
+                <input class="ce-input" type="password" id="gasgx-login-password" autocomplete="current-password" placeholder="${escapeHtml(i18nText("Please enter your password", "请输入密码"))}" ${verifyPending ? "disabled" : ""}>
+              </label>
+            </div>
+          `}
           <div class="ce-action-row">
-            <button class="ce-btn ce-btn-secondary" type="button" id="open-gasgx" ${pendingAction ? "disabled" : ""}>${escapeHtml(t("openGasGx"))}</button>
-            ${gasgx.primaryAction ? `<button class="ce-btn ce-btn-primary" type="button" id="${gasgx.primaryAction.id}" ${pendingAction ? "disabled" : ""}>${escapeHtml(gasgx.primaryAction.label)}</button>` : ""}
+            ${gasgx.enabled
+              ? (gasgx.primaryAction ? `<button class="ce-btn ce-btn-primary" type="button" id="${gasgx.primaryAction.id}" ${pendingAction ? "disabled" : ""}>${escapeHtml(gasgx.primaryAction.label)}</button>` : "")
+              : `<button class="ce-btn ce-btn-primary" type="button" id="verify-gasgx-login" ${pendingAction ? "disabled" : ""}>${verifyPending ? escapeHtml(i18nText("Verifying...", "验证中...")) : escapeHtml(i18nText("Verify login once", "验证登录"))}</button>`
+            }
           </div>
         </article>
       </section>
@@ -358,6 +369,17 @@
   }
 
   function renderPreferencesTab() {
+    if (!isGasGxVerified()) {
+      return `
+        <section class="ce-panel-grid">
+          <article class="ce-card">
+            <div class="ce-card-label">${escapeHtml(i18nText("GasGx Verification Required", "需要 GasGx 验证"))}</div>
+            <div class="ce-card-body">${escapeHtml(i18nText("Please go to the Account tab and complete one-time GasGx login verification before using preferences and automation.", "请先在“账号”页完成一次 GasGx 登录验证，再使用偏好和自动化。"))}</div>
+          </article>
+        </section>
+      `;
+    }
+
     const preferences = state?.preferences || {};
     const autoSend = state?.autoSend || {};
     const randomStrategy = state?.randomStrategy || {};
@@ -405,11 +427,6 @@
 
     return `
       <section class="ce-panel-grid">
-        <article class="ce-card ce-card-hero">
-          <div class="ce-overline">${escapeHtml(t("preferencesOverview"))}</div>
-          <div class="ce-hero-title">${escapeHtml(t("tabsPreferences"))}</div>
-          <div class="ce-hero-subtitle">${escapeHtml(t("preferencesSummary"))}</div>
-        </article>
         ${renderSection(t("commentSection"), t("commentSectionNote"), commentBody)}
         ${renderSection(t("replySection"), t("replySectionNote"), replyBody)}
         ${renderSection(t("automationSection"), t("automationSectionNote"), automationBody)}
@@ -418,7 +435,11 @@
   }
 
   function renderShell() {
-    const banner = errorMessage
+    const canSeePreferences = isGasGxVerified();
+    if (!canSeePreferences && activeTab === "preferences") {
+      activeTab = "account";
+    }
+    const banner = (errorMessage && !(activeTab === "account" && !canSeePreferences))
       ? `<div class="ce-banner ce-banner-error">${escapeHtml(errorMessage)}</div>`
       : "";
     return `
@@ -437,7 +458,12 @@
 
         <nav class="ce-tabs" aria-label="Popup tabs">
           <button type="button" class="ce-tab${activeTab === "account" ? " is-active" : ""}" data-tab="account">${escapeHtml(t("tabsAccount"))}</button>
-          <button type="button" class="ce-tab${activeTab === "preferences" ? " is-active" : ""}" data-tab="preferences">${escapeHtml(t("tabsPreferences"))}</button>
+          <button
+            type="button"
+            class="ce-tab${activeTab === "preferences" ? " is-active" : ""}${!canSeePreferences ? " is-locked" : ""}"
+            data-tab="preferences"
+            title="${escapeHtml(!canSeePreferences ? i18nText("Sign in to unlock preferences", "登录后可用偏好设置") : t("tabsPreferences"))}"
+          >${escapeHtml(t("tabsPreferences"))}</button>
         </nav>
 
         ${banner}
@@ -449,16 +475,17 @@
   }
 
   function renderLoading() {
+    const copy = getCopy(document.documentElement.lang || state?.lang || "en");
     root.innerHTML = `
       <div class="ce-shell">
         <div class="ce-shell-bg" aria-hidden="true"></div>
         <header class="ce-header">
-          ${renderBrandHeader(getCopy("en"))}
+          ${renderBrandHeader(copy)}
         </header>
         <main class="ce-main">
           <article class="ce-card ce-loading-card">
             <div class="ce-spinner" aria-hidden="true"></div>
-            <div class="ce-loading-text">${escapeHtml(getCopy("en").loading)}</div>
+            <div class="ce-loading-text">${escapeHtml(copy.loading)}</div>
           </article>
         </main>
       </div>
@@ -466,16 +493,17 @@
   }
 
   function renderError(message) {
+    const copy = getCopy(document.documentElement.lang || state?.lang || "en");
     root.innerHTML = `
       <div class="ce-shell">
         <div class="ce-shell-bg" aria-hidden="true"></div>
         <header class="ce-header">
-          ${renderBrandHeader(getCopy("en"))}
+          ${renderBrandHeader(copy)}
         </header>
         <main class="ce-main">
           <article class="ce-card ce-error-card">
-            <div class="ce-error-title">${escapeHtml(message || getCopy("en").genericError)}</div>
-            <button class="ce-btn ce-btn-primary" type="button" id="reload-popup">${escapeHtml(getCopy("en").reload)}</button>
+            <div class="ce-error-title">${escapeHtml(message || copy.genericError)}</div>
+            <button class="ce-btn ce-btn-primary" type="button" id="reload-popup">${escapeHtml(copy.reload)}</button>
           </article>
         </main>
       </div>
@@ -510,19 +538,21 @@
     errorMessage = "";
     try {
       state = await runtime.loadState();
+      activeTab = isGasGxVerified(state?.gasgxAuth) ? "preferences" : "account";
       render();
     } catch (_err) {
       renderError(getCopy("en").genericError);
     }
   }
 
-  async function withPending(actionKey, task) {
+  async function withPending(actionKey, task, fallbackMessage) {
     pendingAction = actionKey;
     render();
     try {
       await task();
-    } catch (_err) {
-      setError(t("saveFailed"));
+    } catch (err) {
+      const message = err?.message ? String(err.message) : (fallbackMessage || t("saveFailed"));
+      setError(message);
     } finally {
       pendingAction = "";
       render();
@@ -631,14 +661,14 @@
 
     root.querySelectorAll("[data-tab]").forEach((button) => {
       button.addEventListener("click", () => {
-        activeTab = button.getAttribute("data-tab") || "account";
+        const nextTab = button.getAttribute("data-tab") || "account";
+        if (nextTab === "preferences" && !isGasGxVerified()) {
+          setError(i18nText("Please sign in to use preferences.", "请先登录后再使用偏好设置。"));
+          return;
+        }
+        activeTab = nextTab;
+        errorMessage = "";
         render();
-      });
-    });
-
-    root.querySelector("#open-gasgx")?.addEventListener("click", () => {
-      void withPending("open-gasgx", async () => {
-        await runtime.openGasGx();
       });
     });
 
@@ -646,6 +676,17 @@
       void withPending("auth-action", async () => {
         state = await runtime.signOutGasGx();
       });
+    });
+
+    root.querySelector("#verify-gasgx-login")?.addEventListener("click", () => {
+      const emailInput = root.querySelector("#gasgx-login-email");
+      const passwordInput = root.querySelector("#gasgx-login-password");
+      const email = emailInput instanceof HTMLInputElement ? emailInput.value.trim() : "";
+      const password = passwordInput instanceof HTMLInputElement ? passwordInput.value : "";
+      void withPending("verify-gasgx-login", async () => {
+        state = await runtime.verifyGasGxLoginOnce(email, password);
+        activeTab = isGasGxVerified(state?.gasgxAuth) ? "preferences" : "account";
+      }, i18nText("GasGx login verification failed. Please check email and password.", "GasGx 登录验证失败，请检查邮箱和密码。"));
     });
 
     root.querySelector("#pref-comment-length")?.addEventListener("change", (event) => {
@@ -708,6 +749,7 @@
 
     removeAuthListener = runtime.subscribeAuthChanged((nextState) => {
       state = nextState;
+      activeTab = isGasGxVerified(state?.gasgxAuth) ? "preferences" : "account";
       render();
     });
 

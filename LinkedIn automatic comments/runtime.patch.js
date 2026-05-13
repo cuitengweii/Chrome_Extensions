@@ -1870,7 +1870,7 @@ Return only the corrected reply text.`
       ...base,
       initializationInProgress: false,
       enabled,
-      isSignInVisible: !enabled,
+      isSignInVisible: !isGasGxExtensionEnabled(snapshot),
       isResetSeatsVisible: enabled ? !!base.isResetSeatsVisible : false
     };
   }
@@ -2231,7 +2231,9 @@ Return only the corrected reply text.`
     const normalizedEmail = sparkToString(email, "").trim().toLowerCase();
     const normalizedPassword = sparkToString(password, "");
     if (!normalizedEmail || !normalizedPassword) {
-      throw new Error("Please enter your GasGx email and password.");
+      throw new Error(currentLang === "zh-CN"
+        ? "请输入 GasGx 邮箱和密码。"
+        : "Please enter your GasGx email and password.");
     }
     return await supabaseFetchJson("/auth/v1/token?grant_type=password", {
       method: "POST",
@@ -3054,7 +3056,7 @@ Return only the corrected reply text.`
     if (!isPopupContext()) {
       const suffix = reason ? ` | ${reason}` : "";
       showAutoSendDebugHint(
-        `Auto-send state: ${autoSendEnabled ? "ON" : "OFF"} (${autoSendDelayMinSec}~${autoSendDelayMaxSec}s)${suffix}`
+        `自动发送状态：${autoSendEnabled ? "开启" : "关闭"}（${autoSendDelayMinSec}~${autoSendDelayMaxSec}秒）${suffix}`
       );
     }
   }
@@ -3100,7 +3102,7 @@ Return only the corrected reply text.`
       }
       const delayMs = getAutoSendDelayMs();
       showAutoSendDebugHint(
-        `Auto-send debug: ON, waiting ${Math.max(0, Math.round(delayMs / 100) / 10)}s (${autoSendDelayMinSec}~${autoSendDelayMaxSec}s)`
+        `自动发送调试：已开启，等待 ${Math.max(0, Math.round(delayMs / 100) / 10)} 秒（${autoSendDelayMinSec}~${autoSendDelayMaxSec}秒）`
       );
       return delayMs;
     };
@@ -3111,7 +3113,7 @@ Return only the corrected reply text.`
       }
       const enabled = !!autoSendEnabled;
       if (!enabled) {
-        showAutoSendDebugHint("Auto-send debug: OFF in this LinkedIn tab. Popup may be on, but the content page still sees disabled.");
+        showAutoSendDebugHint("自动发送调试：当前 LinkedIn 页面仍为关闭状态。");
       }
       return enabled;
     };
@@ -6196,7 +6198,50 @@ Return only the corrected reply text.`
       };
     };
 
+    const ensurePopupGasGxVerified = async () => {
+      const snapshot = await resolvePopupAuthSnapshot();
+      if (isGasGxExtensionEnabled(snapshot)) return snapshot;
+      throw new Error(currentLang === "zh-CN"
+        ? "请先完成一次 GasGx 登录验证，然后再使用扩展功能。"
+        : "Please complete one-time GasGx login verification before using extension features.");
+    };
+
+    const verifyGasGxLoginOnce = async (email, password) => {
+      try {
+        const sessionPayload = await signInWithGasGxPassword(email, password);
+        const signedIn = await buildGasGxSnapshotFromSession(sessionPayload);
+        const verified = sanitizeGasGxAuthSnapshot({
+          ...signedIn,
+          status: "enabled",
+          plan: "GasGx Local",
+          profileEnabled: true,
+          accessToken: "",
+          refreshToken: "",
+          sessionExpiresAt: 0,
+          errorMessage: "",
+          lastValidatedAt: Date.now()
+        });
+        await persistGasGxSignedOutFlag(false);
+        await persistGasGxLocalSignedInFlag(true);
+        await persistGasGxAuthSnapshot(verified);
+        await syncGasGxDerivedStorage();
+      } catch (error) {
+        await persistGasGxAuthSnapshot({
+          ...getCurrentGasGxAuthSnapshot(),
+          status: "auth_error",
+          profileEnabled: false,
+          errorMessage: currentLang === "zh-CN"
+            ? "GasGx 登录验证失败，请检查邮箱和密码。"
+            : sparkToString(error?.message, "GasGx login verification failed.").trim()
+        });
+        await syncGasGxDerivedStorage();
+        throw error;
+      }
+      return await loadPopupState();
+    };
+
     const saveRandomStrategy = async (next) => {
+      await ensurePopupGasGxVerified();
       const patch = next && typeof next === "object" ? next : {};
       randomToneEnabled = normalizeFeatureToggle(patch.randomToneEnabled, randomToneEnabled);
       randomLengthEnabled = normalizeFeatureToggle(patch.randomLengthEnabled, randomLengthEnabled);
@@ -6208,6 +6253,7 @@ Return only the corrected reply text.`
     };
 
     const saveAutoSend = async (next) => {
+      await ensurePopupGasGxVerified();
       const patch = next && typeof next === "object" ? next : {};
       autoSendEnabled = normalizeAutoSendEnabled(
         sparkHasOwn(patch, "enabled") ? patch.enabled : autoSendEnabled
@@ -6225,6 +6271,7 @@ Return only the corrected reply text.`
     };
 
     const saveReplyHint = async (value) => {
+      await ensurePopupGasGxVerified();
       replyPromptHint = normalizeReplyPromptHint(value);
       await persistReplyPromptHint();
       return replyPromptHint;
@@ -6261,11 +6308,15 @@ Return only the corrected reply text.`
       loadState: loadPopupState,
       setTheme: async (mode) => applyPopupShellTheme(mode),
       setLanguage: async (lang) => applyPopupShellLanguage(lang),
-      savePreferences: async (patch) => await persistLegacyPreferences(patch),
+      savePreferences: async (patch) => {
+        await ensurePopupGasGxVerified();
+        return await persistLegacyPreferences(patch);
+      },
       saveRandomStrategy,
       saveAutoSend,
       saveReplyHint,
       openGasGx,
+      verifyGasGxLoginOnce,
       signOutGasGx,
       subscribeAuthChanged
     };

@@ -10,18 +10,16 @@
   --accent-aurora-rgb: 93, 214, 44;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color-scheme: light;
-    --bg-main: #f5f7fa;
-    --bg-card: #ffffff;
-    --text-primary: #1a1a1a;
-    --text-secondary: #666666;
-    --text-on-primary: #ffffff;
-    --border-line: #ebeef5;
-    --accent-aurora: #00b853;
-    --accent-aurora-rgb: 0, 184, 83;
-  }
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg-main: #f5f7fa;
+  --bg-card: #ffffff;
+  --text-primary: #1a1a1a;
+  --text-secondary: #666666;
+  --text-on-primary: #ffffff;
+  --border-line: #ebeef5;
+  --accent-aurora: #00b853;
+  --accent-aurora-rgb: 0, 184, 83;
 }
 
 html,

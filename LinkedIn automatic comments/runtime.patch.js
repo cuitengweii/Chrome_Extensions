@@ -3013,21 +3013,12 @@ Return only the corrected reply text.`
 
     let node = document.getElementById("ce-auto-send-debug-hint");
     if (!node) {
+      ensureGasGxPopupStyles();
       node = document.createElement("div");
       node.id = "ce-auto-send-debug-hint";
-      node.style.position = "fixed";
-      node.style.right = "16px";
-      node.style.bottom = "16px";
-      node.style.zIndex = "2147483647";
-      node.style.maxWidth = "360px";
-      node.style.padding = "10px 12px";
-      node.style.borderRadius = "12px";
-      node.style.background = "rgba(12,14,12,0.94)";
-      node.style.border = "1px solid rgba(132,204,22,0.35)";
-      node.style.boxShadow = "0 16px 40px rgba(0,0,0,0.35)";
-      node.style.color = "#f4f7f1";
-      node.style.font = '12px/1.45 "Segoe UI","PingFang SC","Microsoft YaHei",Arial,sans-serif';
-      node.style.pointerEvents = "none";
+      node.className = "ce-gasgx-toast ce-gasgx-toast-debug";
+      node.setAttribute("role", "status");
+      node.setAttribute("aria-live", "polite");
       document.body.appendChild(node);
     }
 
@@ -3548,6 +3539,13 @@ Return only the corrected reply text.`
 
         try {
           if (!(await UIModel.load()).enabled || await versioning.isNewerVersionExists()) return;
+          const authSnapshot = await ensureGasGxAuthSnapshotLoaded(true);
+          if (!isGasGxExtensionEnabled(authSnapshot)) {
+            toast.info(currentLang === "zh-CN"
+              ? "你已退出登录，请先在扩展弹窗重新登录后再评论。"
+              : "You're signed out. Please sign in from the extension popup before commenting.");
+            return;
+          }
           if (this.inProgress) {
             toast.info("Please wait for the previous comment to be generated.");
             return;
@@ -3691,6 +3689,17 @@ Return only the corrected reply text.`
                   disabled: !!readyButton?.disabled,
                   ariaDisabled: sparkToString(readyButton?.getAttribute?.("aria-disabled"), "").trim()
                 };
+
+                try {
+                  const latestAuthSnapshot = await ensureGasGxAuthSnapshotLoaded(true);
+                  if (!isGasGxExtensionEnabled(latestAuthSnapshot)) {
+                    debugCommentTrace("auto-send-blocked-auth", tracePayload);
+                    toast.info(currentLang === "zh-CN"
+                      ? "你已退出登录，已停止自动发送评论。"
+                      : "You're signed out, so auto-send was stopped.");
+                    return;
+                  }
+                } catch (_err) {}
 
                 try {
                   if (isSubmitButtonClickable(readyButton)) {
@@ -5971,6 +5980,46 @@ Return only the corrected reply text.`
       #ce-reply-prompt-hint-input.ce-pref-field-textarea { width: 100%; min-height: 78px; padding: 12px 14px; border: 1px solid var(--ce-ui-border); border-radius: 12px; background: var(--ce-ui-bg-input); color: var(--ce-ui-text-primary); font-size: 13px; line-height: 1.5; box-sizing: border-box; resize: vertical; box-shadow: inset 0 2px 6px rgba(0,0,0,0.6); }
       #ce-reply-prompt-hint-input.ce-pref-field-textarea::placeholder { color: var(--ce-ui-text-secondary); }
       #ce-reply-prompt-hint-input.ce-pref-field-textarea:focus { outline: none; border-color: var(--ce-ui-accent); box-shadow: inset 0 2px 6px rgba(0,0,0,0.45), 0 0 0 2px var(--ce-ui-accent-15); }
+      .iziToast-wrapper { z-index: 2147483647 !important; padding: 12px 14px !important; }
+      .iziToast-wrapper-topLeft, .iziToast-wrapper-topCenter, .iziToast-wrapper-topRight { top: 6px !important; }
+      .iziToast-wrapper-bottomLeft, .iziToast-wrapper-bottomCenter, .iziToast-wrapper-bottomRight { bottom: 6px !important; }
+      .iziToast {
+        border-radius: 14px !important;
+        border: 1px solid var(--ce-ui-border) !important;
+        background: rgba(20,22,20,0.94) !important;
+        color: var(--ce-ui-text-primary) !important;
+        font-family: var(--ce-ui-font) !important;
+        box-shadow: 0 16px 34px rgba(0,0,0,0.42) !important;
+      }
+      .iziToast::after { display: none !important; }
+      .iziToast > .iziToast-progressbar { background: rgba(132,204,22,0.14) !important; }
+      .iziToast > .iziToast-progressbar > div { background: var(--ce-ui-accent) !important; height: 3px !important; border-radius: 0 0 12px 12px !important; }
+      .iziToast > .iziToast-body { margin: 0 0 0 14px !important; padding: 0 2px 0 10px !important; min-height: 38px !important; }
+      .iziToast > .iziToast-body .iziToast-texts { margin: 8px 0 8px !important; padding-right: 4px !important; }
+      .iziToast > .iziToast-body .iziToast-title { color: var(--ce-ui-text-primary) !important; font-size: 13px !important; line-height: 1.4 !important; font-weight: 700 !important; }
+      .iziToast > .iziToast-body .iziToast-message { color: rgba(244,247,241,0.92) !important; font-size: 13px !important; line-height: 1.5 !important; margin: 0 !important; }
+      .iziToast > .iziToast-close { filter: brightness(0) invert(1); opacity: 0.72 !important; }
+      .iziToast > .iziToast-close:hover { opacity: 1 !important; }
+      .iziToast.iziToast-color-blue { border-color: rgba(132,204,22,0.45) !important; background: rgba(20,22,20,0.95) !important; }
+      .iziToast.iziToast-color-green { border-color: rgba(40,167,69,0.52) !important; background: rgba(18,26,20,0.95) !important; }
+      .iziToast.iziToast-color-red { border-color: rgba(255,51,102,0.56) !important; background: rgba(28,16,22,0.95) !important; }
+      .iziToast.iziToast-color-orange, .iziToast.iziToast-color-yellow { border-color: rgba(255,153,0,0.56) !important; background: rgba(30,24,16,0.95) !important; }
+      #ce-auto-send-debug-hint.ce-gasgx-toast.ce-gasgx-toast-debug {
+        position: fixed;
+        right: 14px;
+        bottom: 84px;
+        z-index: 2147483647;
+        max-width: min(420px, calc(100vw - 26px));
+        padding: 10px 12px;
+        border-radius: 14px;
+        border: 1px solid rgba(132,204,22,0.45);
+        background: rgba(20,22,20,0.95);
+        color: var(--ce-ui-text-primary);
+        font: 12px/1.5 var(--ce-ui-font);
+        box-shadow: 0 16px 34px rgba(0,0,0,0.42);
+        pointer-events: none;
+        backdrop-filter: blur(10px);
+      }
       @keyframes ce-gasgx-spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
     `;
     document.head.appendChild(style);
@@ -6086,6 +6135,7 @@ Return only the corrected reply text.`
   function initContentContext() {
     const run = async () => {
       try {
+        ensureGasGxPopupStyles();
         patchLegacyContentBundleBehavior();
         await syncGasGxDerivedStorage();
         suppressGateToastApis();

@@ -109,7 +109,9 @@ option {
 .ce-shell {
   position: relative;
   height: 600px;
-  padding: 16px;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -135,7 +137,7 @@ option {
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
-  padding: 16px 18px;
+  padding: 12px 14px;
   border-radius: var(--radius-2xl);
   background: linear-gradient(180deg, rgba(20, 22, 20, 0.94), rgba(20, 22, 20, 0.76));
   backdrop-filter: blur(14px);
@@ -150,14 +152,14 @@ option {
 .ce-brand-cluster {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   min-width: 0;
 }
 
 .ce-brand-badge {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
+  width: 38px;
+  height: 38px;
+  flex: 0 0 38px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -181,15 +183,15 @@ option {
 
 .ce-brand-kicker {
   color: var(--accent-aurora);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.18em;
   text-transform: uppercase;
 }
 
 .ce-brand {
-  margin-top: 3px;
-  font-size: 16px;
+  margin-top: 2px;
+  font-size: 15px;
   font-weight: 900;
   line-height: 1.15;
   letter-spacing: 0.01em;
@@ -199,9 +201,9 @@ option {
 }
 
 .ce-brand-subtitle {
-  margin-top: 5px;
+  margin-top: 3px;
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 10px;
   line-height: 1.45;
 }
 
@@ -217,9 +219,9 @@ option {
 
 .header-container .ce-runtime-btn,
 .ce-runtime-btn {
-  min-width: 38px;
-  height: 30px;
-  padding: 0 8px;
+  min-width: 34px;
+  height: 28px;
+  padding: 0 7px;
   border: none;
   border-radius: 999px;
   background: transparent;
@@ -241,8 +243,8 @@ option {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 6px;
-  margin-top: 14px;
-  padding: 6px;
+  margin-top: 10px;
+  padding: 5px;
   border-radius: 16px;
   background: rgba(255, 255, 255, 0.04);
   border: 1px solid var(--border-line);
@@ -253,7 +255,7 @@ option {
 }
 
 .ce-tab {
-  min-height: 40px;
+  min-height: 36px;
   border: none;
   border-radius: 12px;
   background: transparent;
@@ -310,15 +312,20 @@ option {
 .ce-main {
   position: relative;
   z-index: 1;
-  margin-top: 14px;
-  height: calc(600px - 16px - 16px - 74px - 14px - 58px);
+  margin-top: 10px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.ce-main.ce-main-preferences {
   overflow-y: auto;
   overflow-x: hidden;
   scrollbar-width: none;
   -ms-overflow-style: none;
 }
 
-.ce-main::-webkit-scrollbar {
+.ce-main.ce-main-preferences::-webkit-scrollbar {
   width: 0;
   height: 0;
   display: none;
@@ -326,11 +333,11 @@ option {
 
 .ce-panel-grid {
   display: grid;
-  gap: 14px;
+  gap: 10px;
 }
 
 .ce-card {
-  padding: 16px;
+  padding: 12px;
   border-radius: var(--radius-xl);
   background: rgba(20, 22, 20, 0.78);
   backdrop-filter: blur(14px);
@@ -373,7 +380,7 @@ option {
 .ce-overline,
 .ce-card-label {
   color: var(--accent-aurora);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 900;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -381,8 +388,8 @@ option {
 
 .ce-hero-title,
 .ce-card-title {
-  margin-top: 8px;
-  font-size: 20px;
+  margin-top: 6px;
+  font-size: 17px;
   font-weight: 900;
   line-height: 1.1;
 }
@@ -396,13 +403,13 @@ option {
 .ce-inline-note,
 .ce-profile-meta {
   color: var(--text-secondary);
-  line-height: 1.55;
+  line-height: 1.35;
 }
 
 .ce-hero-subtitle,
 .ce-card-body {
-  margin-top: 8px;
-  font-size: 13px;
+  margin-top: 6px;
+  font-size: 12px;
 }
 
 .ce-card-error {
@@ -422,14 +429,14 @@ option {
 }
 
 .ce-card-subtitle {
-  margin-top: 4px;
-  font-size: 13px;
+  margin-top: 3px;
+  font-size: 12px;
   word-break: break-word;
 }
 
 .ce-card-note {
-  margin-top: 8px;
-  font-size: 12px;
+  margin-top: 6px;
+  font-size: 11px;
 }
 
 .ce-status-pill {
@@ -468,7 +475,7 @@ option {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: 12px;
 }
 
 .ce-profile-copy {
@@ -477,16 +484,16 @@ option {
 }
 
 .ce-profile-name {
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 900;
   line-height: 1.1;
   word-break: break-word;
 }
 
 .ce-avatar {
-  width: 58px;
-  height: 58px;
-  flex: 0 0 58px;
+  width: 50px;
+  height: 50px;
+  flex: 0 0 50px;
   overflow: hidden;
   border-radius: 16px;
   border: 1px solid rgba(93, 214, 44, 0.22);
@@ -509,21 +516,36 @@ option {
   align-items: center;
   justify-content: center;
   color: var(--accent-aurora);
-  font-size: 22px;
+  font-size: 18px;
   font-weight: 800;
 }
 
 .ce-action-row {
   display: flex;
+  align-items: center;
+  justify-content: space-between;
   flex-wrap: wrap;
-  gap: 10px;
-  margin-top: 16px;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.ce-action-hint {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--status-danger);
+}
+
+.ce-action-row .ce-btn {
+  flex: 0 0 auto;
 }
 
 .ce-btn {
-  min-height: 42px;
-  padding: 0 16px;
-  border-radius: 14px;
+  min-height: 38px;
+  padding: 0 14px;
+  border-radius: 12px;
   border: none;
   font-size: 12px;
   font-weight: 900;
@@ -555,33 +577,33 @@ option {
 }
 
 .ce-section-head {
-  margin-bottom: 14px;
+  margin-bottom: 10px;
 }
 
 .ce-section-title {
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 800;
   color: var(--text-primary);
 }
 
 .ce-section-note {
-  margin-top: 4px;
-  font-size: 12px;
+  margin-top: 3px;
+  font-size: 11px;
 }
 
 .ce-settings-grid {
   display: grid;
-  gap: 12px;
+  gap: 9px;
 }
 
 .ce-field {
   display: grid;
-  gap: 6px;
+  gap: 5px;
 }
 
 .ce-field-label {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   letter-spacing: 0.04em;
   line-height: 1.4;
@@ -590,14 +612,14 @@ option {
 .ce-inline-fields {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 12px;
+  gap: 8px;
 }
 
 .ce-input {
   width: 100%;
-  min-height: 40px;
-  padding: 10px 12px;
-  border-radius: 14px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border-radius: 12px;
   border: 1px solid var(--border-line);
   background: var(--bg-input);
   color: var(--text-primary);
@@ -648,7 +670,7 @@ option {
 }
 
 .ce-textarea {
-  min-height: 96px;
+  min-height: 74px;
   resize: vertical;
 }
 
@@ -661,9 +683,9 @@ option {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 48px;
-  padding: 10px 12px;
-  border-radius: 16px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-radius: 14px;
   border: 1px solid var(--border-line);
   background: var(--bg-card-ghost);
 }
@@ -683,16 +705,16 @@ option {
 
 .ce-toggle-label {
   display: block;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
   line-height: 1.45;
 }
 
 .ce-toggle-control {
   position: relative;
-  width: 44px;
-  height: 24px;
-  flex: 0 0 44px;
+  width: 40px;
+  height: 22px;
+  flex: 0 0 40px;
 }
 
 .ce-checkbox {
@@ -708,8 +730,8 @@ option {
 
 .ce-toggle-track {
   display: block;
-  width: 44px;
-  height: 24px;
+  width: 40px;
+  height: 22px;
   border-radius: 999px;
   border: 1px solid var(--border-line);
   background: rgba(255, 255, 255, 0.06);
@@ -718,8 +740,8 @@ option {
 
 .ce-toggle-knob {
   display: block;
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   margin: 2px;
   border-radius: 50%;
   background: var(--text-secondary);
@@ -732,7 +754,7 @@ option {
 }
 
 .ce-checkbox:checked + .ce-toggle-track .ce-toggle-knob {
-  transform: translateX(20px);
+  transform: translateX(18px);
   background: var(--accent-aurora);
 }
 

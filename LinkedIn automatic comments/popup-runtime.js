@@ -1,4 +1,4 @@
-(() => {
+﻿(() => {
   "use strict";
 
   const root = document.getElementById("ce-popup-root");
@@ -23,13 +23,13 @@
 
   const VOICE_OPTIONS = [
     { value: "NotSpecified", en: "Not specified", zh: "未指定" },
-    { value: "Male", en: "Male", zh: "男性" },
-    { value: "Female", en: "Female", zh: "女性" }
+    { value: "Male", en: "Male", zh: "男" },
+    { value: "Female", en: "Female", zh: "女" }
   ];
 
   const COPY = {
     en: {
-      brand: "GasGx 登录",
+      brand: "GasGx To LinkedIn",
       strapline: "Cyber-industrial LinkedIn AI workspace",
       tabsAccount: "Account",
       tabsPreferences: "Preferences",
@@ -44,7 +44,7 @@
       linkedinEmpty: "No LinkedIn profile detected",
       linkedinSeat: "Seat",
       linkedinNote: "This information is pulled from the active LinkedIn tab when available.",
-      gasgxTitle: "GasGx Login",
+      gasgxTitle: "GasGx account",
       gasgxNote: "Your GasGx sign-in session and AI preferences are reused directly inside the extension.",
       statusEnabled: "Signed in",
       statusBlocked: "Account state blocked",
@@ -72,8 +72,6 @@
       engageInEnglish: "Comment / reply in English",
       commentUseEmojis: "Use emojis",
       commentEndWithQuestion: "Open-ended ending",
-      replyKeepItShort: "Keep replies short",
-      replyAckIfMyPost: "Ack only on my own posts",
       autoSend: "Auto click comment send",
       randomTone: "Random tone",
       randomLength: "Random length",
@@ -81,8 +79,8 @@
       delayMin: "Min seconds",
       delayMax: "Max seconds",
       delayWindowSuffix: "s",
-      replyHint: "Reply prompt hint",
-      replyHintHelp: "This hint is appended when generating LinkedIn replies.",
+      replyHint: "Comment / reply prompt hint",
+      replyHintHelp: "This hint is appended when generating LinkedIn comments and replies.",
       replyHintPlaceholder: "Example: acknowledge first, then add one concrete insight (max 240 chars)",
       modeToLight: "Switch to light mode",
       modeToDark: "Switch to dark mode",
@@ -90,13 +88,13 @@
       langToEnglish: "Switch to English"
     },
     "zh-CN": {
-      brand: "GasGx 登录",
-      strapline: "面向 LinkedIn 的赛博工业 AI 工作台",
+      brand: "GasGx To LinkedIn",
+      strapline: "面向 LinkedIn 的 GasGx 工作台",
       tabsAccount: "账号",
       tabsPreferences: "偏好",
-      loading: "正在加载扩展面板...",
+      loading: "正在加载弹窗...",
       reload: "重新加载",
-      runtimeMissing: "Popup 运行时加载失败。",
+      runtimeMissing: "弹窗运行时加载失败。",
       genericError: "当前无法加载这个页面。",
       saveFailed: "当前设置保存失败，请重试。",
       accountOverview: "运行时身份",
@@ -105,7 +103,7 @@
       linkedinEmpty: "未检测到 LinkedIn 资料",
       linkedinSeat: "标识",
       linkedinNote: "可用时会直接从当前活动的 LinkedIn 标签页读取资料。",
-      gasgxTitle: "GasGx登录",
+      gasgxTitle: "GasGx 账号",
       gasgxNote: "扩展会直接复用本地 GasGx 登录状态和 AI 偏好配置。",
       statusEnabled: "本地已登录",
       statusBlocked: "本地状态受限",
@@ -133,18 +131,16 @@
       engageInEnglish: "评论 / 回复使用英文",
       commentUseEmojis: "使用表情",
       commentEndWithQuestion: "开放式结尾",
-      replyKeepItShort: "保持简短回复",
-      replyAckIfMyPost: "自己的帖子仅确认式回复",
       autoSend: "自动点击评论发送",
       randomTone: "随机语气",
       randomLength: "随机长度",
-      delayRange: "延迟发布时间窗",
+      delayRange: "延迟发布窗口",
       delayMin: "最小秒数",
       delayMax: "最大秒数",
       delayWindowSuffix: "秒",
-      replyHint: "回复提示语",
-      replyHintHelp: "生成 LinkedIn 回复时会附加这条提示语。",
-      replyHintPlaceholder: "例如：先认可观点，再补充一个具体见解（最多 240 字）",
+      replyHint: "评论/回复提示词",
+      replyHintHelp: "生成 LinkedIn 评论和回复时会附加这条提示词。",
+      replyHintPlaceholder: "例如：先确认，再补充一个具体见解（最多 240 字）",
       modeToLight: "切换到浅色模式",
       modeToDark: "切换到深色模式",
       langToChinese: "切换到中文",
@@ -157,6 +153,7 @@
   let pendingAction = "";
   let pendingPreferenceKey = "";
   let pendingAutomationKey = "";
+  let replyHintSaveTimer = 0;
   let errorMessage = "";
   let removeAuthListener = () => {};
 
@@ -169,7 +166,7 @@
   }
 
   function t(key) {
-    return getCopy(state?.lang || "en")[key] || key;
+    return getCopy("zh-CN")[key] || key;
   }
 
   function i18nText(en, zh) {
@@ -186,38 +183,39 @@
   }
 
   function getOptionLabel(option) {
-    return state?.lang === "zh-CN" ? option.zh : option.en;
+    return option.zh || option.en;
   }
 
   function getThemeButtonLabel() {
-    return state?.themeMode === "dark" ? "☀" : "🌙";
+    return state?.themeMode === "dark" ? "鈽€" : "馃寵";
   }
 
   function getThemeButtonTitle() {
     return state?.themeMode === "dark" ? t("modeToLight") : t("modeToDark");
   }
 
-  function getLanguageButtonLabel() {
-    return state?.lang === "zh-CN" ? "EN" : "中";
-  }
-
-  function getLanguageButtonTitle() {
-    return state?.lang === "zh-CN" ? t("langToEnglish") : t("langToChinese");
-  }
-
   function getCommentLengthOptions() {
-    if (state?.lang === "zh-CN") {
-      return [
-        { value: "1", label: "一段式（仅一段随机 120~200 字符）" },
-        { value: "2", label: "二段式（两段随机 120~200 字符）" },
-        { value: "3", label: "三段式（每段随机 120~200 字符）" }
-      ];
-    }
     return [
-      { value: "1", label: "1 paragraph (single 120-200 chars)" },
-      { value: "2", label: "2 paragraphs (each 120-200 chars)" },
-      { value: "3", label: "3 paragraphs (each 120-200 chars)" }
+      { value: "1", label: "一段式（仅一段随机 120~200 字符）" },
+      { value: "2", label: "二段式（两段随机 120~200 字符）" },
+      { value: "3", label: "三段式（每段随机 120~200 字符）" }
     ];
+  }
+
+  function getActionHintText() {
+    const text = String(errorMessage || "").trim();
+    if (!text) return "";
+    if (text.includes("请先登录") || text.includes("请先在")) return "请先登录";
+    if (text.includes("邮箱") && text.includes("密码")) return "请输邮箱密码";
+    if (text.includes("邮箱")) return "请输邮箱";
+    if (text.includes("密码错误")) return "密码错误";
+    if (text.includes("用户不存在")) return "用户不存在";
+    if (text.includes("登录成功")) return "登录成功";
+    if (text.includes("退出登录") && text.includes("成功")) return "退出成功";
+    if (text.includes("登录失败")) return "登录失败";
+    if (text.includes("退出登录") && text.includes("失败")) return "退出失败";
+    if (text.includes("验证中")) return "验证中";
+    return "请检查";
   }
 
   function getGasGxCardState(auth) {
@@ -323,7 +321,7 @@
       ? `<img class="ce-avatar-image" src="${escapeHtml(profile.imageUrl)}" alt="${escapeHtml(profile.me || "LinkedIn")}">`
       : `<div class="ce-avatar-fallback">${escapeHtml((profile.me || "?").slice(0, 1).toUpperCase())}</div>`;
     const metaLine = profile.seat
-      ? `<div class="ce-profile-meta"><span class="data-numbers">${escapeHtml(t("linkedinSeat"))}</span> · ${escapeHtml(profile.seat)}</div>`
+      ? `<div class="ce-profile-meta"><span class="data-numbers">${escapeHtml(t("linkedinSeat"))}</span> 路 ${escapeHtml(profile.seat)}</div>`
       : "";
 
     return `
@@ -345,30 +343,31 @@
             <div class="ce-card-head-main">
               <div class="ce-card-title">${escapeHtml(t("gasgxTitle"))}</div>
               ${gasgx.enabled ? `<div class="ce-card-subtitle">${escapeHtml(gasgx.emailText)}</div>` : ""}
-              <div class="ce-card-note">${escapeHtml(gasgx.enabled ? t("gasgxNote") : i18nText("Complete one-time GasGx login verification to unlock preferences.", "请先完成一次 GasGx 登录验证，再使用偏好设置。"))}</div>
+              <div class="ce-card-note">${escapeHtml(gasgx.enabled ? t("gasgxNote") : "请先完成一次 GasGx 登录验证，再使用偏好设置。")}</div>
             </div>
             ${gasgx.enabled ? `<span class="ce-status-pill ${getStatusClass(gasgx)}">${escapeHtml(gasgx.statusText)}</span>` : ""}
           </div>
           ${gasgx.enabled
             ? `<div class="ce-card-body">${escapeHtml(gasgx.summaryText)}</div>`
-            : (errorMessage ? `<div class="ce-card-body ce-card-error">${escapeHtml(errorMessage)}</div>` : "")
+            : ""
           }
           ${gasgx.enabled ? "" : `
             <div class="ce-settings-grid" style="margin-top: 12px;">
               <label class="ce-field">
-                <span class="ce-field-label">${escapeHtml(i18nText("GasGx Email", "GasGx 邮箱"))}</span>
-                <input class="ce-input" type="email" id="gasgx-login-email" autocomplete="username" placeholder="${escapeHtml(i18nText("Please enter your GasGx email", "请输入 GasGx 邮箱"))}" value="${escapeHtml(state?.gasgxAuth?.email || "")}" ${verifyPending ? "disabled" : ""}>
+                <span class="ce-field-label">${escapeHtml("GasGx邮箱")}</span>
+                <input class="ce-input" type="email" id="gasgx-login-email" autocomplete="username" placeholder="${escapeHtml("请输GasGx邮箱")}" value="${escapeHtml(state?.gasgxAuth?.email || "")}" ${verifyPending ? "disabled" : ""}>
               </label>
               <label class="ce-field">
-                <span class="ce-field-label">${escapeHtml(i18nText("Password", "密码"))}</span>
-                <input class="ce-input" type="password" id="gasgx-login-password" autocomplete="current-password" placeholder="${escapeHtml(i18nText("Please enter your password", "请输入密码"))}" ${verifyPending ? "disabled" : ""}>
+                <span class="ce-field-label">${escapeHtml(i18nText("Password", "瀵嗙爜"))}</span>
+                <input class="ce-input" type="password" id="gasgx-login-password" autocomplete="current-password" placeholder="${escapeHtml("请输GasGx密码")}" ${verifyPending ? "disabled" : ""}>
               </label>
             </div>
           `}
           <div class="ce-action-row">
+            ${getActionHintText() ? `<div class="ce-action-hint ce-card-error">${escapeHtml(getActionHintText())}</div>` : ""}
             ${gasgx.enabled
               ? (gasgx.primaryAction ? `<button class="ce-btn ce-btn-primary" type="button" id="${gasgx.primaryAction.id}" ${pendingAction ? "disabled" : ""}>${escapeHtml(gasgx.primaryAction.label)}</button>` : "")
-              : `<button class="ce-btn ce-btn-primary" type="button" id="verify-gasgx-login" ${pendingAction ? "disabled" : ""}>${verifyPending ? escapeHtml(i18nText("Verifying...", "验证中...")) : escapeHtml(i18nText("GasGx Login", "GasGx登录"))}</button>`
+              : `<button class="ce-btn ce-btn-primary" type="button" id="verify-gasgx-login" ${pendingAction ? "disabled" : ""}>${verifyPending ? escapeHtml("验证中...") : escapeHtml("GasGx登录")}</button>`
             }
           </div>
         </article>
@@ -381,8 +380,8 @@
       return `
         <section class="ce-panel-grid">
           <article class="ce-card">
-            <div class="ce-card-label">${escapeHtml(i18nText("GasGx Verification Required", "需要 GasGx 验证"))}</div>
-            <div class="ce-card-body">${escapeHtml(i18nText("Please go to the Account tab and complete one-time GasGx login verification before using preferences and automation.", "请先在“账号”页完成一次 GasGx 登录验证，再使用偏好和自动化。"))}</div>
+            <div class="ce-card-label">${escapeHtml(i18nText("GasGx Verification Required", "闇€瑕?GasGx 楠岃瘉"))}</div>
+            <div class="ce-card-body">${escapeHtml("请先在“账号”页完成一次 GasGx 登录验证，再使用偏好和自动化。")}</div>
           </article>
         </section>
       `;
@@ -402,8 +401,6 @@
     ].join("");
 
     const replyBody = [
-      renderPreferenceToggle("pref-keep-short", t("replyKeepItShort"), !!preferences.replyKeepItShort),
-      renderPreferenceToggle("pref-ack-own", t("replyAckIfMyPost"), !!preferences.replyAckIfMyPost),
       `
         <label class="ce-field">
           <span class="ce-field-label">${escapeHtml(t("replyHint"))}</span>
@@ -447,9 +444,6 @@
     if (!canSeePreferences && activeTab === "preferences") {
       activeTab = "account";
     }
-    const banner = (errorMessage && !(activeTab === "account" && !canSeePreferences))
-      ? `<div class="ce-banner ce-banner-error">${escapeHtml(errorMessage)}</div>`
-      : "";
     return `
       <div class="ce-shell">
         <div class="ce-shell-bg" aria-hidden="true"></div>
@@ -460,7 +454,6 @@
           })}
           <div class="ce-runtime-controls">
             <button type="button" class="ce-runtime-btn" id="toggle-theme" title="${escapeHtml(getThemeButtonTitle())}">${escapeHtml(getThemeButtonLabel())}</button>
-            <button type="button" class="ce-runtime-btn" id="toggle-lang" title="${escapeHtml(getLanguageButtonTitle())}">${escapeHtml(getLanguageButtonLabel())}</button>
           </div>
         </header>
 
@@ -470,12 +463,11 @@
             type="button"
             class="ce-tab${activeTab === "preferences" ? " is-active" : ""}${!canSeePreferences ? " is-locked" : ""}"
             data-tab="preferences"
-            title="${escapeHtml(!canSeePreferences ? i18nText("Sign in to unlock preferences", "登录后可用偏好设置") : t("tabsPreferences"))}"
+            title="${escapeHtml(!canSeePreferences ? "登录后可用偏好设置" : t("tabsPreferences"))}"
           >${escapeHtml(t("tabsPreferences"))}</button>
         </nav>
 
-        ${banner}
-        <main class="ce-main">
+        <main class="ce-main ${activeTab === "account" ? "ce-main-account" : "ce-main-preferences"}">
           ${activeTab === "account" ? renderAccountTab() : renderPreferencesTab()}
         </main>
       </div>
@@ -490,7 +482,7 @@
         <header class="ce-header">
           ${renderBrandHeader(copy)}
         </header>
-        <main class="ce-main">
+        <main class="ce-main ce-main-account">
           <article class="ce-card ce-loading-card">
             <div class="ce-spinner" aria-hidden="true"></div>
             <div class="ce-loading-text">${escapeHtml(copy.loading)}</div>
@@ -508,7 +500,7 @@
         <header class="ce-header">
           ${renderBrandHeader(copy)}
         </header>
-        <main class="ce-main">
+        <main class="ce-main ce-main-account">
           <article class="ce-card ce-error-card">
             <div class="ce-error-title">${escapeHtml(message || copy.genericError)}</div>
             <button class="ce-btn ce-btn-primary" type="button" id="reload-popup">${escapeHtml(copy.reload)}</button>
@@ -579,8 +571,6 @@
       engageInEnglish: "pref-engage-english",
       commentUseEmojis: "pref-use-emojis",
       commentEndWithQuestion: "pref-open-ended",
-      replyKeepItShort: "pref-keep-short",
-      replyAckIfMyPost: "pref-ack-own"
     };
     pendingPreferenceKey = keyToInputId[key] || "";
     try {
@@ -654,17 +644,17 @@
     }
   }
 
+  function scheduleSaveReplyHint() {
+    clearTimeout(replyHintSaveTimer);
+    replyHintSaveTimer = window.setTimeout(() => {
+      void saveReplyHint();
+    }, 280);
+  }
+
   function bindEvents() {
     root.querySelector("#toggle-theme")?.addEventListener("click", async () => {
       const next = state.themeMode === "dark" ? "light" : "dark";
       state.themeMode = await runtime.setTheme(next);
-      errorMessage = "";
-      render();
-    });
-
-    root.querySelector("#toggle-lang")?.addEventListener("click", async () => {
-      const next = state.lang === "zh-CN" ? "en" : "zh-CN";
-      state.lang = await runtime.setLanguage(next);
       errorMessage = "";
       render();
     });
@@ -756,13 +746,6 @@
     root.querySelector("#pref-open-ended")?.addEventListener("change", (event) => {
       void savePreference("commentEndWithQuestion", !!event.target.checked);
     });
-    root.querySelector("#pref-keep-short")?.addEventListener("change", (event) => {
-      void savePreference("replyKeepItShort", !!event.target.checked);
-    });
-    root.querySelector("#pref-ack-own")?.addEventListener("change", (event) => {
-      void savePreference("replyAckIfMyPost", !!event.target.checked);
-    });
-
     root.querySelector("#pref-auto-send")?.addEventListener("change", () => {
       void saveAutoSend();
     });
@@ -780,7 +763,14 @@
       void saveRandomStrategy();
     });
 
+    root.querySelector("#pref-reply-hint")?.addEventListener("input", () => {
+      scheduleSaveReplyHint();
+    });
+    root.querySelector("#pref-reply-hint")?.addEventListener("change", () => {
+      scheduleSaveReplyHint();
+    });
     root.querySelector("#pref-reply-hint")?.addEventListener("blur", () => {
+      clearTimeout(replyHintSaveTimer);
       void saveReplyHint();
     });
   }
@@ -812,3 +802,6 @@
 
   start();
 })();
+
+
+

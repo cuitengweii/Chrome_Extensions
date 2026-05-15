@@ -659,7 +659,63 @@
       sparkToString(input?.replyHint, sparkToString(replyPromptHint, ""))
     );
     if (!hint) return "";
-    return `Treat this as a mandatory extra reply instruction: ${hint}`;
+    return `Treat this as a mandatory extra instruction: ${hint}`;
+  }
+
+  function hintRequiresEndingEmoji(input) {
+    const hint = normalizeReplyPromptHint(
+      sparkToString(input?.replyHint, sparkToString(replyPromptHint, ""))
+    ).toLowerCase();
+    if (!hint) return false;
+    return /最后.*表情|结尾.*表情|末尾.*表情|end.*emoji|emoji.*end|add.*emoji/.test(hint);
+  }
+
+  function ensureEndingEmojiByHint(text, input) {
+    const normalized = normalizeSparkOutput(text);
+    if (!normalized) return normalized;
+    if (!hintRequiresEndingEmoji(input)) return normalized;
+    if (containsEmoji(normalized.slice(-8))) return normalized;
+    return `${normalized} 🙂`;
+  }
+
+  function ensureCommentAnchoredToPost(text, input) {
+    const normalized = normalizeSparkOutput(text);
+    if (!normalized) return normalized;
+    const anchor = extractContextAnchor(input?.postText, true);
+    if (!anchor || anchor === "the key point you raised") return normalized;
+
+    const normalizedLower = normalized.toLowerCase();
+    const tokens = anchor
+      .toLowerCase()
+      .split(/[^a-z0-9]+/)
+      .filter((part) => part.length >= 4)
+      .slice(0, 3);
+    if (tokens.some((token) => normalizedLower.includes(token))) return normalized;
+
+    const paragraphs = splitCommentParagraphs(normalized);
+    if (!paragraphs.length) return normalized;
+    paragraphs[0] = `${paragraphs[0].trim()} One concrete point worth highlighting is ${anchor}.`.trim();
+    return normalizeSparkOutput(paragraphs.join("\n\n"));
+  }
+
+  function extractContextAnchor(rawText, useEnglish = true) {
+    const fallback = useEnglish ? "the key point you raised" : "你提到的关键点";
+    const normalized = sparkToString(rawText, "")
+      .replace(/https?:\/\/\S+/gi, " ")
+      .replace(/[#@][\w-]+/g, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+    if (!normalized) return fallback;
+
+    const parts = normalized
+      .split(/[.!?。！？]/)
+      .map((part) => part.trim())
+      .filter(Boolean);
+    const picked = parts.find((part) => part.length >= 14) || parts[0] || "";
+    if (!picked) return fallback;
+
+    const clipped = picked.length > 84 ? `${picked.slice(0, 84).trim()}...` : picked;
+    return clipped || fallback;
   }
 
   function normalizeSparkOutput(text) {
@@ -747,10 +803,8 @@
   }
 
   function resolveReplyWordLimit(preferences) {
-    const pref = sparkIsPlainObject(preferences) ? preferences : {};
-    const keepShort = pref.replyKeepItShort !== false;
-    if (keepShort) return 40;
-    return 80;
+    void preferences;
+    return 40;
   }
 
   function countEmoji(text) {
@@ -984,9 +1038,11 @@
   function trimParagraphToMaxChars(text, maxChars = 200) {
     const normalized = sparkToString(text, "").replace(/\s+/g, " ").trim();
     if (!normalized) return normalized;
-    if (normalized.length <= maxChars) return normalized;
-    const clipped = normalized.slice(0, maxChars);
-    const minPreferredCut = Math.max(1, Math.floor(maxChars * 0.72));
+    // Keep length as a soft preference. Only guard against extreme outliers.
+    const hardLimit = Math.max(420, maxChars);
+    if (normalized.length <= hardLimit) return normalized;
+    const clipped = normalized.slice(0, hardLimit);
+    const minPreferredCut = Math.max(1, Math.floor(hardLimit * 0.72));
     let cutIndex = -1;
 
     try {
@@ -1068,33 +1124,47 @@
     const normalized = normalizeSparkOutput(text);
     if (!normalized) return normalized;
     const targetCount = Math.max(1, Math.min(3, Math.round(sparkToNumber(count, 1))));
-    const existing = normalized.split(/\n{2,}/).map((p) => trimParagraphToMaxChars(p, 200)).filter(Boolean);
+    const existing = splitCommentParagraphs(normalized);
     if (existing.length >= targetCount) {
-      return existing
-        .slice(0, targetCount)
-        .map((part, index) => extendParagraphToMinChars(part, index, useEnglish, 120, 200))
-        .filter(Boolean)
-        .join("\n\n");
+      return existing.slice(0, targetCount).join("\n\n");
     }
 
     const sentences = splitSentences(normalized);
     if (sentences.length >= targetCount) {
-      return sentences
-        .slice(0, targetCount - 1)
-        .concat([sentences.slice(targetCount - 1).join(" ")])
-        .map((part, index) => extendParagraphToMinChars(part, index, useEnglish, 120, 200))
-        .filter(Boolean)
-        .join("\n\n");
+      const groups = [];
+      let cursor = 0;
+      const baseSize = Math.floor(sentences.length / targetCount);
+      let remainder = sentences.length % targetCount;
+      for (let i = 0; i < targetCount; i += 1) {
+        const size = baseSize + (remainder > 0 ? 1 : 0);
+        remainder = Math.max(0, remainder - 1);
+        const chunk = sentences.slice(cursor, cursor + Math.max(1, size));
+        cursor += Math.max(1, size);
+        groups.push(chunk.join(" ").trim());
+      }
+      return groups.filter(Boolean).join("\n\n");
     }
 
-    const paragraphs = [trimParagraphToMaxChars(normalized.replace(/\n+/g, " ").trim(), 200)].filter(Boolean);
+    const paragraphs = [normalized.replace(/\n+/g, " ").trim()].filter(Boolean);
     while (paragraphs.length < targetCount) {
       paragraphs.push(buildParagraphFallback(paragraphs.length, targetCount, useEnglish));
     }
-    return paragraphs
-      .map((part, index) => extendParagraphToMinChars(part, index, useEnglish, 120, 200))
-      .filter(Boolean)
-      .join("\n\n");
+    return paragraphs.filter(Boolean).join("\n\n");
+  }
+
+  function ensureParagraphCompleteThought(paragraph) {
+    const text = sparkToString(paragraph, "").trim();
+    if (!text) return text;
+    if (endsLikeCompleteThought(text)) return text;
+    const matches = Array.from(text.matchAll(/[.!?。！？](?=\s|$)/gu));
+    if (matches.length) {
+      const last = matches[matches.length - 1];
+      const endAt = Number(last.index) + String(last[0] || "").length;
+      if (Number.isFinite(endAt) && endAt >= Math.floor(text.length * 0.55)) {
+        return text.slice(0, endAt).trim();
+      }
+    }
+    return `${text}.`;
   }
 
   function enforceEmojiByPreference(text, pref) {
@@ -1113,12 +1183,15 @@
     if (!out) return out;
     const useEnglish = resolveCommentOutputEnglish(input, out);
 
+    out = ensureCommentAnchoredToPost(out, input);
+
     if (isEnabledLike(pref.commentMentionPostAuthor)) {
       out = ensureMentionPrefix(out, author);
     }
 
-    out = enforceEmojiByPreference(out, pref);
     out = ensureParagraphCount(out, paragraphCount, useEnglish);
+    out = splitCommentParagraphs(out).map(ensureParagraphCompleteThought).filter(Boolean).join("\n\n");
+    out = enforceEmojiByPreference(out, pref);
     if (isEmojiPreferenceEnabled(pref) && paragraphCount >= 3) {
       out = ensureMultiEmoji(out, 3);
     }
@@ -1127,6 +1200,7 @@
       out = ensureQuestionEnding(out);
     }
 
+    out = ensureEndingEmojiByHint(out, input);
     return normalizeSparkOutput(out);
   }
 
@@ -1142,6 +1216,7 @@
       out = ensureQuestionEnding(out);
     }
 
+    out = ensureEndingEmojiByHint(out, input);
     return normalizeSparkOutput(out);
   }
 
@@ -1159,12 +1234,13 @@
     const voiceGenderGuide = resolveVoiceGenderInstruction(pref.voiceGender);
     const industryGuide = resolveIndustryInstruction(pref.commentIndustry);
     const linkedInUiGuide = resolveLinkedInUiLanguageInstruction(input?.linkedInUiLanguage || currentLang, useEnglish);
+    const replyHintGuide = resolveReplyHintInstruction(input);
 
     const lengthGuide = length === 1
-      ? "Output exactly 1 paragraph. Keep that paragraph between 120 and 200 characters."
+      ? "Output exactly 1 paragraph."
       : length === 2
-        ? "Output exactly 2 paragraphs. Keep each paragraph between 120 and 200 characters."
-        : "Output exactly 3 paragraphs. Keep each paragraph between 120 and 200 characters.";
+        ? "Output exactly 2 paragraphs."
+        : "Output exactly 3 paragraphs.";
 
     const languageGuide = "Use English only. Do not output any Chinese or any other non-English sentence.";
     const mentionGuide = mentionAuthor && author
@@ -1188,8 +1264,7 @@
 Hard output requirements:
 - ${lengthGuide}
 - Separate paragraphs with a single blank line.
-- Count characters per paragraph including spaces and punctuation, but excluding the blank line between paragraphs.
-- Target roughly 140-180 characters per paragraph so the final text safely stays within the 120-200 range.
+- Keep paragraph length natural; 120-200 characters is only a loose recommendation, not a hard limit.
 - Every paragraph must end as a complete thought.
 - Never cut off a word, never leave a sentence unfinished, and never end with a dangling fragment.
 - If any paragraph would be too long, rewrite it shorter. Do not trim or compress it by dropping the ending.
@@ -1204,6 +1279,7 @@ Preference profile:
 - ${emojiGuide}
 - ${endingGuide}
 ${industryGuide ? `- ${industryGuide}` : ""}
+${replyHintGuide ? `- ${replyHintGuide}` : ""}
 
 Quality requirements:
 - Sound like a real LinkedIn professional reacting to a published post.
@@ -1215,7 +1291,7 @@ Quality requirements:
 
 Self-check before answering:
 1. Paragraph count is exactly ${length}.
-2. Every paragraph is between 120 and 200 characters.
+2. Paragraph lengths are natural and readable (120-200 is only a guideline).
 3. No paragraph ends mid-word or mid-sentence.
 4. The full comment is entirely in English.
 5. The final text is ready to paste into LinkedIn as-is.
@@ -1231,9 +1307,7 @@ Return only the final comment text.`
   function buildReplyPrompt(input) {
     const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
     const useEnglish = !!pref.engageInEnglish;
-    const keepShort = pref.replyKeepItShort !== false;
     const endQuestion = !!pref.replyEndWithQuestion;
-    const ackMyPost = !!pref.replyAckIfMyPost;
     const tone = sparkToString(pref.commentTone, "Professional");
     const postAuthor = sparkToString(input?.postAuthor, "").trim();
     const postText = sparkToString(input?.postText, "").trim();
@@ -1247,15 +1321,10 @@ Return only the final comment text.`
     const languageGuide = useEnglish
       ? "Use English only."
       : "Use the same language as the thread.";
-    const lengthGuide = keepShort
-      ? "Keep the reply brief: 1-2 sentences, ideally around 20-35 words, and never above 40 words."
-      : "Keep the reply concise but fuller: 2-4 sentences, ideally around 45-70 words, and never above 80 words.";
+    const lengthGuide = "Keep the reply brief: 1-2 sentences, ideally around 20-35 words, and never above 40 words.";
     const endingGuide = endQuestion
       ? "End with one natural question."
       : "Do not force a question ending.";
-    const ackGuide = ackMyPost
-      ? "If this is my own post context, open with brief acknowledgment before adding the main reply point."
-      : "Do not over-emphasize acknowledgment if it does not help the thread.";
     const linkedInGuide = linkedInUiGuide || "Stay aligned with LinkedIn thread wording and professional discussion style.";
 
     return {
@@ -1275,7 +1344,6 @@ Preference profile:
 - ${languageGuide}
 - ${linkedInGuide}
 - ${endingGuide}
-- ${ackGuide}
 ${industryGuide ? `- ${industryGuide}` : ""}
 ${replyHintGuide ? `- ${replyHintGuide}` : ""}
 
@@ -1308,36 +1376,48 @@ ${commentText || "(empty)"}
     const author = sparkToString(input?.postAuthor, "").trim();
     const mention = isEnabledLike(pref.commentMentionPostAuthor) && author ? `@${author} ` : "";
     const length = Number(profile?.length) || resolveEffectiveCommentLength(pref);
+    const postAnchor = extractContextAnchor(input?.postText, useEnglish);
+    const hint = normalizeReplyPromptHint(
+      sparkToString(input?.replyHint, sparkToString(replyPromptHint, ""))
+    );
+    const hintLine = hint
+      ? (useEnglish
+        ? `I'll follow this angle as well: ${hint}.`
+        : `我也会按这个方向补充：${hint}。`)
+      : (useEnglish
+        ? "This angle can make the discussion immediately more actionable."
+        : "这个角度能让讨论更可落地。");
 
     if (useEnglish) {
-      const p1 = `${mention}Thanks for sharing this update. I appreciate the clear perspective.`;
-      const p2 = "One valuable takeaway is how this can be translated into practical, day-to-day execution.";
-      const p3 = "Would love to see one concrete follow-up example in your next update.";
-      if (length >= 3) return `${trimParagraphToMaxChars(p1, 200)}\n\n${trimParagraphToMaxChars(p2, 200)}\n\n${trimParagraphToMaxChars(p3, 200)}`;
-      if (length === 1) return trimParagraphToMaxChars(`${p1} ${p2}`, 200);
-      return `${trimParagraphToMaxChars(p1, 200)}\n\n${trimParagraphToMaxChars(p2, 200)}`;
+      const p1 = `${mention}Your point about "${postAnchor}" stood out to me, especially the way it connects strategy with execution decisions that teams can actually apply.`;
+      const p2 = `${hintLine} A practical next step could be showing one concrete scenario with tradeoffs, owners, and how you'd measure impact over the next iteration.`;
+      const p3 = "That would make this insight even easier for others to operationalize and adapt to their own context without losing the core intent.";
+      if (length >= 3) return `${p1}\n\n${p2}\n\n${p3}`;
+      if (length === 1) return `${p1} ${p2}`.trim();
+      return `${p1}\n\n${p2}`;
     }
 
-    const p1 = `${mention}感谢你的分享，这个观点很有启发。`;
-    const p2 = "我很认同其中强调的实践价值，落地层面也很有参考意义。";
+    const p1 = `${mention}你提到“${postAnchor}”这个点很关键，尤其是把思路和执行动作连接起来这部分，对实际推进很有参考价值。`;
+    const p2 = hintLine;
     const p3 = "如果方便的话，也期待你后续补充一个更具体的案例。";
-    if (length >= 3) return `${trimParagraphToMaxChars(p1, 200)}\n\n${trimParagraphToMaxChars(p2, 200)}\n\n${trimParagraphToMaxChars(p3, 200)}`;
-    if (length === 1) return trimParagraphToMaxChars(`${p1}${p2}`, 200);
-    return `${trimParagraphToMaxChars(p1, 200)}\n\n${trimParagraphToMaxChars(p2, 200)}`;
+    if (length >= 3) return `${p1}\n\n${p2}\n\n${p3}`;
+    if (length === 1) return `${p1}${p2}`.trim();
+    return `${p1}\n\n${p2}`;
   }
 
   function buildReplyFallbackText(input) {
     const pref = sparkIsPlainObject(input?.preferences) ? input.preferences : {};
     const useEnglish = !!pref.engageInEnglish;
-    const keepShort = pref.replyKeepItShort !== false;
+    const commentAnchor = extractContextAnchor(input?.commentText, useEnglish);
+    const hint = normalizeReplyPromptHint(
+      sparkToString(input?.replyHint, sparkToString(replyPromptHint, ""))
+    );
     if (useEnglish) {
-      return keepShort
-        ? "Thanks for your thoughtful comment. Really appreciate your perspective."
-        : "Thanks for your thoughtful comment. I really appreciate your perspective and the constructive angle you added here.";
+      const base = `Thanks for your comment on "${commentAnchor}" - really appreciate that perspective.`;
+      return hint ? `${base} I'll apply this direction: ${hint}.` : base;
     }
-    return keepShort
-      ? "感谢你的评论，很有价值。"
-      : "感谢你的评论，很有价值，也给了我新的思考角度。";
+    const base = `感谢你的评论，特别是你提到“${commentAnchor}”这个点很有价值。`;
+    return hint ? `${base} 我会按这个方向补充：${hint}。` : base;
   }
 
   function endsLikeCompleteThought(text) {
@@ -1370,10 +1450,6 @@ ${commentText || "(empty)"}
     }
 
     paragraphs.forEach((paragraph, index) => {
-      const charLength = sparkToString(paragraph, "").length;
-      if (charLength < 120 || charLength > 200) {
-        issues.push(`Paragraph ${index + 1} must be 120-200 characters, but it is ${charLength}.`);
-      }
       if (!endsLikeCompleteThought(paragraph)) {
         issues.push(`Paragraph ${index + 1} must end as a complete sentence or complete thought.`);
       }
@@ -1524,7 +1600,7 @@ Return only the corrected reply text.`
       return normalizeSparkOutput(text);
     };
     window.__ceSparkGenerateComment = async (input) => {
-      const safeInput = await buildEffectiveLinkedInAiInput(input, { includeReplyHint: false });
+      const safeInput = await buildEffectiveLinkedInAiInput(input, { includeReplyHint: true });
       const profile = resolveCommentGenerationProfile(safeInput.preferences);
       const commentInput = {
         ...safeInput,
@@ -2260,9 +2336,7 @@ Return only the corrected reply text.`
       commentEndWithQuestion: false,
       commentOfferServices: false,
       commentIndustry: "NotSpecified",
-      replyKeepItShort: true,
       replyEndWithQuestion: false,
-      replyAckIfMyPost: true,
       engageInEnglish: false,
       voiceGender: "NotSpecified",
       reengagementCooldown: "NotSpecified"
@@ -2284,9 +2358,7 @@ Return only the corrected reply text.`
       commentUseEmojis: sparkToBoolean(source.commentUseEmojis, base.commentUseEmojis),
       commentEndWithQuestion: sparkToBoolean(source.commentEndWithQuestion, base.commentEndWithQuestion),
       commentOfferServices: sparkToBoolean(source.commentOfferServices, base.commentOfferServices),
-      replyKeepItShort: sparkToBoolean(source.replyKeepItShort, base.replyKeepItShort),
       replyEndWithQuestion: sparkToBoolean(source.replyEndWithQuestion, base.replyEndWithQuestion),
-      replyAckIfMyPost: sparkToBoolean(source.replyAckIfMyPost, base.replyAckIfMyPost),
       engageInEnglish: sparkToBoolean(source.engageInEnglish, base.engageInEnglish)
     };
   }
@@ -3871,10 +3943,16 @@ Return only the corrected reply text.`
           commentScraper.displaySpinner(button);
           await Promise.all([
             loadAutoSendDelayRange(),
-            loadRandomStrategySettings()
+            loadRandomStrategySettings(),
+            loadReplyPromptHint()
           ]);
 
           let preferences = await PreferencesModel.load();
+          const canonicalPreferences = await loadLegacyPreferences();
+          preferences = sanitizeLegacyPreferences({
+            ...(sparkIsPlainObject(preferences) ? preferences : {}),
+            ...(sparkIsPlainObject(canonicalPreferences) ? canonicalPreferences : {})
+          });
           const isAutomation = button.hasAttribute(types.DataAttribute.IsAutomation);
 
           const profile = await profiler.loadProfile();
@@ -3911,6 +3989,7 @@ Return only the corrected reply text.`
 
           const postAuthorSeat = commentScraper.getPostAuthorSeat(container);
           const urn = commentScraper.getPostUrn(container);
+          const generationProfile = resolveCommentGenerationProfile(preferences);
           let commentText = "";
           try {
             commentText = await api.generateComment(
@@ -3918,26 +3997,39 @@ Return only the corrected reply text.`
               urn,
               postAuthor,
               postText,
-              preferences
+              {
+                ...preferences,
+                replyHint: replyPromptHint || ""
+              }
             );
           } catch (_err) {
-            const fallbackProfile = resolveCommentGenerationProfile(preferences);
             commentText = buildCommentFallbackText({
               postAuthor,
               postText,
-              preferences
-            }, fallbackProfile);
+              preferences,
+              replyHint: replyPromptHint || ""
+            }, generationProfile);
             commentText = enforceCommentByPreference(commentText, {
               postAuthor,
               postText,
               preferences,
-              __ceEffectiveLength: fallbackProfile.length
+              replyHint: replyPromptHint || "",
+              __ceEffectiveLength: generationProfile.length
             });
           }
 
           commentText = normalizeSparkOutput(commentText);
+          commentText = enforceCommentByPreference(commentText, {
+            postAuthor,
+            postText,
+            preferences,
+            replyHint: replyPromptHint || "",
+            __ceEffectiveLength: generationProfile.length
+          });
           if (typeof commentText === "string") {
             commentText = commentText
+              .replace(/^["'“”‘’]+/, "")
+              .replace(/["'“”‘’]+$/u, "")
               .replace(/^\s*Great point\s*:\s*/i, "")
               .replace(/\s*\.\.\.\s*$/u, "")
               .replace(/(?:话题标(?:签)?|标签)\s*[:：]?\s*(?=[#＃])/g, "")
@@ -3945,6 +4037,12 @@ Return only the corrected reply text.`
               .replace(/#\s+/g, "#")
               .trim();
           }
+
+          const finalParagraphCount = resolveCommentParagraphCount(preferences);
+          commentText = ensureParagraphCount(commentText, finalParagraphCount, true);
+          commentText = splitCommentParagraphs(commentText).map(ensureParagraphCompleteThought).filter(Boolean).join("\n\n");
+          commentText = enforceEmojiByPreference(commentText, preferences);
+          commentText = ensureEndingEmojiByHint(commentText, { replyHint: replyPromptHint || "" });
 
           if (typeof commentText !== "string" || !commentText.trim()) {
             throw new Error("API generateComment normalized to empty result");
@@ -5448,16 +5546,12 @@ Return only the corrected reply text.`
       /comment\/reply in english/i,
       /use emojis/i,
       /open-ended/i,
-      /keep it short/i,
-      /reply only with ack/i,
-      /on my own posts/i,
       /^tone$/i,
       /voice gender/i,
       /^length[:：]?/i,
       /评论\/回复使用英文/,
       /使用表情/,
       /开放式结尾/,
-      /保持简短回复/,
       /语气性别/,
       /^语气$/,
       /^长度[:：]?/
@@ -5539,18 +5633,6 @@ Return only the corrected reply text.`
         label: currentLang === "zh-CN" ? "开放式结尾" : "Open-ended ending",
         type: "checkbox",
         value: !!preferences.commentEndWithQuestion
-      },
-      {
-        key: "replyKeepItShort",
-        label: currentLang === "zh-CN" ? "保持简短回复" : "Keep replies short",
-        type: "checkbox",
-        value: !!preferences.replyKeepItShort
-      },
-      {
-        key: "replyAckIfMyPost",
-        label: currentLang === "zh-CN" ? "自己的帖子仅回复确认语" : "Ack only on my own posts",
-        type: "checkbox",
-        value: !!preferences.replyAckIfMyPost
       }
     ];
 
@@ -5700,8 +5782,6 @@ Return only the corrected reply text.`
       && (findLegacyPreferenceCheckbox([/评论\/回复使用英文/, /comment\/reply in english/i]) || getVisibleLegacyCheckboxes()[0])
       && (findLegacyPreferenceCheckbox([/使用表情/, /use emojis/i]) || getVisibleLegacyCheckboxes()[1])
       && (findLegacyPreferenceCheckbox([/开放式结尾/, /open-ended/i]) || getVisibleLegacyCheckboxes()[2])
-      && (findLegacyPreferenceCheckbox([/保持简短回复/, /keep it short/i]) || getVisibleLegacyCheckboxes()[3])
-      && (findLegacyPreferenceCheckbox([/On My Own Posts/i, /Reply Only with Ack/i]) || getVisibleLegacyCheckboxes()[4])
       && (findLegacyPreferenceSelect([/语气性别/, /voice gender/i]) || getVisibleLegacySelects()[1])
     );
   }
@@ -5807,15 +5887,13 @@ Return only the corrected reply text.`
     const preferences = await loadLegacyPreferences();
     const [lengthRange] = getVisibleLegacyRanges();
     const [toneSelect, voiceGenderSelect] = getVisibleLegacySelects();
-    const [englishCheckbox, emojiCheckbox, openEndedCheckbox, keepShortCheckbox, ackMyPostCheckbox] = getVisibleLegacyCheckboxes();
+    const [englishCheckbox, emojiCheckbox, openEndedCheckbox] = getVisibleLegacyCheckboxes();
 
     setRangeValue(lengthRange || findLegacyPreferenceLengthSlider(), preferences.commentLength);
     setSelectValue(toneSelect || findLegacyPreferenceSelect([/^语气$/, /^tone$/i]), preferences.commentTone);
     setInputChecked(englishCheckbox || findLegacyPreferenceCheckbox([/评论\/回复使用英文/, /comment\/reply in english/i]), preferences.engageInEnglish);
     setInputChecked(emojiCheckbox || findLegacyPreferenceCheckbox([/使用表情/, /use emojis/i]), preferences.commentUseEmojis);
     setInputChecked(openEndedCheckbox || findLegacyPreferenceCheckbox([/开放式结尾/, /open-ended/i]), preferences.commentEndWithQuestion);
-    setInputChecked(keepShortCheckbox || findLegacyPreferenceCheckbox([/保持简短回复/, /keep it short/i]), preferences.replyKeepItShort);
-    setInputChecked(ackMyPostCheckbox || findLegacyPreferenceCheckbox([/On My Own Posts/i, /Reply Only with Ack/i]), preferences.replyAckIfMyPost);
     setSelectValue(voiceGenderSelect || findLegacyPreferenceSelect([/语气性别/, /voice gender/i]), preferences.voiceGender);
     legacyPreferencesLastSnapshot = serializeLegacyPreferencesSnapshot(preferences);
     document.body.dataset.ceLegacyPrefsApplied = "true";
@@ -5832,21 +5910,15 @@ Return only the corrected reply text.`
     const voiceGenderSelect = visibleVoiceGenderSelect || findLegacyPreferenceSelect([/语气性别/, /voice gender/i]);
     if (toneSelect) patch.commentTone = toneSelect.value;
 
-    const [visibleEnglishCheckbox, visibleEmojiCheckbox, visibleOpenEndedCheckbox, visibleKeepShortCheckbox, visibleAckMyPostCheckbox] = getVisibleLegacyCheckboxes();
+    const [visibleEnglishCheckbox, visibleEmojiCheckbox, visibleOpenEndedCheckbox] = getVisibleLegacyCheckboxes();
     const englishCheckbox = visibleEnglishCheckbox || findLegacyPreferenceCheckbox([/评论\/回复使用英文/, /comment\/reply in english/i]);
     const emojiCheckbox = visibleEmojiCheckbox || findLegacyPreferenceCheckbox([/使用表情/, /use emojis/i]);
     const openEndedCheckbox = visibleOpenEndedCheckbox || findLegacyPreferenceCheckbox([/开放式结尾/, /open-ended/i]);
-    const keepShortCheckbox = visibleKeepShortCheckbox || findLegacyPreferenceCheckbox([/保持简短回复/, /keep it short/i]);
-    const ackMyPostCheckbox = visibleAckMyPostCheckbox || findLegacyPreferenceCheckbox([/On My Own Posts/i, /Reply Only with Ack/i]);
     if (englishCheckbox) patch.engageInEnglish = !!englishCheckbox.checked;
 
     if (emojiCheckbox) patch.commentUseEmojis = !!emojiCheckbox.checked;
 
     if (openEndedCheckbox) patch.commentEndWithQuestion = !!openEndedCheckbox.checked;
-
-    if (keepShortCheckbox) patch.replyKeepItShort = !!keepShortCheckbox.checked;
-
-    if (ackMyPostCheckbox) patch.replyAckIfMyPost = !!ackMyPostCheckbox.checked;
 
     if (voiceGenderSelect) patch.voiceGender = voiceGenderSelect.value;
 

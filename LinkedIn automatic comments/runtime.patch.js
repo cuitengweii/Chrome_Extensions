@@ -3728,19 +3728,7 @@ Return only the corrected reply text.`
       commentScraper.pasteComment = function patchedPasteComment(inputBox, text) {
         const finalText = normalizeSparkOutput(text);
         const paragraphs = splitCommentParagraphs(finalText);
-        const html = paragraphs.map((part) => `<p>${escapeHtmlText(part)}</p>`).join("");
-        try {
-          inputBox.focus();
-        } catch (_err) {}
-
-        try {
-          inputBox.innerHTML = html || escapeHtmlText(finalText);
-        } catch (_err) {
-          inputBox.textContent = paragraphs.join("\n\n");
-        }
-
-        moveCaretToEnd(inputBox);
-        dispatchEditorLifecycleEvents(inputBox, paragraphs.join("\n\n") || finalText);
+        pasteCommentIntoLinkedInEditor(inputBox, finalText);
         debugCommentTrace("paste-legacy", {
           finalLength: finalText.length,
           finalParagraphs: paragraphs.length,

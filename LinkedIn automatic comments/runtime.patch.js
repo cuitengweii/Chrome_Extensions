@@ -30,6 +30,7 @@
   const LINKEDIN_PROFILE_STORAGE_KEY = "profile";
   const GASGX_SIGNED_OUT_FLAG_KEY = "ce_gasgx_signed_out";
   const GASGX_LOCAL_SIGNED_IN_KEY = "ce_gasgx_local_signed_in";
+  const GASGX_LOGIN_STATE_KEY = "ce_gasgx_login_state";
   const LEGACY_PREFERENCES_STORAGE_KEY = "preferences";
   const LEGACY_PREFERENCES_CANONICAL_KEY = "ce_legacy_preferences_canonical";
   const LEGACY_PREFERENCES_CACHE_KEY = "ce_legacy_preferences_popup_cache";
@@ -124,6 +125,9 @@
   let gasgxDerivedStorageSyncPromise = null;
   let gasgxDerivedStorageLastRunAt = 0;
   let gasgxDerivedStorageLastSignature = "";
+  let gasgxSignedOutCache = false;
+  let gasgxSignedOutCacheReady = false;
+  let gasgxCommentGuardHintAt = 0;
   const ORIGINAL_STORAGE_GETTERS = new WeakMap();
   const ORIGINAL_STORAGE_SETTERS = new WeakMap();
   const gasgxAuthState = {
@@ -1806,6 +1810,159 @@ Return only the corrected reply text.`
     return snapshot.status === "enabled" && !!snapshot.profileEnabled;
   }
 
+  function buildGasGxSignedOutSnapshot(seedSnapshot = getCurrentGasGxAuthSnapshot()) {
+    return sanitizeGasGxAuthSnapshot({
+      ...getDefaultGasGxAuthSnapshot(),
+      email: sparkToString(seedSnapshot?.email, "").trim()
+    });
+  }
+
+  function setGasGxSignedOutRuntimeSnapshot(seedSnapshot = getCurrentGasGxAuthSnapshot()) {
+    const anonymous = buildGasGxSignedOutSnapshot(seedSnapshot);
+    gasgxAuthState.snapshot = anonymous;
+    gasgxAuthState.loaded = true;
+    dispatchGasGxAuthChanged(anonymous);
+    return anonymous;
+  }
+
+  async function loadGasGxLoginState() {
+    const storage = chrome?.storage?.local;
+    if (storage?.get) {
+      const raw = await rawStorageGet(storage, GASGX_LOGIN_STATE_KEY);
+      if (Object.prototype.hasOwnProperty.call(raw || {}, GASGX_LOGIN_STATE_KEY)) {
+        return normalizeFeatureToggle(raw?.[GASGX_LOGIN_STATE_KEY], false);
+      }
+      const fallbackLocalLoginState = normalizeFeatureToggle(readLocalStorageValue(GASGX_LOGIN_STATE_KEY, false), false);
+      if (fallbackLocalLoginState) {
+        await setStorageValue(storage, { [GASGX_LOGIN_STATE_KEY]: true });
+        return true;
+      }
+      let inferredLoginState = false;
+      try {
+        const fallbackRaw = await rawStorageGet(storage, [
+          GASGX_AUTH_STORAGE_KEY,
+          GASGX_LOCAL_SIGNED_IN_KEY,
+          GASGX_SIGNED_OUT_FLAG_KEY
+        ]);
+        const signedOut = normalizeFeatureToggle(fallbackRaw?.[GASGX_SIGNED_OUT_FLAG_KEY], false);
+        const localSignedIn = normalizeFeatureToggle(fallbackRaw?.[GASGX_LOCAL_SIGNED_IN_KEY], false);
+        const persistedSnapshot = sanitizeGasGxAuthSnapshot(
+          parseStoredObject(
+            sparkToString(fallbackRaw?.[GASGX_AUTH_STORAGE_KEY], ""),
+            getDefaultGasGxAuthSnapshot()
+          )
+        );
+        inferredLoginState = !signedOut && (
+          localSignedIn
+          || persistedSnapshot.status === "enabled"
+          || persistedSnapshot.status === "signed_in_but_not_enabled"
+          || !!persistedSnapshot.profileEnabled
+        );
+      } catch (_err) {
+        inferredLoginState = false;
+      }
+      await setStorageValue(storage, { [GASGX_LOGIN_STATE_KEY]: inferredLoginState });
+      return inferredLoginState;
+    }
+    return normalizeFeatureToggle(readLocalStorageValue(GASGX_LOGIN_STATE_KEY, false), false);
+  }
+
+  async function persistGasGxLoginState(value) {
+    const enabled = !!value;
+    writeLocalStorageValue(GASGX_LOGIN_STATE_KEY, enabled ? "true" : "false");
+    const storage = chrome?.storage?.local;
+    if (!storage?.set) return;
+    await setStorageValue(storage, { [GASGX_LOGIN_STATE_KEY]: enabled });
+  }
+
+  async function recoverGasGxAuthSnapshotFromLegacyStorage(baseSnapshot = getCurrentGasGxAuthSnapshot()) {
+    const storage = chrome?.storage?.local;
+    if (!storage?.get) return null;
+    if (await loadGasGxSignedOutFlag()) return null;
+
+    let account = {};
+    let ui = {};
+    try {
+      const raw = await rawStorageGet(storage, [ACCOUNT_KEY, UI_KEY]);
+      account = parseStoredAccount(raw?.[ACCOUNT_KEY]);
+      ui = parseStoredObject(raw?.[UI_KEY], DEFAULT_UI_STATE);
+    } catch (_err) {
+      return null;
+    }
+
+    const subscriberId = sparkToString(account?.subscriberId, "").trim();
+    const email = sparkToString(account?.email, "").trim();
+    const accessToken = sparkToString(account?.accessToken, "").trim();
+    const refreshToken = sparkToString(account?.refreshToken, "").trim();
+    const uiEnabled = sparkToBoolean(ui?.enabled, false);
+    const looksEnabled = !!(
+      uiEnabled
+      || accessToken
+      || refreshToken
+      || (email && subscriberId.length === 24)
+    );
+    if (!looksEnabled) return null;
+
+    const recovered = sanitizeGasGxAuthSnapshot({
+      ...baseSnapshot,
+      status: "enabled",
+      profileEnabled: true,
+      email: email || sparkToString(baseSnapshot?.email, "").trim(),
+      userId: sparkToString(baseSnapshot?.userId, "").trim(),
+      plan: sparkToString(account?.plan, "").trim() || sparkToString(baseSnapshot?.plan, "").trim() || "GasGx",
+      accessToken: sparkToString(baseSnapshot?.accessToken, "").trim() || accessToken,
+      refreshToken: sparkToString(baseSnapshot?.refreshToken, "").trim() || refreshToken,
+      errorMessage: "",
+      lastValidatedAt: Date.now()
+    });
+
+    return await persistGasGxAuthSnapshot(recovered);
+  }
+
+  async function resolveGasGxAuthSnapshotForCommenting() {
+    const current = getCurrentGasGxAuthSnapshot();
+    const signedOut = await loadGasGxSignedOutFlag();
+    gasgxSignedOutCache = signedOut;
+    gasgxSignedOutCacheReady = true;
+    if (signedOut) {
+      return setGasGxSignedOutRuntimeSnapshot(current);
+    }
+
+    const refreshed = await ensureGasGxAuthSnapshotLoaded(true);
+    if (isGasGxExtensionEnabled(refreshed)) return refreshed;
+
+    const signedOutAfterRefresh = await loadGasGxSignedOutFlag();
+    gasgxSignedOutCache = signedOutAfterRefresh;
+    gasgxSignedOutCacheReady = true;
+    if (signedOutAfterRefresh) {
+      return setGasGxSignedOutRuntimeSnapshot(refreshed || current);
+    }
+
+    return refreshed;
+  }
+
+  function getGasGxCommentBlockedMessage(snapshot = getCurrentGasGxAuthSnapshot()) {
+    const status = sparkToString(snapshot?.status, "");
+    if (status === "auth_error") {
+      return currentLang === "zh-CN"
+        ? (snapshot?.errorMessage || "GasGx 登录异常，请先重新登录后再评论。")
+        : (sparkToString(snapshot?.errorMessage, "GasGx sign-in failed. Please sign in again before commenting.").trim());
+    }
+    if (status === "signed_in_but_not_enabled" || (status === "enabled" && !snapshot?.profileEnabled)) {
+      return currentLang === "zh-CN"
+        ? "你当前已登录，但评论权限未启用，请先在 GasGx 中重新登录后再评论。"
+        : "You're signed in, but commenting isn't enabled yet. Please sign in again in GasGx before commenting.";
+    }
+    if (status === "loading") {
+      return currentLang === "zh-CN"
+        ? "正在读取 GasGx 登录状态，请稍后再试。"
+        : "Loading GasGx sign-in state. Please try again in a moment.";
+    }
+    return currentLang === "zh-CN"
+      ? "你已退出登录，请先在扩展弹窗重新登录后再评论。"
+      : "You're signed out. Please sign in from the extension popup before commenting.";
+  }
+
   function hasUsableLocalGasGxAuth(snapshot, localSignedIn = false) {
     const current = sanitizeGasGxAuthSnapshot(snapshot);
     return !!(
@@ -1856,7 +2013,7 @@ Return only the corrected reply text.`
       subscriberId: buildLegacyPopupSubscriberId(snapshot, existing),
       email: snapshot.email || existing.email || "",
       password: "",
-      plan: snapshot.plan || "GasGx Local",
+      plan: snapshot.plan || "GasGx",
       isTrialEligible: false,
       accessToken: snapshot.accessToken || "",
       refreshToken: snapshot.refreshToken || ""
@@ -1931,12 +2088,25 @@ Return only the corrected reply text.`
 
   async function loadPersistedGasGxAuthSnapshot() {
     const storage = chrome?.storage?.local;
-    const raw = storage ? await rawStorageGet(storage, GASGX_AUTH_STORAGE_KEY) : {};
-    const storageValue = sparkToString(raw?.[GASGX_AUTH_STORAGE_KEY], "");
+    if (storage?.get) {
+      const raw = await rawStorageGet(storage, GASGX_AUTH_STORAGE_KEY);
+      const storageValue = sparkToString(raw?.[GASGX_AUTH_STORAGE_KEY], "");
+      const fallbackValue = readLocalStorageValue(GASGX_AUTH_STORAGE_KEY, "");
+      const effectiveValue = sparkToString(storageValue, "").trim() ? storageValue : fallbackValue;
+      gasgxLastPersistedSnapshotRaw = effectiveValue;
+      if (!sparkToString(storageValue, "").trim() && sparkToString(fallbackValue, "").trim()) {
+        try {
+          await setStorageValue(storage, { [GASGX_AUTH_STORAGE_KEY]: fallbackValue });
+        } catch (_err) {}
+      }
+      return sanitizeGasGxAuthSnapshot(
+        parseStoredObject(effectiveValue, getDefaultGasGxAuthSnapshot())
+      );
+    }
     const fallbackValue = readLocalStorageValue(GASGX_AUTH_STORAGE_KEY, "");
-    gasgxLastPersistedSnapshotRaw = storageValue || fallbackValue;
+    gasgxLastPersistedSnapshotRaw = fallbackValue;
     return sanitizeGasGxAuthSnapshot(
-      parseStoredObject(storageValue || fallbackValue, getDefaultGasGxAuthSnapshot())
+      parseStoredObject(fallbackValue, getDefaultGasGxAuthSnapshot())
     );
   }
 
@@ -2168,11 +2338,14 @@ Return only the corrected reply text.`
 
   async function loadGasGxSignedOutFlag() {
     const storage = chrome?.storage?.local;
-    const raw = storage?.get ? await rawStorageGet(storage, GASGX_SIGNED_OUT_FLAG_KEY) : {};
-    return normalizeFeatureToggle(
-      raw?.[GASGX_SIGNED_OUT_FLAG_KEY] ?? readLocalStorageValue(GASGX_SIGNED_OUT_FLAG_KEY, false),
-      false
-    );
+    if (storage?.get) {
+      const raw = await rawStorageGet(storage, GASGX_SIGNED_OUT_FLAG_KEY);
+      if (Object.prototype.hasOwnProperty.call(raw || {}, GASGX_SIGNED_OUT_FLAG_KEY)) {
+        return normalizeFeatureToggle(raw?.[GASGX_SIGNED_OUT_FLAG_KEY], false);
+      }
+      return normalizeFeatureToggle(readLocalStorageValue(GASGX_SIGNED_OUT_FLAG_KEY, false), false);
+    }
+    return normalizeFeatureToggle(readLocalStorageValue(GASGX_SIGNED_OUT_FLAG_KEY, false), false);
   }
 
   async function persistGasGxSignedOutFlag(value) {
@@ -2186,11 +2359,14 @@ Return only the corrected reply text.`
 
   async function loadGasGxLocalSignedInFlag() {
     const storage = chrome?.storage?.local;
-    const raw = storage?.get ? await rawStorageGet(storage, GASGX_LOCAL_SIGNED_IN_KEY) : {};
-    return normalizeFeatureToggle(
-      raw?.[GASGX_LOCAL_SIGNED_IN_KEY] ?? readLocalStorageValue(GASGX_LOCAL_SIGNED_IN_KEY, false),
-      false
-    );
+    if (storage?.get) {
+      const raw = await rawStorageGet(storage, GASGX_LOCAL_SIGNED_IN_KEY);
+      if (Object.prototype.hasOwnProperty.call(raw || {}, GASGX_LOCAL_SIGNED_IN_KEY)) {
+        return normalizeFeatureToggle(raw?.[GASGX_LOCAL_SIGNED_IN_KEY], false);
+      }
+      return normalizeFeatureToggle(readLocalStorageValue(GASGX_LOCAL_SIGNED_IN_KEY, false), false);
+    }
+    return normalizeFeatureToggle(readLocalStorageValue(GASGX_LOCAL_SIGNED_IN_KEY, false), false);
   }
 
   async function persistGasGxLocalSignedInFlag(value) {
@@ -2241,6 +2417,32 @@ Return only the corrected reply text.`
     });
   }
 
+  async function refreshGasGxSessionByRefreshToken(refreshToken) {
+    const normalizedRefreshToken = sparkToString(refreshToken, "").trim();
+    if (!normalizedRefreshToken) {
+      throw new Error(currentLang === "zh-CN"
+        ? "登录会话已过期，请重新登录。"
+        : "Session expired. Please sign in again.");
+    }
+    return await supabaseFetchJson("/auth/v1/token?grant_type=refresh_token", {
+      method: "POST",
+      body: JSON.stringify({ refresh_token: normalizedRefreshToken })
+    });
+  }
+
+  function buildGasGxAuthErrorSnapshot(seedSnapshot, message) {
+    const seed = sanitizeGasGxAuthSnapshot(seedSnapshot);
+    return sanitizeGasGxAuthSnapshot({
+      ...getDefaultGasGxAuthSnapshot(),
+      status: "auth_error",
+      email: sparkToString(seed?.email, "").trim(),
+      errorMessage: sparkToString(message, "").trim() || (currentLang === "zh-CN"
+        ? "GasGx 登录已失效，请重新登录。"
+        : "GasGx session expired. Please sign in again."),
+      lastValidatedAt: Date.now()
+    });
+  }
+
   async function rawStorageSet(area, value) {
     const setter = ORIGINAL_STORAGE_SETTERS.get(area) || area?.set?.bind(area);
     if (typeof setter !== "function") return;
@@ -2273,15 +2475,46 @@ Return only the corrected reply text.`
   }
 
   async function clearGasGxAuthSnapshot() {
+    await persistGasGxLoginState(false);
     await persistGasGxLocalSignedInFlag(false);
     return await persistGasGxAuthSnapshot(getDefaultGasGxAuthSnapshot());
   }
 
   async function buildGasGxSnapshotFromSession(sessionPayload) {
-    const accessToken = sparkToString(sessionPayload?.access_token, "").trim();
-    const refreshToken = sparkToString(sessionPayload?.refresh_token, "").trim();
-    const expiresAt = Math.max(0, Math.floor(sparkToNumber(sessionPayload?.expires_at, 0) || (Date.now() / 1000) + sparkToNumber(sessionPayload?.expires_in, 0)));
-    const userFromSession = sessionPayload?.user && typeof sessionPayload.user === "object" ? sessionPayload.user : {};
+    const sessionSource = sessionPayload?.session && typeof sessionPayload.session === "object"
+      ? sessionPayload.session
+      : sessionPayload;
+    const accessToken = sparkToString(
+      sessionSource?.access_token ?? sessionPayload?.access_token,
+      ""
+    ).trim();
+    const refreshToken = sparkToString(
+      sessionSource?.refresh_token ?? sessionPayload?.refresh_token,
+      ""
+    ).trim();
+    const expiresAtRaw = sparkToNumber(
+      sessionSource?.expires_at ?? sessionPayload?.expires_at,
+      0
+    );
+    const expiresInRaw = sparkToNumber(
+      sessionSource?.expires_in ?? sessionPayload?.expires_in,
+      0
+    );
+    const nowSec = Math.floor(Date.now() / 1000);
+    let expiresAt = 0;
+    if (Number.isFinite(expiresAtRaw) && expiresAtRaw > 0) {
+      expiresAt = Math.floor(expiresAtRaw);
+    } else if (Number.isFinite(expiresInRaw) && expiresInRaw > 0) {
+      expiresAt = nowSec + Math.floor(expiresInRaw);
+    } else {
+      // Some Supabase responses omit expiry fields; keep a conservative fallback window.
+      expiresAt = nowSec + 86400;
+    }
+    const userFromSession = (
+      (sessionSource?.user && typeof sessionSource.user === "object" && sessionSource.user)
+      || (sessionPayload?.user && typeof sessionPayload.user === "object" && sessionPayload.user)
+      || {}
+    );
     const userId = sparkToString(userFromSession.id, "").trim();
     const userEmail = sparkToString(userFromSession.email, "").trim();
     const user = userId || userEmail
@@ -2291,7 +2524,7 @@ Return only the corrected reply text.`
       status: "enabled",
       userId: user.id,
       email: user.email,
-      plan: "GasGx Local",
+      plan: "GasGx",
       profileEnabled: true,
       enabledAt: new Date().toISOString(),
       accessToken,
@@ -2304,10 +2537,48 @@ Return only the corrected reply text.`
 
   async function validatePersistedGasGxAuthSnapshot(snapshot) {
     const current = sanitizeGasGxAuthSnapshot(snapshot);
+    const sessionExpired = current.sessionExpiresAt > 0 && current.sessionExpiresAt <= (Date.now() + 60_000);
+    const hasAccessToken = !!sparkToString(current.accessToken, "").trim();
+    const hasRefreshToken = !!sparkToString(current.refreshToken, "").trim();
     if (current.status === "enabled" && current.profileEnabled) {
+      if (!hasAccessToken && !hasRefreshToken) {
+        const [loginState, localSignedIn, signedOut] = await Promise.all([
+          loadGasGxLoginState(),
+          loadGasGxLocalSignedInFlag(),
+          loadGasGxSignedOutFlag()
+        ]);
+        if (!signedOut && (loginState || localSignedIn)) {
+          return sanitizeGasGxAuthSnapshot({
+            ...current,
+            plan: sparkToString(current.plan, "").trim() || "GasGx",
+            lastValidatedAt: Date.now(),
+            errorMessage: ""
+          });
+        }
+        return buildGasGxAuthErrorSnapshot(current, currentLang === "zh-CN"
+          ? "未检测到登录会话，请重新登录。"
+          : "No login session found. Please sign in again.");
+      }
+      if (sessionExpired && hasRefreshToken) {
+        try {
+          const refreshedSession = await refreshGasGxSessionByRefreshToken(current.refreshToken);
+          const refreshedSnapshot = await buildGasGxSnapshotFromSession(refreshedSession);
+          return sanitizeGasGxAuthSnapshot({
+            ...refreshedSnapshot,
+            enabledAt: sparkToString(current.enabledAt, "").trim() || refreshedSnapshot.enabledAt
+          });
+        } catch (error) {
+          return buildGasGxAuthErrorSnapshot(current, error?.message);
+        }
+      }
+      if (sessionExpired && !hasRefreshToken) {
+        return buildGasGxAuthErrorSnapshot(current, currentLang === "zh-CN"
+          ? "登录会话已过期，请重新登录。"
+          : "Session expired. Please sign in again.");
+      }
       return sanitizeGasGxAuthSnapshot({
         ...current,
-        lastValidatedAt: current.lastValidatedAt || Date.now()
+        lastValidatedAt: Date.now()
       });
     }
     return getDefaultGasGxAuthSnapshot();
@@ -2315,22 +2586,69 @@ Return only the corrected reply text.`
 
   function canReusePersistedGasGxAuthSnapshot(snapshot) {
     const current = sanitizeGasGxAuthSnapshot(snapshot);
-    return current.status === "enabled" && !!current.profileEnabled;
+    return current.status === "enabled"
+      && !!current.profileEnabled
+      && !!(sparkToString(current.accessToken, "").trim() || sparkToString(current.refreshToken, "").trim());
   }
 
   async function ensureGasGxAuthSnapshotLoaded(forceRefresh = false) {
     if (!forceRefresh && gasgxAuthState.loaded && gasgxAuthState.snapshot) return gasgxAuthState.snapshot;
     if (!forceRefresh && gasgxAuthState.loadingPromise) return await gasgxAuthState.loadingPromise;
     gasgxAuthState.loadingPromise = (async () => {
-      const persisted = await loadPersistedGasGxAuthSnapshot();
-      if (!forceRefresh && canReusePersistedGasGxAuthSnapshot(persisted)) {
+      const [persisted, signedOut, localSignedIn, loginState] = await Promise.all([
+        loadPersistedGasGxAuthSnapshot(),
+        loadGasGxSignedOutFlag(),
+        loadGasGxLocalSignedInFlag(),
+        loadGasGxLoginState()
+      ]);
+
+      const restoredSnapshot = sanitizeGasGxAuthSnapshot({
+        ...persisted,
+        status: (loginState || localSignedIn) ? "enabled" : persisted?.status,
+        profileEnabled: (loginState || localSignedIn) ? true : persisted?.profileEnabled,
+        plan: sparkToString(persisted?.plan, "").trim() || ((loginState || localSignedIn) ? "GasGx" : "")
+      });
+      const persistedHasSessionEvidence = hasUsableLocalGasGxAuth(restoredSnapshot, localSignedIn);
+      if (signedOut) {
+        const anonymous = sanitizeGasGxAuthSnapshot({
+          ...getDefaultGasGxAuthSnapshot(),
+          email: sparkToString(persisted?.email, "").trim()
+        });
+        gasgxAuthState.snapshot = anonymous;
+        gasgxAuthState.loaded = true;
+        dispatchGasGxAuthChanged(anonymous);
+        return anonymous;
+      }
+
+      const hasPersistedAuth = !signedOut && (loginState || persistedHasSessionEvidence);
+      if (hasPersistedAuth) {
+        if (!loginState) {
+          await persistGasGxLoginState(true);
+        }
+        if (!localSignedIn) {
+          await persistGasGxLocalSignedInFlag(true);
+        }
+        const validatedRestored = await validatePersistedGasGxAuthSnapshot(restoredSnapshot);
+        gasgxAuthState.snapshot = validatedRestored;
+        gasgxAuthState.loaded = true;
+        dispatchGasGxAuthChanged(validatedRestored);
+        return validatedRestored;
+      }
+
+      if (!forceRefresh && !signedOut && (loginState || localSignedIn) && canReusePersistedGasGxAuthSnapshot(persisted)) {
         gasgxAuthState.snapshot = persisted;
         gasgxAuthState.loaded = true;
         dispatchGasGxAuthChanged(persisted);
         return persisted;
       }
       const validated = await validatePersistedGasGxAuthSnapshot(persisted);
-      return await persistGasGxAuthSnapshot(validated);
+      const next = signedOut
+        ? sanitizeGasGxAuthSnapshot({
+          ...validated,
+          status: "anonymous"
+        })
+        : validated;
+      return await persistGasGxAuthSnapshot(next);
     })();
     try {
       return await gasgxAuthState.loadingPromise;
@@ -3539,11 +3857,9 @@ Return only the corrected reply text.`
 
         try {
           if (!(await UIModel.load()).enabled || await versioning.isNewerVersionExists()) return;
-          const authSnapshot = await ensureGasGxAuthSnapshotLoaded(true);
+          const authSnapshot = await resolveGasGxAuthSnapshotForCommenting();
           if (!isGasGxExtensionEnabled(authSnapshot)) {
-            toast.info(currentLang === "zh-CN"
-              ? "你已退出登录，请先在扩展弹窗重新登录后再评论。"
-              : "You're signed out. Please sign in from the extension popup before commenting.");
+            toast.info(getGasGxCommentBlockedMessage(authSnapshot));
             return;
           }
           if (this.inProgress) {
@@ -3634,6 +3950,12 @@ Return only the corrected reply text.`
             throw new Error("API generateComment normalized to empty result");
           }
 
+          if (await loadGasGxSignedOutFlag()) {
+            toast.info(getGasGxCommentBlockedMessage(sanitizeGasGxAuthSnapshot({ status: "anonymous" })));
+            await finish();
+            return;
+          }
+
           commentScraper.pasteComment(inputBox, commentText);
           const submitButton = await waitForSubmitButton(container, inputBox, null, 4_000, 250, false);
           if (!submitButton) {
@@ -3676,6 +3998,10 @@ Return only the corrected reply text.`
             } catch (_err) {}
             setTimeout(() => {
               void (async () => {
+                if (await loadGasGxSignedOutFlag()) {
+                  debugCommentTrace("auto-send-blocked-signed-out", { delayMs });
+                  return;
+                }
                 let readyButton = null;
                 try {
                   readyButton = await waitForSubmitButton(container, inputBox, submitButton, 10_000, 400, true);
@@ -3691,12 +4017,10 @@ Return only the corrected reply text.`
                 };
 
                 try {
-                  const latestAuthSnapshot = await ensureGasGxAuthSnapshotLoaded(true);
+                  const latestAuthSnapshot = await resolveGasGxAuthSnapshotForCommenting();
                   if (!isGasGxExtensionEnabled(latestAuthSnapshot)) {
                     debugCommentTrace("auto-send-blocked-auth", tracePayload);
-                    toast.info(currentLang === "zh-CN"
-                      ? "你已退出登录，已停止自动发送评论。"
-                      : "You're signed out, so auto-send was stopped.");
+                    toast.info(getGasGxCommentBlockedMessage(latestAuthSnapshot));
                     return;
                   }
                 } catch (_err) {}
@@ -3907,7 +4231,7 @@ Return only the corrected reply text.`
 
     const plan = sparkToString(account.plan, "").trim()
       || sparkToString(snapshot.plan, "").trim()
-      || (isGasGxExtensionEnabled(snapshot) ? "GasGx Local" : "");
+      || (isGasGxExtensionEnabled(snapshot) ? "GasGx" : "");
     const subscriberId = sparkToString(account.subscriberId, "").trim()
       || sparkToString(snapshot.userId, "").trim()
       || TEST_SUBSCRIBER_ID;
@@ -5868,20 +6192,20 @@ Return only the corrected reply text.`
     const isError = snapshot.status === "auth_error";
     const title = currentLang === "zh-CN" ? "GasGx 账号" : "GasGx Account";
     const statusText = enabled
-      ? (currentLang === "zh-CN" ? "本地已登录" : "Signed in locally")
+      ? (currentLang === "zh-CN" ? "已登录" : "Signed in")
       : isBlocked
-        ? (currentLang === "zh-CN" ? "本地状态受限" : "Local state blocked")
+        ? (currentLang === "zh-CN" ? "账号状态受限" : "Account state blocked")
         : isError
           ? (currentLang === "zh-CN" ? "登录异常" : "Sign-in error")
-          : (currentLang === "zh-CN" ? "需要本地登录" : "Local sign-in required");
+          : (currentLang === "zh-CN" ? "需要登录" : "Sign-in required");
     const summaryText = enabled
       ? (currentLang === "zh-CN"
-        ? "当前扩展直接使用本地保存的 GasGx 登录状态和偏好配置。"
-        : "This popup now uses the locally stored GasGx sign-in state and preferences.")
+        ? "当前扩展直接使用本地保存的 GasGx 登录会话和偏好配置。"
+        : "This popup now uses your persisted GasGx session and preferences.")
       : isBlocked
         ? (currentLang === "zh-CN"
-          ? "当前本地账号状态不可用，请切换账号重新登录。"
-          : "The current local account state is unavailable. Please switch accounts and sign in again.")
+          ? "当前账号状态不可用，请切换账号重新登录。"
+          : "The current account state is unavailable. Please switch accounts and sign in again.")
         : isError
           ? (snapshot.errorMessage || (currentLang === "zh-CN" ? "GasGx 登录失败，请重新登录。" : "GasGx sign-in failed. Please sign in again."))
           : (currentLang === "zh-CN"
@@ -6053,33 +6377,64 @@ Return only the corrected reply text.`
     const passwordInput = form.querySelector('input[name="password"]');
     const errorNode = form.querySelector("[data-role='error']");
     const submitBtn = form.querySelector("button[type='submit']");
+    const signingInLabel = currentLang === "zh-CN" ? "正在登录 GasGx..." : "Signing in to GasGx...";
+    const submitLoadingLabel = currentLang === "zh-CN" ? "登录中..." : "Signing in...";
     form.dataset.ceLoading = "true";
-    if (submitBtn) submitBtn.disabled = true;
+    if (submitBtn) {
+      if (!submitBtn.dataset.ceDefaultLabel) {
+        submitBtn.dataset.ceDefaultLabel = sparkToString(submitBtn.textContent, "").trim() || (currentLang === "zh-CN" ? "登录" : "Sign in");
+      }
+      submitBtn.disabled = true;
+      submitBtn.setAttribute("aria-busy", "true");
+      submitBtn.innerHTML = `<span class="ce-inline-status"><span class="ce-inline-spinner" aria-hidden="true"></span><span>${submitLoadingLabel}</span></span>`;
+    }
     if (errorNode) {
-      errorNode.innerHTML = '<span class="ce-inline-status"><span class="ce-inline-spinner" aria-hidden="true"></span><span>Signing in to GasGx...</span></span>';
+      errorNode.innerHTML = `<span class="ce-inline-status"><span class="ce-inline-spinner" aria-hidden="true"></span><span>${signingInLabel}</span></span>`;
       errorNode.classList.remove("ce-success");
     }
     try {
       const sessionPayload = await signInWithGasGxPassword(emailInput?.value, passwordInput?.value);
       const snapshot = await buildGasGxSnapshotFromSession(sessionPayload);
+      await persistGasGxSignedOutFlag(false);
+      await persistGasGxLocalSignedInFlag(true);
       await persistGasGxAuthSnapshot(snapshot);
-      await syncGasGxDerivedStorage();
+      await persistGasGxLoginState(true);
+      void syncGasGxDerivedStorage().catch(() => {});
+      if (errorNode) {
+        errorNode.textContent = currentLang === "zh-CN" ? "登录成功。" : "Sign-in successful.";
+        errorNode.classList.add("ce-success");
+      }
     } catch (error) {
-      await persistGasGxAuthSnapshot({
-        ...getCurrentGasGxAuthSnapshot(),
-        status: "auth_error",
-        errorMessage: sparkToString(error?.message, "GasGx sign-in failed.").trim()
-      });
-      await syncGasGxDerivedStorage();
+      await persistGasGxSignedOutFlag(false);
+      await persistGasGxLocalSignedInFlag(false);
+      await persistGasGxLoginState(false);
+      await persistGasGxAuthSnapshot(buildGasGxAuthErrorSnapshot(getCurrentGasGxAuthSnapshot(), error?.message));
+      if (errorNode) {
+        errorNode.textContent = sparkToString(error?.message, currentLang === "zh-CN"
+          ? "GasGx 登录失败，请检查邮箱和密码。"
+          : "GasGx sign-in failed. Please check your email and password.");
+        errorNode.classList.remove("ce-success");
+      }
     } finally {
       delete form.dataset.ceLoading;
-      if (submitBtn) submitBtn.disabled = false;
+      if (submitBtn) {
+        submitBtn.disabled = false;
+        submitBtn.removeAttribute("aria-busy");
+        submitBtn.textContent = submitBtn.dataset.ceDefaultLabel || (currentLang === "zh-CN" ? "登录" : "Sign in");
+      }
+      try {
+        await ensureGasGxAuthSnapshotLoaded(true);
+      } catch (_err) {}
+      renderGasGxPopupAuth();
     }
   }
 
   async function handleGasGxPopupSignOut() {
     await persistGasGxSignedOutFlag(true);
     await clearGasGxAuthSnapshot();
+    await persistGasGxSignedOutFlag(true);
+    await persistGasGxLoginState(false);
+    await persistGasGxLocalSignedInFlag(false);
     await syncGasGxDerivedStorage();
   }
 
@@ -6091,10 +6446,10 @@ Return only the corrected reply text.`
     overlay.innerHTML = `
       <div class="ce-card ce-card-loading">
         <div class="ce-loading-spinner" aria-hidden="true"></div>
-        <div class="ce-title">${currentLang === "zh-CN" ? "正在读取本地登录状态" : "Loading local sign-in state"}</div>
+        <div class="ce-title">${currentLang === "zh-CN" ? "正在读取登录状态" : "Loading sign-in state"}</div>
         <div class="ce-subtitle">${currentLang === "zh-CN"
           ? "扩展正在读取本地保存的账号状态与偏好配置。"
-          : "Loading the locally stored account state and preferences."}</div>
+          : "Loading account state and preferences."}</div>
       </div>`;
   }
 
@@ -6120,9 +6475,9 @@ Return only the corrected reply text.`
     overlay.setAttribute("data-mode", "active");
     overlay.innerHTML = `
       <div class="ce-card">
-        <div class="ce-title">GasGx local sign-in</div>
-        <div class="ce-subtitle">After sign-in succeeds once inside the extension, this popup will use the locally stored account state and preferences.</div>
-        <div class="ce-error ${!isError && !isBlocked ? "ce-success" : ""}" data-role="status">${isBlocked ? "This local account state is blocked. Please switch account." : isError ? (snapshot.errorMessage || "GasGx sign-in failed. Please sign in again.") : "Sign in with your GasGx account. The extension will keep the account state locally after success."}</div>
+        <div class="ce-title">GasGx sign-in</div>
+        <div class="ce-subtitle">Sign in with your GasGx account. The extension will reuse your persisted session and preferences.</div>
+        <div class="ce-error ${!isError && !isBlocked ? "ce-success" : ""}" data-role="status">${isBlocked ? "This account state is blocked. Please switch account." : isError ? (snapshot.errorMessage || "GasGx sign-in failed. Please sign in again.") : "Sign in with your GasGx account. The extension keeps your session and preferences after success."}</div>
         ${isBlocked ? `<div class="ce-row"><button type="button" class="ce-btn ce-btn-primary" id="ce-gasgx-switch-account">Switch account</button><a class="ce-link" href="${GASGX_EXTENSION_CONTACT_URL}" target="_blank" rel="noreferrer">Contact GasGx</a></div>` : `<form id="ce-gasgx-sign-in-form"><div class="ce-field"><label class="ce-label">GasGx email</label><input class="ce-input" type="email" name="email" autocomplete="username" placeholder="you@gasgx.com" value="${snapshot.email || ""}"></div><div class="ce-field"><label class="ce-label">Password</label><input class="ce-input" type="password" name="password" autocomplete="current-password" placeholder="Enter password"></div><div class="ce-error" data-role="error">${isError ? (snapshot.errorMessage || "") : ""}</div><div class="ce-row"><button type="submit" class="ce-btn ce-btn-primary">Sign in</button><a class="ce-link" href="${GASGX_EXTENSION_CONTACT_URL}" target="_blank" rel="noreferrer">Open GasGx</a></div></form>`}
       </div>`;
     const form = document.getElementById("ce-gasgx-sign-in-form");
@@ -6132,11 +6487,172 @@ Return only the corrected reply text.`
     renderGasGxPopupAccountPanel();
   }
 
+  async function refreshGasGxSignedOutRuntimeCache() {
+    const signedOut = await loadGasGxSignedOutFlag();
+    const previous = gasgxSignedOutCache;
+    gasgxSignedOutCache = signedOut;
+    gasgxSignedOutCacheReady = true;
+    if (!signedOut) return signedOut;
+
+    const current = getCurrentGasGxAuthSnapshot();
+    if (!previous || isGasGxExtensionEnabled(current) || current.status !== "anonymous") {
+      setGasGxSignedOutRuntimeSnapshot(current);
+    }
+    return signedOut;
+  }
+
+  function showGasGxSignedOutCommentGuardHint() {
+    const now = Date.now();
+    if (now - gasgxCommentGuardHintAt < 1400) return;
+    gasgxCommentGuardHintAt = now;
+    showAutoSendDebugHint(getGasGxCommentBlockedMessage(buildGasGxSignedOutSnapshot()));
+  }
+
+  function findCommentActionTriggerElement(startNode) {
+    const target = startNode && typeof startNode.closest === "function" ? startNode : null;
+    if (!target) return null;
+    const control = target.closest("button, [role='button'], a");
+    if (!control) return null;
+    if (control.closest(`#${GASGX_AUTH_OVERLAY_ID}, #${GASGX_ACCOUNT_PANEL_ID}, #ce-popup-root`)) return null;
+
+    const className = sparkToString(control.className, "").toLowerCase();
+    const dataViewName = sparkToString(control.getAttribute?.("data-view-name"), "").toLowerCase();
+    const dataControlName = sparkToString(control.getAttribute?.("data-control-name"), "").toLowerCase();
+    const ariaLabel = sparkToString(control.getAttribute?.("aria-label"), "").toLowerCase();
+    const title = sparkToString(control.getAttribute?.("title"), "").toLowerCase();
+    const text = sparkToString(control.textContent, "").toLowerCase();
+    const keywordText = `${dataViewName} ${dataControlName} ${ariaLabel} ${title} ${text}`;
+    const hasCommentKeyword = /(comment|reply|评论|回覆|回復|回复|評論)/i.test(keywordText);
+    const inCommentScope = !!control.closest(".feed-shared-social-action-bar, .comments-comment-box, .comments-comment-item, .comments-comments-list, [data-view-name='comments-module']");
+    const knownCommentControl = (
+      dataViewName.includes("comment-post")
+      || dataViewName.includes("reply")
+      || dataControlName.includes("comment")
+      || dataControlName.includes("reply")
+      || className.includes("comments-comment-box__submit-button")
+      || className.includes("feed-shared-social-action-bar__action-button")
+    );
+    if (!inCommentScope) return null;
+    if (knownCommentControl || hasCommentKeyword) return control;
+    return null;
+  }
+
+  function findCommentEditorElement(startNode) {
+    const target = startNode && typeof startNode.closest === "function" ? startNode : null;
+    if (!target) return null;
+    const editor = target.closest("[contenteditable='true'], [contenteditable='plaintext-only']");
+    if (!editor) return null;
+    if (!editor.closest(".comments-comment-box, .comments-comment-item, form, [data-view-name='comment-post'], [data-view-name='comments-module']")) {
+      return null;
+    }
+    const className = sparkToString(editor.className, "").toLowerCase();
+    const ariaLabel = sparkToString(editor.getAttribute?.("aria-label"), "").toLowerCase();
+    const placeholder = sparkToString(editor.getAttribute?.("data-placeholder"), "").toLowerCase();
+    const text = `${className} ${ariaLabel} ${placeholder}`;
+    if (/(comment|reply|评论|回覆|回復|回复|評論)/i.test(text) || className.includes("ql-editor")) {
+      return editor;
+    }
+    return null;
+  }
+
+  function blockCommentInteractionWhileSignedOut(event) {
+    if (isPopupContext()) return;
+    if (!gasgxSignedOutCacheReady || !gasgxSignedOutCache) return;
+    const target = event?.target && typeof event.target === "object" ? event.target : null;
+    if (!target || typeof target.closest !== "function") return;
+
+    const actionControl = findCommentActionTriggerElement(target);
+    const commentEditor = actionControl ? null : findCommentEditorElement(target);
+    if (!actionControl && !commentEditor) return;
+
+    if (event.cancelable) {
+      event.preventDefault();
+    }
+    if (typeof event.stopImmediatePropagation === "function") {
+      event.stopImmediatePropagation();
+    }
+    event.stopPropagation?.();
+    try {
+      (actionControl || commentEditor || target).blur?.();
+    } catch (_err) {}
+    showGasGxSignedOutCommentGuardHint();
+  }
+
+  function setupGasGxSignedOutCommentGuard() {
+    if (isPopupContext() || window.__ceGasGxSignedOutCommentGuardPatched) return;
+    const captureHandler = (event) => {
+      try {
+        blockCommentInteractionWhileSignedOut(event);
+      } catch (_err) {}
+    };
+    const enterKeyHandler = (event) => {
+      if (!gasgxSignedOutCacheReady || !gasgxSignedOutCache) return;
+      if (sparkToString(event?.key, "") !== "Enter") return;
+      try {
+        const target = event?.target && typeof event.target === "object" ? event.target : null;
+        if (!findCommentEditorElement(target)) return;
+      } catch (_err) {
+        return;
+      }
+      if (event.cancelable) {
+        event.preventDefault();
+      }
+      if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
+      event.stopPropagation?.();
+      showGasGxSignedOutCommentGuardHint();
+    };
+    document.addEventListener("pointerdown", captureHandler, true);
+    document.addEventListener("mousedown", captureHandler, true);
+    document.addEventListener("click", captureHandler, true);
+    document.addEventListener("keydown", enterKeyHandler, true);
+    Object.defineProperty(window, "__ceGasGxSignedOutCommentGuardPatched", {
+      value: true,
+      configurable: true
+    });
+  }
+
+  function setupGasGxAuthStorageRuntimeWatch() {
+    const storageChanges = chrome?.storage?.onChanged;
+    if (!storageChanges?.addListener || storageChanges.__ceGasGxAuthWatchPatched) return;
+    storageChanges.addListener((changes, areaName) => {
+      if (areaName !== "local" || !changes || typeof changes !== "object") return;
+      const hasSignedOutChange = sparkHasOwn(changes, GASGX_SIGNED_OUT_FLAG_KEY);
+      const hasAuthChange = sparkHasOwn(changes, GASGX_AUTH_STORAGE_KEY)
+        || sparkHasOwn(changes, GASGX_LOCAL_SIGNED_IN_KEY)
+        || sparkHasOwn(changes, GASGX_LOGIN_STATE_KEY);
+      if (!hasSignedOutChange && !hasAuthChange) return;
+
+      if (hasSignedOutChange) {
+        const nextSignedOut = normalizeFeatureToggle(changes?.[GASGX_SIGNED_OUT_FLAG_KEY]?.newValue, false);
+        gasgxSignedOutCache = nextSignedOut;
+        gasgxSignedOutCacheReady = true;
+        if (nextSignedOut) {
+          setGasGxSignedOutRuntimeSnapshot(getCurrentGasGxAuthSnapshot());
+        }
+      }
+
+      if (hasAuthChange) {
+        gasgxAuthState.loaded = false;
+      }
+      void ensureGasGxAuthSnapshotLoaded(true).then((snapshot) => {
+        gasgxSignedOutCache = snapshot.status === "anonymous";
+        gasgxSignedOutCacheReady = true;
+      }).catch(() => {});
+    });
+    Object.defineProperty(storageChanges, "__ceGasGxAuthWatchPatched", {
+      value: true,
+      configurable: true
+    });
+  }
+
   function initContentContext() {
     const run = async () => {
       try {
         ensureGasGxPopupStyles();
         patchLegacyContentBundleBehavior();
+        await refreshGasGxSignedOutRuntimeCache();
         await syncGasGxDerivedStorage();
         suppressGateToastApis();
         hideGateToasts();
@@ -6145,6 +6661,8 @@ Return only the corrected reply text.`
       }
     };
 
+    setupGasGxAuthStorageRuntimeWatch();
+    setupGasGxSignedOutCommentGuard();
     void run();
 
     if (document.body) {
@@ -6179,32 +6697,50 @@ Return only the corrected reply text.`
     };
 
     const resolvePopupAuthSnapshot = async () => {
-      const [persisted, signedOut, localSignedIn] = await Promise.all([
+      const [persisted, signedOut, localSignedIn, loginState] = await Promise.all([
         loadPersistedGasGxAuthSnapshot(),
         loadGasGxSignedOutFlag(),
-        loadGasGxLocalSignedInFlag()
+        loadGasGxLocalSignedInFlag(),
+        loadGasGxLoginState()
       ]);
       const restoredSnapshot = sanitizeGasGxAuthSnapshot({
         ...persisted,
-        status: localSignedIn ? "enabled" : persisted?.status,
-        profileEnabled: localSignedIn ? true : persisted?.profileEnabled,
-        plan: sparkToString(persisted?.plan, "").trim() || (localSignedIn ? "GasGx Local" : "")
+        status: (loginState || localSignedIn) ? "enabled" : persisted?.status,
+        profileEnabled: (loginState || localSignedIn) ? true : persisted?.profileEnabled,
+        plan: sparkToString(persisted?.plan, "").trim() || ((loginState || localSignedIn) ? "GasGx" : "")
       });
-      const hasPersistedAuth = hasUsableLocalGasGxAuth(restoredSnapshot, localSignedIn);
-
-      if (hasPersistedAuth) {
-        if (signedOut) {
-          await persistGasGxSignedOutFlag(false);
-        }
-        gasgxAuthState.snapshot = restoredSnapshot;
+      const persistedHasSessionEvidence = hasUsableLocalGasGxAuth(restoredSnapshot, localSignedIn);
+      if (signedOut) {
+        const anonymous = sanitizeGasGxAuthSnapshot({
+          ...getDefaultGasGxAuthSnapshot(),
+          email: sparkToString(persisted?.email, "").trim()
+        });
+        gasgxAuthState.snapshot = anonymous;
         gasgxAuthState.loaded = true;
-        return restoredSnapshot;
+        return anonymous;
       }
 
-      const nextSnapshot = sanitizeGasGxAuthSnapshot({
-        ...persisted,
-        status: signedOut ? "anonymous" : persisted?.status
-      });
+      const hasPersistedAuth = !signedOut && (loginState || persistedHasSessionEvidence);
+
+      if (hasPersistedAuth) {
+        if (!loginState) {
+          await persistGasGxLoginState(true);
+        }
+        if (!localSignedIn) {
+          await persistGasGxLocalSignedInFlag(true);
+        }
+        const validatedRestored = await validatePersistedGasGxAuthSnapshot(restoredSnapshot);
+        gasgxAuthState.snapshot = validatedRestored;
+        gasgxAuthState.loaded = true;
+        return validatedRestored;
+      }
+
+      const nextSnapshot = signedOut
+        ? sanitizeGasGxAuthSnapshot({
+          ...getDefaultGasGxAuthSnapshot(),
+          email: sparkToString(persisted?.email, "").trim()
+        })
+        : await validatePersistedGasGxAuthSnapshot(persisted);
       gasgxAuthState.snapshot = nextSnapshot;
       gasgxAuthState.loaded = true;
       return nextSnapshot;
@@ -6215,9 +6751,9 @@ Return only the corrected reply text.`
       await Promise.all([
         loadAutoSendDelayRange(),
         loadRandomStrategySettings(),
-        loadReplyPromptHint(),
-        syncGasGxDerivedStorage()
+        loadReplyPromptHint()
       ]).catch(() => {});
+      void syncGasGxDerivedStorage().catch(() => {});
 
       const [preferences, linkedInProfile, linkedInUiLanguage] = await Promise.all([
         loadLegacyPreferences(),
@@ -6263,31 +6799,44 @@ Return only the corrected reply text.`
         const verified = sanitizeGasGxAuthSnapshot({
           ...signedIn,
           status: "enabled",
-          plan: "GasGx Local",
+          plan: sparkToString(signedIn?.plan, "").trim() || "GasGx",
           profileEnabled: true,
-          accessToken: "",
-          refreshToken: "",
-          sessionExpiresAt: 0,
           errorMessage: "",
           lastValidatedAt: Date.now()
         });
         await persistGasGxSignedOutFlag(false);
         await persistGasGxLocalSignedInFlag(true);
         await persistGasGxAuthSnapshot(verified);
+        await persistGasGxLoginState(true);
         await syncGasGxDerivedStorage();
       } catch (error) {
-        await persistGasGxAuthSnapshot({
-          ...getCurrentGasGxAuthSnapshot(),
-          status: "auth_error",
-          profileEnabled: false,
-          errorMessage: currentLang === "zh-CN"
-            ? "GasGx 登录验证失败，请检查邮箱和密码。"
-            : sparkToString(error?.message, "GasGx login verification failed.").trim()
-        });
-        await syncGasGxDerivedStorage();
+        await persistGasGxSignedOutFlag(false);
+        await persistGasGxLocalSignedInFlag(false);
+        await persistGasGxLoginState(false);
+        await persistGasGxAuthSnapshot(buildGasGxAuthErrorSnapshot(getCurrentGasGxAuthSnapshot(), error?.message));
         throw error;
       }
-      return await loadPopupState();
+      await ensureGasGxAuthSnapshotLoaded(true);
+      const nextState = await loadPopupState();
+      if (!isGasGxExtensionEnabled(nextState?.gasgxAuth)) {
+        const reason = sparkToString(nextState?.gasgxAuth?.errorMessage, "").trim();
+        const stateHint = sparkToString(nextState?.gasgxAuth?.status, "unknown");
+        const [signedOutNow, loginStateNow, localSignedNow, persistedNow] = await Promise.all([
+          loadGasGxSignedOutFlag(),
+          loadGasGxLoginState(),
+          loadGasGxLocalSignedInFlag(),
+          loadPersistedGasGxAuthSnapshot()
+        ]);
+        const hasTokenNow = !!(
+          sparkToString(persistedNow?.accessToken, "").trim()
+          || sparkToString(persistedNow?.refreshToken, "").trim()
+        );
+        const debugHint = `status=${stateHint}, signedOut=${signedOutNow}, loginState=${loginStateNow}, localSignedIn=${localSignedNow}, hasToken=${hasTokenNow}`;
+        throw new Error(reason || (currentLang === "zh-CN"
+          ? `登录结果无效，请重新登录。(${debugHint})`
+          : `Login result is invalid. Please sign in again. (${debugHint})`));
+      }
+      return nextState;
     };
 
     const saveRandomStrategy = async (next) => {

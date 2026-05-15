@@ -60,9 +60,9 @@ body {
   width: 400px;
   min-width: 400px;
   max-width: 400px;
-  min-height: 600px;
+  height: 600px;
   margin: 0;
-  overflow-x: hidden;
+  overflow: hidden;
   background:
     radial-gradient(circle at top left, rgba(132, 204, 22, 0.13), transparent 30%),
     radial-gradient(circle at bottom right, rgba(132, 204, 22, 0.08), transparent 24%),
@@ -102,13 +102,15 @@ option {
 
 #ce-popup-root {
   width: 100%;
-  min-height: 600px;
+  height: 600px;
+  overflow: hidden;
 }
 
 .ce-shell {
   position: relative;
-  min-height: 600px;
+  height: 600px;
   padding: 16px;
+  overflow: hidden;
 }
 
 .ce-shell-bg {
@@ -309,6 +311,17 @@ option {
   position: relative;
   z-index: 1;
   margin-top: 14px;
+  height: calc(600px - 16px - 16px - 74px - 14px - 58px);
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.ce-main::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
 }
 
 .ce-panel-grid {
@@ -759,6 +772,12 @@ option {
   color: #ffdce5;
   background: rgba(255, 51, 102, 0.12);
   border: 1px solid rgba(255, 51, 102, 0.22);
+}
+
+:root[data-theme="light"] .ce-banner-error {
+  color: #8f1239;
+  background: rgba(225, 29, 72, 0.12);
+  border-color: rgba(190, 24, 93, 0.32);
 }
 
 .ce-loading-card,

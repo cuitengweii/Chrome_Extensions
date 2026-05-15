@@ -6,6 +6,14 @@
 
   if (!root) return;
 
+  const MSG_LOGIN_START = "\u6b63\u5728\u767b\u5f55\uff0c\u8bf7\u7a0d\u5019...";
+  const MSG_LOGIN_SUCCESS = "\u767b\u5f55\u6210\u529f\uff1a\u4f1a\u8bdd\u5df2\u4fdd\u5b58\uff0c\u73b0\u5728\u53ef\u4ee5\u8bc4\u8bba\u3002";
+  const MSG_LOGIN_FAILED = "\u767b\u5f55\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002";
+  const MSG_LOGOUT_START = "\u6b63\u5728\u9000\u51fa\u767b\u5f55\uff0c\u8bf7\u7a0d\u5019...";
+  const MSG_LOGOUT_SUCCESS = "\u5df2\u9000\u51fa\u767b\u5f55\uff1a\u4f1a\u8bdd\u5df2\u6e05\u9664\u3002";
+  const MSG_LOGOUT_FAILED = "\u9000\u51fa\u767b\u5f55\u5931\u8d25\uff0c\u8bf7\u91cd\u8bd5\u3002";
+  const MSG_PREFERENCES_SIGNIN_REQUIRED = "\u8bf7\u5148\u767b\u5f55\u540e\u518d\u4f7f\u7528\u504f\u597d\u8bbe\u7f6e\u3002";
+
   const TONE_OPTIONS = [
     { value: "Polite", en: "Polite", zh: "礼貌" },
     { value: "Casual", en: "Casual", zh: "随意" },
@@ -21,7 +29,7 @@
 
   const COPY = {
     en: {
-      brand: "GasGx To LinkedIn",
+      brand: "GasGx 登录",
       strapline: "Cyber-industrial LinkedIn AI workspace",
       tabsAccount: "Account",
       tabsPreferences: "Preferences",
@@ -36,16 +44,16 @@
       linkedinEmpty: "No LinkedIn profile detected",
       linkedinSeat: "Seat",
       linkedinNote: "This information is pulled from the active LinkedIn tab when available.",
-      gasgxTitle: "GasGx account",
-      gasgxNote: "Local sign-in state and AI preferences are reused directly inside the extension.",
-      statusEnabled: "Signed in locally",
-      statusBlocked: "Local state blocked",
+      gasgxTitle: "GasGx Login",
+      gasgxNote: "Your GasGx sign-in session and AI preferences are reused directly inside the extension.",
+      statusEnabled: "Signed in",
+      statusBlocked: "Account state blocked",
       statusError: "Sign-in error",
-      statusAnonymous: "Local sign-in required",
-      gasgxSummaryEnabled: "The extension is currently using your locally stored GasGx sign-in state and saved preferences.",
-      gasgxSummaryBlocked: "This local account state is blocked. Clear it and sign in again on GasGx.",
-      gasgxSummaryError: "The last local GasGx sign-in failed. Clear the local state and sign in again on GasGx.",
-      gasgxSummaryAnonymous: "Open GasGx and sign in once. The extension will reuse the local sign-in state and preferences.",
+      statusAnonymous: "Sign-in required",
+      gasgxSummaryEnabled: "The extension is currently using your persisted GasGx session and saved preferences.",
+      gasgxSummaryBlocked: "This account state is blocked. Sign in again with your GasGx account.",
+      gasgxSummaryError: "The last GasGx sign-in failed. Please sign in again.",
+      gasgxSummaryAnonymous: "Open GasGx and sign in once. The extension will reuse your session and preferences.",
       gasgxNoEmail: "No connected account",
       openGasGx: "Open GasGx",
       signOut: "Sign out",
@@ -82,7 +90,7 @@
       langToEnglish: "Switch to English"
     },
     "zh-CN": {
-      brand: "GasGx To LinkedIn",
+      brand: "GasGx 登录",
       strapline: "面向 LinkedIn 的赛博工业 AI 工作台",
       tabsAccount: "账号",
       tabsPreferences: "偏好",
@@ -97,7 +105,7 @@
       linkedinEmpty: "未检测到 LinkedIn 资料",
       linkedinSeat: "标识",
       linkedinNote: "可用时会直接从当前活动的 LinkedIn 标签页读取资料。",
-      gasgxTitle: "GasGx 账号",
+      gasgxTitle: "GasGx登录",
       gasgxNote: "扩展会直接复用本地 GasGx 登录状态和 AI 偏好配置。",
       statusEnabled: "本地已登录",
       statusBlocked: "本地状态受限",
@@ -165,7 +173,7 @@
   }
 
   function i18nText(en, zh) {
-    return state?.lang === "zh-CN" ? zh : en;
+    return zh || en;
   }
 
   function escapeHtml(value) {
@@ -360,7 +368,7 @@
           <div class="ce-action-row">
             ${gasgx.enabled
               ? (gasgx.primaryAction ? `<button class="ce-btn ce-btn-primary" type="button" id="${gasgx.primaryAction.id}" ${pendingAction ? "disabled" : ""}>${escapeHtml(gasgx.primaryAction.label)}</button>` : "")
-              : `<button class="ce-btn ce-btn-primary" type="button" id="verify-gasgx-login" ${pendingAction ? "disabled" : ""}>${verifyPending ? escapeHtml(i18nText("Verifying...", "验证中...")) : escapeHtml(i18nText("Verify login once", "验证登录"))}</button>`
+              : `<button class="ce-btn ce-btn-primary" type="button" id="verify-gasgx-login" ${pendingAction ? "disabled" : ""}>${verifyPending ? escapeHtml(i18nText("Verifying...", "验证中...")) : escapeHtml(i18nText("GasGx Login", "GasGx登录"))}</button>`
             }
           </div>
         </article>
@@ -522,7 +530,8 @@
       renderLoading();
       return;
     }
-    document.documentElement.lang = state.lang || "en";
+    state.lang = "zh-CN";
+    document.documentElement.lang = "zh-CN";
     document.title = t("brand");
     root.innerHTML = renderShell();
     bindEvents();
@@ -538,6 +547,7 @@
     errorMessage = "";
     try {
       state = await runtime.loadState();
+      state.lang = "zh-CN";
       activeTab = isGasGxVerified(state?.gasgxAuth) ? "preferences" : "account";
       render();
     } catch (_err) {
@@ -663,7 +673,7 @@
       button.addEventListener("click", () => {
         const nextTab = button.getAttribute("data-tab") || "account";
         if (nextTab === "preferences" && !isGasGxVerified()) {
-          setError(i18nText("Please sign in to use preferences.", "请先登录后再使用偏好设置。"));
+          setError(MSG_PREFERENCES_SIGNIN_REQUIRED);
           return;
         }
         activeTab = nextTab;
@@ -673,9 +683,27 @@
     });
 
     root.querySelector("#auth-action")?.addEventListener("click", () => {
-      void withPending("auth-action", async () => {
-        state = await runtime.signOutGasGx();
-      });
+      void (async () => {
+        pendingAction = "auth-action";
+        errorMessage = MSG_LOGOUT_START;
+        render();
+        try {
+          if (typeof runtime?.signOutGasGx === "function") {
+            const runtimeState = await runtime.signOutGasGx();
+            state = {
+              ...(runtimeState || state || {}),
+              lang: "zh-CN"
+            };
+          }
+          activeTab = "account";
+          errorMessage = MSG_LOGOUT_SUCCESS;
+        } catch (error) {
+          errorMessage = `${MSG_LOGOUT_FAILED} ${error?.message || ""}`.trim();
+        } finally {
+          pendingAction = "";
+          render();
+        }
+      })();
     });
 
     root.querySelector("#verify-gasgx-login")?.addEventListener("click", () => {
@@ -683,10 +711,31 @@
       const passwordInput = root.querySelector("#gasgx-login-password");
       const email = emailInput instanceof HTMLInputElement ? emailInput.value.trim() : "";
       const password = passwordInput instanceof HTMLInputElement ? passwordInput.value : "";
-      void withPending("verify-gasgx-login", async () => {
-        state = await runtime.verifyGasGxLoginOnce(email, password);
-        activeTab = isGasGxVerified(state?.gasgxAuth) ? "preferences" : "account";
-      }, i18nText("GasGx login verification failed. Please check email and password.", "GasGx 登录验证失败，请检查邮箱和密码。"));
+      void (async () => {
+        pendingAction = "verify-gasgx-login";
+        errorMessage = MSG_LOGIN_START;
+        render();
+        try {
+          if (typeof runtime?.verifyGasGxLoginOnce !== "function") {
+            throw new Error("GasGx login runtime is unavailable.");
+          }
+          const runtimeState = await runtime.verifyGasGxLoginOnce(email, password);
+          state = {
+            ...(runtimeState || state || {}),
+            lang: "zh-CN"
+          };
+          if (!isGasGxVerified(state?.gasgxAuth)) {
+            throw new Error(String(state?.gasgxAuth?.errorMessage || "GasGx session is unavailable after sign-in."));
+          }
+          activeTab = "account";
+          errorMessage = MSG_LOGIN_SUCCESS;
+        } catch (error) {
+          errorMessage = `${MSG_LOGIN_FAILED} ${error?.message || ""}`.trim();
+        } finally {
+          pendingAction = "";
+          render();
+        }
+      })();
     });
 
     root.querySelector("#pref-comment-length")?.addEventListener("change", (event) => {
@@ -749,6 +798,7 @@
 
     removeAuthListener = runtime.subscribeAuthChanged((nextState) => {
       state = nextState;
+      state.lang = "zh-CN";
       activeTab = isGasGxVerified(state?.gasgxAuth) ? "preferences" : "account";
       render();
     });

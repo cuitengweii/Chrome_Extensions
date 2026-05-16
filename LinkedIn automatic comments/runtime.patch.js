@@ -21,6 +21,10 @@
   const REPLY_PROMPT_HINT_KEY = "ce_reply_prompt_hint";
   const REPLY_PROMPT_HINT_CACHE_KEY = "ce_reply_prompt_hint_popup_cache";
   const REPLY_PROMPT_HINT_CACHE_AT_KEY = "ce_reply_prompt_hint_popup_cache_at";
+  const POPUP_PREFERENCES_OVERRIDE_KEY = "ce_popup_preferences_override";
+  const POPUP_PREFERENCES_OVERRIDE_CACHE_KEY = "ce_popup_preferences_override_cache";
+  const POPUP_REPLY_HINT_OVERRIDE_KEY = "ce_popup_reply_hint_override";
+  const POPUP_REPLY_HINT_OVERRIDE_CACHE_KEY = "ce_popup_reply_hint_override_cache";
   const DEFAULT_AUTO_SEND_ENABLED = false;
   const DEFAULT_DELAY_MIN_SEC = 2;
   const DEFAULT_DELAY_MAX_SEC = 7;
@@ -116,6 +120,9 @@
   let randomLengthEnabled = DEFAULT_RANDOM_LENGTH_ENABLED;
   let randomStrategyUpdatedAt = 0;
   let replyPromptHint = DEFAULT_REPLY_PROMPT_HINT;
+  let livePopupPreferencesOverride = null;
+  let livePopupReplyHintOverride = null;
+  let hasLivePopupReplyHintOverride = false;
   let sparkConfigPromise = null;
   let legacyPreferencesSyncTimer = 0;
   let legacyPreferencesWatchTimer = 0;
@@ -556,6 +563,23 @@
   }
 
   function resolveCommentLength(preferences) {
+    const raw = preferences?.commentLength;
+    if (typeof raw === "number" && Number.isFinite(raw)) {
+      if (raw >= 1 && raw <= 3) return Math.max(1, Math.min(3, Math.round(raw)));
+    }
+    if (typeof raw === "string") {
+      if (/一段|one\s*paragraph/i.test(raw)) return 1;
+      if (/二段|two\s*paragraph/i.test(raw)) return 2;
+      if (/三段|three\s*paragraph/i.test(raw)) return 3;
+      const parsedRaw = Number(raw);
+      if (Number.isFinite(parsedRaw) && parsedRaw >= 1 && parsedRaw <= 3) {
+        return Math.max(1, Math.min(3, Math.round(parsedRaw)));
+      }
+      if (/super\s*short|supershort/i.test(raw)) return 1;
+      if (/brief/i.test(raw)) return 2;
+      if (/concise|in-?length|inlength|in\s*length/i.test(raw)) return 3;
+    }
+
     const desiredRaw = preferences?.__ceDesiredCommentLength;
     if (typeof desiredRaw === "number" && Number.isFinite(desiredRaw)) {
       return Math.max(1, Math.min(3, Math.round(desiredRaw)));
@@ -565,16 +589,6 @@
       if (Number.isFinite(parsedDesired)) {
         return Math.max(1, Math.min(3, Math.round(parsedDesired)));
       }
-    }
-    const raw = preferences?.commentLength;
-    if (typeof raw === "number") return Math.max(1, Math.min(3, Math.round(raw)));
-    if (typeof raw === "string") {
-      if (/一段|one\s*paragraph/i.test(raw)) return 1;
-      if (/二段|two\s*paragraph/i.test(raw)) return 2;
-      if (/三段|three\s*paragraph/i.test(raw)) return 3;
-      if (/super\s*short|supershort/i.test(raw)) return 1;
-      if (/brief/i.test(raw)) return 2;
-      if (/concise|in-?length|inlength|in\s*length/i.test(raw)) return 3;
     }
     return 2;
   }
@@ -887,7 +901,20 @@
     } catch (_err) {}
   }
 
+  function resolveEditableRoot(element) {
+    if (!element) return element;
+    try {
+      if (element.matches?.("[contenteditable='true'], [contenteditable=true], [role='textbox']")) return element;
+    } catch (_err) {}
+    try {
+      return element.closest?.("[contenteditable='true'], [contenteditable=true], [role='textbox']") || element;
+    } catch (_err) {
+      return element;
+    }
+  }
+
   function moveCaretToEnd(element) {
+    element = resolveEditableRoot(element);
     if (!element) return;
     try {
       const selection = window.getSelection?.();
@@ -901,6 +928,7 @@
   }
 
   function clearEditableContent(element) {
+    element = resolveEditableRoot(element);
     if (!element) return;
     try {
       element.focus();
@@ -926,14 +954,270 @@
   }
 
   function readEditableParagraphCount(element) {
+    element = resolveEditableRoot(element);
     const raw = sparkToString(element?.innerText || element?.textContent, "")
       .replace(/\u00A0/g, " ")
       .replace(/\r\n/g, "\n");
-    return raw
+    const textCount = raw
       .split(/\n+/)
       .map((part) => part.replace(/\s+/g, " ").trim())
       .filter(Boolean)
       .length;
+    let blockCount = 0;
+    try {
+      blockCount = Array.from(element?.querySelectorAll?.("p, div, li") || [])
+        .map((node) => sparkToString(node?.innerText || node?.textContent, "").replace(/\s+/g, " ").trim())
+        .filter(Boolean)
+        .length;
+    } catch (_err) {}
+    return Math.max(textCount, blockCount);
+  }
+
+  function readEditableNormalizedText(element) {
+    element = resolveEditableRoot(element);
+    return sparkToString(element?.innerText || element?.textContent, "")
+      .replace(/\u00A0/g, " ")
+      .replace(/\r\n/g, "\n")
+      .replace(/\n{3,}/g, "\n\n")
+      .trim();
+  }
+
+  function hasInsertedAllParagraphs(element, paragraphs) {
+    element = resolveEditableRoot(element);
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    const actual = readEditableNormalizedText(element).toLowerCase();
+    if (!actual) return false;
+    const presentCount = paragraphs.filter((paragraph) => {
+      const needle = sparkToString(paragraph, "").slice(0, 36).toLowerCase().trim();
+      return needle && actual.includes(needle);
+    }).length;
+    return presentCount === paragraphs.length && readEditableParagraphCount(element) >= paragraphs.length;
+  }
+
+  function waitForLinkedInEditorParagraphs(element, paragraphs, timeoutMs = 1_200, intervalMs = 100) {
+    element = resolveEditableRoot(element);
+    const requested = Array.isArray(paragraphs) ? paragraphs.filter(Boolean) : [];
+    if (!element || !requested.length) return Promise.resolve(false);
+    const startedAt = Date.now();
+    return new Promise((resolve) => {
+      const check = () => {
+        if (hasInsertedAllParagraphs(element, requested)) {
+          resolve(true);
+          return;
+        }
+        if (Date.now() - startedAt >= timeoutMs) {
+          resolve(false);
+          return;
+        }
+        window.setTimeout(check, intervalMs);
+      };
+      check();
+    });
+  }
+
+  function createLinkedInEditorPasteData(paragraphs) {
+    const text = paragraphs.join("\n");
+    const html = paragraphs.map((part) => escapeHtmlText(part)).join("<br>");
+    return { text, html };
+  }
+
+  function trySyntheticPasteParagraphs(element, paragraphs) {
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    const { text, html } = createLinkedInEditorPasteData(paragraphs);
+    clearEditableContent(element);
+    try {
+      element.focus();
+    } catch (_err) {}
+    moveCaretToEnd(element);
+
+    let dataTransfer = null;
+    try {
+      dataTransfer = new DataTransfer();
+      dataTransfer.setData("text/plain", text);
+      dataTransfer.setData("text/html", html);
+    } catch (_err) {}
+
+    if (dataTransfer) {
+      try {
+        element.dispatchEvent(new InputEvent("beforeinput", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          inputType: "insertFromPaste",
+          data: text,
+          dataTransfer
+        }));
+      } catch (_err) {
+        dispatchEditorBeforeInput(element, "insertFromPaste", text);
+      }
+      try {
+        element.dispatchEvent(new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+          composed: true,
+          clipboardData: dataTransfer
+        }));
+      } catch (_err) {}
+    }
+
+    dispatchEditorInput(element, "insertFromPaste", text);
+    dispatchEditorLifecycleEvents(element, text);
+    return hasInsertedAllParagraphs(element, paragraphs);
+  }
+
+  function tryLineBreakInsertParagraphs(element, paragraphs) {
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    const text = paragraphs.join("\n");
+    clearEditableContent(element);
+    try {
+      element.focus();
+    } catch (_err) {}
+    moveCaretToEnd(element);
+
+    try {
+      for (let index = 0; index < paragraphs.length; index += 1) {
+        if (index > 0) {
+          document.execCommand("insertLineBreak", false, null);
+        }
+        document.execCommand("insertText", false, paragraphs[index]);
+      }
+    } catch (_err) {
+      return false;
+    }
+
+    dispatchEditorInput(element, "insertLineBreak", text);
+    dispatchEditorLifecycleEvents(element, text);
+    return hasInsertedAllParagraphs(element, paragraphs);
+  }
+
+  function writePreformattedTextFallback(element, paragraphs) {
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    const text = paragraphs.join("\n");
+    clearEditableContent(element);
+    try {
+      element.style.whiteSpace = "pre-wrap";
+    } catch (_err) {}
+    try {
+      element.textContent = text;
+    } catch (_err) {
+      return false;
+    }
+    moveCaretToEnd(element);
+    dispatchEditorInput(element, "insertText", text);
+    dispatchEditorLifecycleEvents(element, text);
+    return hasInsertedAllParagraphs(element, paragraphs);
+  }
+
+  function dispatchEditorEnterKey(element) {
+    if (!element) return;
+    const base = {
+      bubbles: true,
+      cancelable: true,
+      composed: true,
+      key: "Enter",
+      code: "Enter",
+      keyCode: 13,
+      which: 13,
+      shiftKey: true
+    };
+    try {
+      element.dispatchEvent(new KeyboardEvent("keydown", base));
+    } catch (_err) {}
+    dispatchEditorBeforeInput(element, "insertLineBreak", "\n");
+    try {
+      element.dispatchEvent(new KeyboardEvent("keypress", base));
+    } catch (_err) {}
+    try {
+      element.dispatchEvent(new KeyboardEvent("keyup", base));
+    } catch (_err) {}
+  }
+
+  function tryEnterKeyInsertParagraphs(element, paragraphs) {
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    const text = paragraphs.join("\n");
+    clearEditableContent(element);
+    try {
+      element.focus();
+    } catch (_err) {}
+    moveCaretToEnd(element);
+
+    try {
+      document.execCommand("defaultParagraphSeparator", false, "p");
+    } catch (_err) {}
+
+    try {
+      for (let index = 0; index < paragraphs.length; index += 1) {
+        const paragraph = paragraphs[index];
+        dispatchEditorBeforeInput(element, "insertText", paragraph);
+        document.execCommand("insertText", false, paragraph);
+        dispatchEditorInput(element, "insertText", paragraph);
+        if (index < paragraphs.length - 1) {
+          dispatchEditorEnterKey(element);
+          document.execCommand("insertLineBreak", false, null);
+          dispatchEditorInput(element, "insertLineBreak", "\n");
+        }
+      }
+    } catch (_err) {
+      return false;
+    }
+
+    dispatchEditorLifecycleEvents(element, text);
+    return hasInsertedAllParagraphs(element, paragraphs);
+  }
+
+  function writeInnerTextFallback(element, paragraphs) {
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    const text = paragraphs.join("\n");
+    clearEditableContent(element);
+    try {
+      element.style.whiteSpace = "pre-wrap";
+    } catch (_err) {}
+    try {
+      element.innerText = text;
+    } catch (_err) {
+      return false;
+    }
+    moveCaretToEnd(element);
+    dispatchEditorInput(element, "insertText", text);
+    return hasInsertedAllParagraphs(element, paragraphs);
+  }
+
+  function writeBreakDomFallback(element, paragraphs) {
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    clearEditableContent(element);
+    try {
+      element.innerHTML = "";
+      paragraphs.forEach((paragraph, index) => {
+        if (index > 0) {
+          element.appendChild(document.createElement("br"));
+        }
+        element.appendChild(document.createTextNode(paragraph));
+      });
+    } catch (_err) {
+      return false;
+    }
+    moveCaretToEnd(element);
+    dispatchEditorInput(element, "insertText", paragraphs.join("\n"));
+    return hasInsertedAllParagraphs(element, paragraphs);
+  }
+
+  function tryPlainTextInsertParagraphs(element, paragraphs) {
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    const text = paragraphs.join("\n");
+    clearEditableContent(element);
+    try {
+      element.focus();
+    } catch (_err) {}
+    moveCaretToEnd(element);
+
+    try {
+      document.execCommand("insertText", false, text);
+    } catch (_err) {
+      return false;
+    }
+
+    dispatchEditorInput(element, "insertText", text);
+    return hasInsertedAllParagraphs(element, paragraphs);
   }
 
   function tryExecInsertParagraphs(element, paragraphs) {
@@ -947,12 +1231,12 @@
     try {
       for (let index = 0; index < paragraphs.length; index += 1) {
         if (index > 0) {
-          document.execCommand("insertParagraph", false, null);
+          document.execCommand("insertLineBreak", false, null);
         }
         document.execCommand("insertText", false, paragraphs[index]);
       }
-      dispatchEditorInput(element, "insertParagraph", paragraphs.join("\n\n"));
-      return readEditableParagraphCount(element) >= paragraphs.length;
+      dispatchEditorInput(element, "insertLineBreak", paragraphs.join("\n"));
+      return hasInsertedAllParagraphs(element, paragraphs);
     } catch (_err) {
       return false;
     }
@@ -961,7 +1245,7 @@
   function tryHtmlInsertParagraphs(element, paragraphs) {
     if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
     clearEditableContent(element);
-    const html = paragraphs.map((part) => `<p>${escapeHtmlText(part)}</p>`).join("");
+    const html = paragraphs.map((part) => escapeHtmlText(part)).join("<br>");
 
     try {
       element.focus();
@@ -979,11 +1263,101 @@
     }
 
     moveCaretToEnd(element);
-    dispatchEditorInput(element, "insertParagraph", paragraphs.join("\n\n"));
-    return readEditableParagraphCount(element) >= paragraphs.length;
+    dispatchEditorInput(element, "insertLineBreak", paragraphs.join("\n"));
+    return hasInsertedAllParagraphs(element, paragraphs);
+  }
+
+  function tryBreakHtmlInsertParagraphs(element, paragraphs) {
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    clearEditableContent(element);
+    const html = paragraphs.map((part) => escapeHtmlText(part)).join("<br>");
+
+    try {
+      element.focus();
+    } catch (_err) {}
+    moveCaretToEnd(element);
+
+    try {
+      document.execCommand("insertHTML", false, html);
+    } catch (_err) {
+      try {
+        element.innerHTML = html;
+      } catch (_innerErr) {
+        return false;
+      }
+    }
+
+    moveCaretToEnd(element);
+    dispatchEditorInput(element, "insertHTML", paragraphs.join("\n"));
+    return hasInsertedAllParagraphs(element, paragraphs);
+  }
+
+  function writeParagraphDomFallback(element, paragraphs) {
+    if (!element || !Array.isArray(paragraphs) || !paragraphs.length) return false;
+    clearEditableContent(element);
+    try {
+      element.innerHTML = "";
+      paragraphs.forEach((paragraph, index) => {
+        if (index > 0) {
+          element.appendChild(document.createElement("br"));
+        }
+        element.appendChild(document.createTextNode(paragraph));
+      });
+    } catch (_err) {
+      try {
+        element.textContent = paragraphs.join("\n");
+      } catch (_textErr) {
+        return false;
+      }
+    }
+    moveCaretToEnd(element);
+    dispatchEditorInput(element, "insertText", paragraphs.join("\n"));
+    return hasInsertedAllParagraphs(element, paragraphs);
+  }
+
+  function repairLinkedInEditorParagraphs(element, paragraphs, delayMs) {
+    try {
+      window.setTimeout(() => {
+        if (!element || hasInsertedAllParagraphs(element, paragraphs)) return;
+        const repaired = runLinkedInEditorPasteStrategies(element, paragraphs).pasted;
+        dispatchEditorLifecycleEvents(element, paragraphs.join("\n"));
+        debugCommentTrace("paste-repair", {
+          delayMs,
+          repaired,
+          requestedParagraphs: paragraphs.length,
+          actualParagraphs: readEditableParagraphCount(element),
+          actualText: readEditableNormalizedText(element)
+        });
+      }, delayMs);
+    } catch (_err) {}
+  }
+
+  function runLinkedInEditorPasteStrategies(element, paragraphs) {
+    const strategies = [
+      ["syntheticPaste", trySyntheticPasteParagraphs],
+      ["enterKey", tryEnterKeyInsertParagraphs],
+      ["lineBreak", tryLineBreakInsertParagraphs],
+      ["breakHtml", tryBreakHtmlInsertParagraphs],
+      ["htmlParagraphs", tryHtmlInsertParagraphs],
+      ["innerText", writeInnerTextFallback],
+      ["preformattedText", writePreformattedTextFallback],
+      ["breakDom", writeBreakDomFallback],
+      ["domBlocks", writeParagraphDomFallback],
+      ["execParagraph", tryExecInsertParagraphs],
+      ["plainText", tryPlainTextInsertParagraphs]
+    ];
+    for (const [name, strategy] of strategies) {
+      try {
+        if (strategy(element, paragraphs)) {
+          return { pasted: true, strategy: name };
+        }
+      } catch (_err) {}
+    }
+    return { pasted: false, strategy: "none" };
   }
 
   function pasteCommentIntoLinkedInEditor(element, text) {
+    element = resolveEditableRoot(element);
     if (!element) return;
     const paragraphs = splitCommentParagraphs(text);
     if (!paragraphs.length) {
@@ -992,23 +1366,77 @@
       return;
     }
 
-    let pasted = tryExecInsertParagraphs(element, paragraphs);
+    const result = runLinkedInEditorPasteStrategies(element, paragraphs);
+    const pasted = result.pasted;
     if (!pasted) {
-      pasted = tryHtmlInsertParagraphs(element, paragraphs);
+      debugCommentTrace("paste-fallback-incomplete", {
+        requestedParagraphs: paragraphs.length,
+        actualParagraphs: readEditableParagraphCount(element),
+        actualText: readEditableNormalizedText(element),
+        strategy: result.strategy
+      });
     }
-    if (!pasted) {
-      clearEditableContent(element);
-      element.textContent = paragraphs.join("\n\n");
-      moveCaretToEnd(element);
-      dispatchEditorInput(element, "insertText", paragraphs.join("\n\n"));
-    }
-    dispatchEditorLifecycleEvents(element, paragraphs.join("\n\n"));
+    dispatchEditorLifecycleEvents(element, paragraphs.join("\n"));
+    repairLinkedInEditorParagraphs(element, paragraphs, 80);
+    repairLinkedInEditorParagraphs(element, paragraphs, 250);
+    repairLinkedInEditorParagraphs(element, paragraphs, 800);
+    repairLinkedInEditorParagraphs(element, paragraphs, 1_600);
 
     debugCommentTrace("paste-verify", {
       requestedParagraphs: paragraphs.length,
       actualParagraphs: readEditableParagraphCount(element),
-      actualText: sparkToString(element?.innerText || element?.textContent, "").trim()
+      actualText: sparkToString(element?.innerText || element?.textContent, "").trim(),
+      strategy: result.strategy
     });
+  }
+
+  async function pasteCommentIntoLinkedInEditorAndVerify(element, text) {
+    element = resolveEditableRoot(element);
+    if (!element) return false;
+    const paragraphs = splitCommentParagraphs(text);
+    if (!paragraphs.length) {
+      clearEditableContent(element);
+      dispatchEditorInput(element, "deleteContentBackward", "");
+      return false;
+    }
+
+    const strategies = [
+      ["syntheticPaste", trySyntheticPasteParagraphs, 500],
+      ["enterKey", tryEnterKeyInsertParagraphs, 900],
+      ["lineBreak", tryLineBreakInsertParagraphs, 700],
+      ["breakHtml", tryBreakHtmlInsertParagraphs, 700],
+      ["htmlParagraphs", tryHtmlInsertParagraphs, 700],
+      ["innerText", writeInnerTextFallback, 900],
+      ["preformattedText", writePreformattedTextFallback, 900],
+      ["breakDom", writeBreakDomFallback, 900],
+      ["domBlocks", writeParagraphDomFallback, 900],
+      ["execParagraph", tryExecInsertParagraphs, 700],
+      ["plainText", tryPlainTextInsertParagraphs, 700]
+    ];
+
+    for (const [name, strategy, waitMs] of strategies) {
+      try {
+        strategy(element, paragraphs);
+        const ok = await waitForLinkedInEditorParagraphs(element, paragraphs, waitMs, 80);
+        debugCommentTrace("paste-strategy-check", {
+          strategy: name,
+          ok,
+          requestedParagraphs: paragraphs.length,
+          actualParagraphs: readEditableParagraphCount(element),
+          actualText: readEditableNormalizedText(element)
+        });
+        if (ok) {
+          repairLinkedInEditorParagraphs(element, paragraphs, 1_600);
+          return true;
+        }
+      } catch (_err) {}
+    }
+
+    repairLinkedInEditorParagraphs(element, paragraphs, 80);
+    repairLinkedInEditorParagraphs(element, paragraphs, 250);
+    repairLinkedInEditorParagraphs(element, paragraphs, 800);
+    repairLinkedInEditorParagraphs(element, paragraphs, 1_600);
+    return await waitForLinkedInEditorParagraphs(element, paragraphs, 1_800, 100);
   }
 
   function splitSentences(text) {
@@ -1562,22 +1990,31 @@ Return only the corrected reply text.`
   async function buildEffectiveLinkedInAiInput(input, options = {}) {
     const safeInput = sparkIsPlainObject(input) ? input : {};
     const includeReplyHint = sparkToBoolean(options?.includeReplyHint, false);
-    const storedPreferences = await loadLegacyPreferences();
-    if (includeReplyHint) {
-      await loadReplyPromptHint();
-    }
+    const [storedPreferences, popupPreferencesOverride, popupReplyHintOverride] = await Promise.all([
+      loadLegacyPreferences(),
+      loadPopupPreferencesOverride(),
+      includeReplyHint ? loadPopupReplyHintOverride() : Promise.resolve(null)
+    ]);
+    const safePreferences = sparkIsPlainObject(safeInput.preferences) ? safeInput.preferences : {};
+    const mergedPreferences = sanitizeLegacyPreferences({
+      ...storedPreferences,
+      ...safePreferences,
+      ...(sparkIsPlainObject(popupPreferencesOverride) ? popupPreferencesOverride : {})
+    });
+    const effectiveReplyHint = includeReplyHint
+      ? normalizeReplyPromptHint(
+        popupReplyHintOverride !== null
+          ? popupReplyHintOverride
+          : sparkToString(safeInput.replyHint, replyPromptHint || "")
+      )
+      : sparkToString(safeInput.replyHint, "");
     return {
       ...safeInput,
-      preferences: sanitizeLegacyPreferences({
-        ...storedPreferences,
-        ...(sparkIsPlainObject(safeInput.preferences) ? safeInput.preferences : {})
-      }),
+      preferences: mergedPreferences,
       linkedInUiLanguage: normalizeLinkedInPageLang(
         sparkToString(safeInput.linkedInUiLanguage, document.documentElement?.lang || navigator.language || "")
       ),
-      replyHint: includeReplyHint
-        ? normalizeReplyPromptHint(sparkToString(safeInput.replyHint, replyPromptHint || ""))
-        : sparkToString(safeInput.replyHint, "")
+      replyHint: effectiveReplyHint
     };
   }
 
@@ -1799,6 +2236,39 @@ Return only the corrected reply text.`
       } else {
         localStorage.setItem(key, String(value));
       }
+    } catch (_err) {}
+  }
+
+  function applyPopupRuntimeStateMessage(message) {
+    if (!message || message.type !== "ce:popup-runtime-state") return false;
+    if (sparkIsPlainObject(message.preferences)) {
+      livePopupPreferencesOverride = sanitizePopupPreferencesOverride(message.preferences);
+      writeLocalStorageValue(POPUP_PREFERENCES_OVERRIDE_CACHE_KEY, stringifyStoredObject(livePopupPreferencesOverride));
+    }
+    if (Object.prototype.hasOwnProperty.call(message, "replyHint")) {
+      hasLivePopupReplyHintOverride = true;
+      livePopupReplyHintOverride = normalizeReplyPromptHint(message.replyHint);
+      writeLocalStorageValue(POPUP_REPLY_HINT_OVERRIDE_CACHE_KEY, livePopupReplyHintOverride);
+      replyPromptHint = livePopupReplyHintOverride;
+    }
+    return true;
+  }
+
+  function installPopupRuntimeStateListener() {
+    if (isPopupContext()) return;
+    try {
+      if (!chrome?.runtime?.onMessage || chrome.runtime.onMessage.__cePopupRuntimeStateBound) return;
+      chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+        const handled = applyPopupRuntimeStateMessage(message);
+        if (handled && typeof sendResponse === "function") {
+          sendResponse({ ok: true });
+        }
+        return false;
+      });
+      Object.defineProperty(chrome.runtime.onMessage, "__cePopupRuntimeStateBound", {
+        value: true,
+        configurable: true
+      });
     } catch (_err) {}
   }
 
@@ -2363,25 +2833,122 @@ Return only the corrected reply text.`
     };
   }
 
-  async function loadLegacyPreferences() {
+  async function loadLegacyPreferences(options = null) {
+    const opts = sparkIsPlainObject(options) ? options : {};
+    const allowDefault = !sparkHasOwn(opts, "allowDefault") || !!opts.allowDefault;
+    const allowCacheFallback = !sparkHasOwn(opts, "allowCacheFallback") || !!opts.allowCacheFallback;
     const storage = chrome?.storage?.local;
     const cachedRaw = readLocalStorageValue(LEGACY_PREFERENCES_CACHE_KEY, "");
-    const cachedAt = sparkToNumber(readLocalStorageValue(LEGACY_PREFERENCES_CACHE_AT_KEY, "0"), 0);
     const cached = cachedRaw
       ? sanitizeLegacyPreferences(parseStoredObject(cachedRaw, getDefaultLegacyPreferences()))
       : null;
-    if (!storage?.get) return cached || getDefaultLegacyPreferences();
+    if (!storage?.get) {
+      if (allowCacheFallback && cached) return cached;
+      return allowDefault ? getDefaultLegacyPreferences() : null;
+    }
+
     const canonicalRaw = await rawStorageGet(storage, LEGACY_PREFERENCES_CANONICAL_KEY);
     const canonicalValue = canonicalRaw?.[LEGACY_PREFERENCES_CANONICAL_KEY];
-    const canonicalAt = sparkToNumber(canonicalRaw?.ce_legacy_preferences_canonical_at, 0);
-    if (cached && cachedAt >= canonicalAt) {
+    if (canonicalValue) {
+      const base = sanitizeLegacyPreferences(parseStoredObject(canonicalValue, getDefaultLegacyPreferences()));
+      const popupOverride = await loadPopupPreferencesOverride();
+      if (sparkIsPlainObject(popupOverride) && Object.keys(popupOverride).length) {
+        return sanitizeLegacyPreferences({
+          ...base,
+          ...popupOverride
+        });
+      }
+      return base;
+    }
+
+    const raw = await rawStorageGet(storage, LEGACY_PREFERENCES_STORAGE_KEY);
+    const legacyValue = raw?.[LEGACY_PREFERENCES_STORAGE_KEY];
+    if (legacyValue) {
+      const base = sanitizeLegacyPreferences(parseStoredObject(legacyValue, getDefaultLegacyPreferences()));
+      const popupOverride = await loadPopupPreferencesOverride();
+      if (sparkIsPlainObject(popupOverride) && Object.keys(popupOverride).length) {
+        return sanitizeLegacyPreferences({
+          ...base,
+          ...popupOverride
+        });
+      }
+      return base;
+    }
+    const popupOverride = await loadPopupPreferencesOverride();
+    if (sparkIsPlainObject(popupOverride) && Object.keys(popupOverride).length) {
+      return sanitizeLegacyPreferences({
+        ...getDefaultLegacyPreferences(),
+        ...popupOverride
+      });
+    }
+    if (allowCacheFallback && cached) return cached;
+    return allowDefault ? getDefaultLegacyPreferences() : null;
+  }
+
+  function sanitizePopupPreferencesOverride(raw) {
+    if (!sparkIsPlainObject(raw)) return {};
+    const out = {};
+    if (sparkHasOwn(raw, "commentLength")) {
+      out.commentLength = resolveCommentLength({ commentLength: raw.commentLength });
+    }
+    if (sparkHasOwn(raw, "commentTone")) {
+      out.commentTone = sparkToString(raw.commentTone, "").trim();
+    }
+    if (sparkHasOwn(raw, "voiceGender")) {
+      out.voiceGender = sparkToString(raw.voiceGender, "").trim();
+    }
+    if (sparkHasOwn(raw, "engageInEnglish")) {
+      out.engageInEnglish = !!raw.engageInEnglish;
+    }
+    if (sparkHasOwn(raw, "commentUseEmojis")) {
+      out.commentUseEmojis = !!raw.commentUseEmojis;
+    }
+    if (sparkHasOwn(raw, "commentEndWithQuestion")) {
+      out.commentEndWithQuestion = !!raw.commentEndWithQuestion;
+    }
+    return out;
+  }
+
+  async function loadPopupPreferencesOverride() {
+    if (sparkIsPlainObject(livePopupPreferencesOverride) && Object.keys(livePopupPreferencesOverride).length) {
+      return sanitizePopupPreferencesOverride(livePopupPreferencesOverride);
+    }
+    const storage = chrome?.storage?.local;
+    const cachedRaw = readLocalStorageValue(POPUP_PREFERENCES_OVERRIDE_CACHE_KEY, "");
+    const cached = cachedRaw
+      ? sanitizePopupPreferencesOverride(parseStoredObject(cachedRaw, {}))
+      : {};
+    if (!storage?.get) return cached;
+
+    try {
+      const raw = await rawStorageGet(storage, POPUP_PREFERENCES_OVERRIDE_KEY);
+      const value = raw?.[POPUP_PREFERENCES_OVERRIDE_KEY];
+      if (!value) return cached;
+      const parsed = typeof value === "string" ? parseStoredObject(value, {}) : value;
+      const next = sanitizePopupPreferencesOverride(parsed);
+      writeLocalStorageValue(POPUP_PREFERENCES_OVERRIDE_CACHE_KEY, stringifyStoredObject(next));
+      return next;
+    } catch (_err) {
       return cached;
     }
-    if (canonicalValue) {
-      return sanitizeLegacyPreferences(parseStoredObject(canonicalValue, getDefaultLegacyPreferences()));
+  }
+
+  async function persistPopupPreferencesOverride(patch) {
+    const incoming = sanitizePopupPreferencesOverride(patch);
+    if (!Object.keys(incoming).length) return await loadPopupPreferencesOverride();
+    const storage = chrome?.storage?.local;
+    const current = await loadPopupPreferencesOverride();
+    const next = sanitizePopupPreferencesOverride({
+      ...current,
+      ...incoming
+    });
+    writeLocalStorageValue(POPUP_PREFERENCES_OVERRIDE_CACHE_KEY, stringifyStoredObject(next));
+    if (storage?.set) {
+      await setStorageValue(storage, {
+        [POPUP_PREFERENCES_OVERRIDE_KEY]: next
+      });
     }
-    const raw = await rawStorageGet(storage, LEGACY_PREFERENCES_STORAGE_KEY);
-    return sanitizeLegacyPreferences(parseStoredObject(raw?.[LEGACY_PREFERENCES_STORAGE_KEY], getDefaultLegacyPreferences()));
+    return next;
   }
 
   async function persistLegacyPreferences(patch) {
@@ -3588,6 +4155,40 @@ Return only the corrected reply text.`
     }, 15_000);
   }
 
+  async function loadPopupReplyHintOverride() {
+    if (hasLivePopupReplyHintOverride) {
+      return normalizeReplyPromptHint(livePopupReplyHintOverride);
+    }
+    const storage = chrome?.storage?.local;
+    const cached = normalizeReplyPromptHint(
+      readLocalStorageValue(POPUP_REPLY_HINT_OVERRIDE_CACHE_KEY, "")
+    );
+    if (!storage?.get) return cached || null;
+    try {
+      const raw = await rawStorageGet(storage, POPUP_REPLY_HINT_OVERRIDE_KEY);
+      if (!Object.prototype.hasOwnProperty.call(raw || {}, POPUP_REPLY_HINT_OVERRIDE_KEY)) {
+        return cached || null;
+      }
+      const next = normalizeReplyPromptHint(raw?.[POPUP_REPLY_HINT_OVERRIDE_KEY]);
+      writeLocalStorageValue(POPUP_REPLY_HINT_OVERRIDE_CACHE_KEY, next);
+      return next;
+    } catch (_err) {
+      return cached || null;
+    }
+  }
+
+  async function persistPopupReplyHintOverride(value) {
+    const storage = chrome?.storage?.local;
+    const next = normalizeReplyPromptHint(value);
+    writeLocalStorageValue(POPUP_REPLY_HINT_OVERRIDE_CACHE_KEY, next);
+    if (storage?.set) {
+      await setStorageValue(storage, {
+        [POPUP_REPLY_HINT_OVERRIDE_KEY]: next
+      });
+    }
+    return next;
+  }
+
   function persistReplyPromptHint() {
     const storage = chrome?.storage?.local;
     replyPromptHint = normalizeReplyPromptHint(replyPromptHint);
@@ -3610,39 +4211,53 @@ Return only the corrected reply text.`
     });
   }
 
-  function loadReplyPromptHint() {
+  function loadReplyPromptHint(options = null) {
+    const opts = sparkIsPlainObject(options) ? options : {};
+    const allowCacheFallback = !sparkHasOwn(opts, "allowCacheFallback") || !!opts.allowCacheFallback;
     const storage = chrome?.storage?.local;
     const cachedHint = normalizeReplyPromptHint(
       readLocalStorageValue(REPLY_PROMPT_HINT_CACHE_KEY, DEFAULT_REPLY_PROMPT_HINT)
     );
-    const cachedAt = sparkToNumber(
-      readLocalStorageValue(REPLY_PROMPT_HINT_CACHE_AT_KEY, "0"),
-      0
+    const popupOverrideCached = normalizeReplyPromptHint(
+      readLocalStorageValue(POPUP_REPLY_HINT_OVERRIDE_CACHE_KEY, "")
     );
-    if (!storage?.get) {
-      replyPromptHint = cachedHint;
-      return Promise.resolve();
+    if (popupOverrideCached) {
+      replyPromptHint = popupOverrideCached;
+      return Promise.resolve(replyPromptHint);
     }
 
-    return new Promise((resolve) => {
+    return new Promise(async (resolve) => {
       try {
-        storage.get(
-          {
-            [REPLY_PROMPT_HINT_KEY]: DEFAULT_REPLY_PROMPT_HINT,
-            ce_reply_prompt_hint_at: 0
-          },
-          (obj) => {
-            const storedAt = sparkToNumber(obj?.ce_reply_prompt_hint_at, 0);
-            const storedHint = normalizeReplyPromptHint(obj?.[REPLY_PROMPT_HINT_KEY]);
-            replyPromptHint = cachedAt >= storedAt
-              ? cachedHint
-              : storedHint || cachedHint;
-            resolve();
-          }
-        );
+        const popupOverrideRaw = storage?.get
+          ? await rawStorageGet(storage, POPUP_REPLY_HINT_OVERRIDE_KEY)
+          : {};
+        const hasPopupOverride = Object.prototype.hasOwnProperty.call(popupOverrideRaw || {}, POPUP_REPLY_HINT_OVERRIDE_KEY);
+        const popupOverride = normalizeReplyPromptHint(popupOverrideRaw?.[POPUP_REPLY_HINT_OVERRIDE_KEY]);
+        if (hasPopupOverride) {
+          replyPromptHint = popupOverride;
+          writeLocalStorageValue(POPUP_REPLY_HINT_OVERRIDE_CACHE_KEY, popupOverride);
+          resolve(replyPromptHint);
+          return;
+        }
+
+        if (!storage?.get) {
+          replyPromptHint = allowCacheFallback ? cachedHint : DEFAULT_REPLY_PROMPT_HINT;
+          resolve(replyPromptHint);
+          return;
+        }
+
+        const raw = await rawStorageGet(storage, REPLY_PROMPT_HINT_KEY);
+        const hasStoredHint = Object.prototype.hasOwnProperty.call(raw || {}, REPLY_PROMPT_HINT_KEY);
+        const storedHint = normalizeReplyPromptHint(raw?.[REPLY_PROMPT_HINT_KEY]);
+        if (hasStoredHint) {
+          replyPromptHint = storedHint;
+        } else {
+          replyPromptHint = allowCacheFallback ? cachedHint : DEFAULT_REPLY_PROMPT_HINT;
+        }
+        resolve(replyPromptHint);
       } catch (_err) {
-        replyPromptHint = cachedHint;
-        resolve();
+        replyPromptHint = allowCacheFallback ? cachedHint : DEFAULT_REPLY_PROMPT_HINT;
+        resolve(replyPromptHint);
       }
     });
   }
@@ -3723,7 +4338,7 @@ Return only the corrected reply text.`
   function patchLegacyCommentScraper(bundleRequire) {
     try {
       const { commentScraper } = bundleRequire?.("3gkXb") || {};
-      if (!commentScraper || commentScraper.__cePasteCommentPatched) return true;
+      if (!commentScraper) return true;
 
       commentScraper.pasteComment = function patchedPasteComment(inputBox, text) {
         const finalText = normalizeSparkOutput(text);
@@ -3749,7 +4364,7 @@ Return only the corrected reply text.`
   function patchLegacyCommentCreator(bundleRequire) {
     try {
       const commentCreator = bundleRequire?.("7DfH5")?.commentCreator;
-      if (!commentCreator || commentCreator.__ceCreateCommentPatched) return true;
+      if (!commentCreator) return true;
 
       const { dev } = bundleRequire("aCTJn");
       const { digerr } = bundleRequire("euMK0");
@@ -3935,12 +4550,38 @@ Return only the corrected reply text.`
             loadReplyPromptHint()
           ]);
 
-          let preferences = await PreferencesModel.load();
-          const canonicalPreferences = await loadLegacyPreferences();
-          preferences = sanitizeLegacyPreferences({
-            ...(sparkIsPlainObject(preferences) ? preferences : {}),
-            ...(sparkIsPlainObject(canonicalPreferences) ? canonicalPreferences : {})
+          const modelPreferencesRaw = await PreferencesModel.load();
+          const modelPreferences = sparkIsPlainObject(modelPreferencesRaw) ? modelPreferencesRaw : {};
+          let preferencesSource = "model";
+          let replyHintSource = "cache";
+          let preferences = sanitizeLegacyPreferences({
+            ...modelPreferences,
+            commentLength: resolveCommentLength(modelPreferences)
           });
+          const canonicalPreferences = await loadLegacyPreferences({
+            allowDefault: false,
+            allowCacheFallback: false
+          });
+          if (sparkIsPlainObject(canonicalPreferences)) {
+            preferences = sanitizeLegacyPreferences({
+              ...preferences,
+              ...canonicalPreferences
+            });
+            preferencesSource = "canonical";
+          }
+          const popupPreferencesOverride = await loadPopupPreferencesOverride();
+          if (sparkIsPlainObject(popupPreferencesOverride) && Object.keys(popupPreferencesOverride).length) {
+            preferences = sanitizeLegacyPreferences({
+              ...preferences,
+              ...popupPreferencesOverride
+            });
+            preferencesSource = "popup";
+          }
+          const popupReplyHintOverride = await loadPopupReplyHintOverride();
+          const effectiveReplyHint = popupReplyHintOverride !== null
+            ? popupReplyHintOverride
+            : (replyPromptHint || "");
+          replyHintSource = popupReplyHintOverride !== null ? "popup" : (effectiveReplyHint ? "legacy" : "empty");
           const isAutomation = button.hasAttribute(types.DataAttribute.IsAutomation);
 
           const profile = await profiler.loadProfile();
@@ -3980,28 +4621,41 @@ Return only the corrected reply text.`
           const generationProfile = resolveCommentGenerationProfile(preferences);
           let commentText = "";
           try {
-            commentText = await api.generateComment(
-              postAuthorSeat,
-              urn,
-              postAuthor,
-              postText,
-              {
-                ...preferences,
-                replyHint: replyPromptHint || ""
-              }
-            );
+            if (typeof window.__ceSparkGenerateComment === "function") {
+              commentText = await window.__ceSparkGenerateComment({
+                postAuthorSeat,
+                urn,
+                postAuthor,
+                postText,
+                preferences,
+                replyHint: effectiveReplyHint,
+                linkedInUiLanguage: currentLang
+              });
+            }
+            if (!commentText) {
+              commentText = await api.generateComment(
+                postAuthorSeat,
+                urn,
+                postAuthor,
+                postText,
+                {
+                  ...preferences,
+                  replyHint: effectiveReplyHint
+                }
+              );
+            }
           } catch (_err) {
             commentText = buildCommentFallbackText({
               postAuthor,
               postText,
               preferences,
-              replyHint: replyPromptHint || ""
+              replyHint: effectiveReplyHint
             }, generationProfile);
             commentText = enforceCommentByPreference(commentText, {
               postAuthor,
               postText,
               preferences,
-              replyHint: replyPromptHint || "",
+              replyHint: effectiveReplyHint,
               __ceEffectiveLength: generationProfile.length
             });
           }
@@ -4011,7 +4665,7 @@ Return only the corrected reply text.`
             postAuthor,
             postText,
             preferences,
-            replyHint: replyPromptHint || "",
+            replyHint: effectiveReplyHint,
             __ceEffectiveLength: generationProfile.length
           });
           if (typeof commentText === "string") {
@@ -4030,7 +4684,13 @@ Return only the corrected reply text.`
           commentText = ensureParagraphCount(commentText, finalParagraphCount, true);
           commentText = splitCommentParagraphs(commentText).map(ensureParagraphCompleteThought).filter(Boolean).join("\n\n");
           commentText = enforceEmojiByPreference(commentText, preferences);
-          commentText = ensureEndingEmojiByHint(commentText, { replyHint: replyPromptHint || "" });
+          commentText = ensureEndingEmojiByHint(commentText, { replyHint: effectiveReplyHint });
+          let actualParagraphCount = splitCommentParagraphs(commentText).length;
+          if (actualParagraphCount !== finalParagraphCount) {
+            commentText = ensureParagraphCount(commentText, finalParagraphCount, true);
+            commentText = splitCommentParagraphs(commentText).map(ensureParagraphCompleteThought).filter(Boolean).join("\n\n");
+            actualParagraphCount = splitCommentParagraphs(commentText).length;
+          }
 
           if (typeof commentText !== "string" || !commentText.trim()) {
             throw new Error("API generateComment normalized to empty result");
@@ -4042,7 +4702,24 @@ Return only the corrected reply text.`
             return;
           }
 
-          commentScraper.pasteComment(inputBox, commentText);
+          const requestedParagraphs = splitCommentParagraphs(commentText);
+          const editorPasteOk = await pasteCommentIntoLinkedInEditorAndVerify(inputBox, commentText);
+          const editorParagraphCount = readEditableParagraphCount(inputBox);
+          toast.info(
+            `评论调试：配置${preferences.commentLength}(${preferencesSource})，目标${finalParagraphCount}段，生成${actualParagraphCount}段，编辑器${editorParagraphCount}段，提示语=${effectiveReplyHint ? `已生效(${replyHintSource})` : "为空"}`
+          );
+          if (!editorPasteOk) {
+            debugCommentTrace("paste-blocked-incomplete", {
+              requestedParagraphs: requestedParagraphs.length,
+              editorParagraphs: editorParagraphCount,
+              editorText: readEditableNormalizedText(inputBox),
+              finalText: commentText
+            });
+            toast.info("评论未完整写入，已停止自动发送。");
+            await finish();
+            return;
+          }
+
           const submitButton = await waitForSubmitButton(container, inputBox, null, 4_000, 250, false);
           if (!submitButton) {
             toast.info("Couldn't find comment send button.");
@@ -4113,6 +4790,16 @@ Return only the corrected reply text.`
 
                 try {
                   if (isSubmitButtonClickable(readyButton)) {
+                    if (!hasInsertedAllParagraphs(inputBox, requestedParagraphs)) {
+                      debugCommentTrace("auto-send-blocked-incomplete-paste", {
+                        ...tracePayload,
+                        requestedParagraphs: requestedParagraphs.length,
+                        editorParagraphs: readEditableParagraphCount(inputBox),
+                        editorText: readEditableNormalizedText(inputBox)
+                      });
+                      toast.info("评论未完整写入，已停止自动发送。");
+                      return;
+                    }
                     debugCommentTrace("auto-send-click", tracePayload);
                     triggerSubmitButtonClick(readyButton);
                     await helper.delay(1_200);
@@ -6815,11 +7502,20 @@ Return only the corrected reply text.`
       ]).catch(() => {});
       void syncGasGxDerivedStorage().catch(() => {});
 
-      const [preferences, linkedInProfile, linkedInUiLanguage] = await Promise.all([
+      const [preferences, popupOverrides, popupReplyHintOverride, linkedInProfile, linkedInUiLanguage] = await Promise.all([
         loadLegacyPreferences(),
+        loadPopupPreferencesOverride(),
+        loadPopupReplyHintOverride(),
         probeActiveLinkedInProfile(),
         probeActiveLinkedInPageLanguage()
       ]);
+      const mergedPreferences = sanitizeLegacyPreferences({
+        ...(sparkIsPlainObject(preferences) ? preferences : {}),
+        ...(sparkIsPlainObject(popupOverrides) ? popupOverrides : {})
+      });
+      const effectiveReplyHint = popupReplyHintOverride !== null
+        ? popupReplyHintOverride
+        : (replyPromptHint || "");
 
       if (linkedInUiLanguage && linkedInUiLanguage !== currentLang) {
         applyPopupShellLanguage(linkedInUiLanguage);
@@ -6830,7 +7526,7 @@ Return only the corrected reply text.`
         lang: currentLang,
         linkedInProfile,
         gasgxAuth: sanitizeGasGxAuthSnapshot(authSnapshot),
-        preferences,
+        preferences: mergedPreferences,
         randomStrategy: {
           randomToneEnabled: !!randomToneEnabled,
           randomLengthEnabled: !!randomLengthEnabled
@@ -6840,7 +7536,7 @@ Return only the corrected reply text.`
           minSec: autoSendDelayMinSec,
           maxSec: autoSendDelayMaxSec
         },
-        replyHint: replyPromptHint || ""
+        replyHint: effectiveReplyHint
       };
     };
 
@@ -6933,7 +7629,7 @@ Return only the corrected reply text.`
       await ensurePopupGasGxVerified();
       replyPromptHint = normalizeReplyPromptHint(value);
       await persistReplyPromptHint();
-      return replyPromptHint;
+      return await persistPopupReplyHintOverride(replyPromptHint);
     };
 
     const openGasGx = async () => {
@@ -6969,7 +7665,12 @@ Return only the corrected reply text.`
       setLanguage: async (lang) => applyPopupShellLanguage(lang),
       savePreferences: async (patch) => {
         await ensurePopupGasGxVerified();
-        return await persistLegacyPreferences(patch);
+        const next = await persistLegacyPreferences(patch);
+        const override = await persistPopupPreferencesOverride(patch);
+        return sanitizeLegacyPreferences({
+          ...(sparkIsPlainObject(next) ? next : {}),
+          ...(sparkIsPlainObject(override) ? override : {})
+        });
       },
       saveRandomStrategy,
       saveAutoSend,
@@ -6992,6 +7693,7 @@ Return only the corrected reply text.`
   setupAutoSendDelayRuntime();
   setupRandomStrategyRuntime();
   setupReplyPromptHintRuntime();
+  installPopupRuntimeStateListener();
   setupSparkRuntime();
   installPopupExecuteScriptPatch();
   installPopupLegacyXhrMock();

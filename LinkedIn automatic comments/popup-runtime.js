@@ -157,6 +157,12 @@
   let errorMessage = "";
   let removeAuthListener = () => {};
 
+  const LEGACY_PREFERENCES_STORAGE_KEY = "preferences";
+  const LEGACY_PREFERENCES_CANONICAL_KEY = "ce_legacy_preferences_canonical";
+  const POPUP_PREFERENCES_OVERRIDE_KEY = "ce_popup_preferences_override";
+  const REPLY_PROMPT_HINT_KEY = "ce_reply_prompt_hint";
+  const POPUP_REPLY_HINT_OVERRIDE_KEY = "ce_popup_reply_hint_override";
+
   function isGasGxVerified(auth = state?.gasgxAuth) {
     return auth?.status === "enabled" && !!auth?.profileEnabled;
   }
@@ -216,6 +222,87 @@
     if (text.includes("退出登录") && text.includes("失败")) return "退出失败";
     if (text.includes("验证中")) return "验证中";
     return "请检查";
+  }
+
+  function normalizePreferencePatch(preferences) {
+    const source = preferences && typeof preferences === "object" ? preferences : {};
+    return {
+      ...source,
+      commentLength: Math.max(1, Math.min(3, Math.round(Number(source.commentLength || 2)))),
+      commentTone: String(source.commentTone || "Polite"),
+      voiceGender: String(source.voiceGender || "NotSpecified"),
+      engageInEnglish: !!source.engageInEnglish,
+      commentUseEmojis: !!source.commentUseEmojis,
+      commentEndWithQuestion: !!source.commentEndWithQuestion
+    };
+  }
+
+  function stringifyLegacyStoredObject(value) {
+    try {
+      return JSON.stringify(JSON.stringify(value ?? {}));
+    } catch (_err) {
+      return "\"{}\"";
+    }
+  }
+
+  function setLocalStorageItems(items) {
+    return new Promise((resolve) => {
+      try {
+        if (!chrome?.storage?.local?.set) {
+          resolve();
+          return;
+        }
+        chrome.storage.local.set(items, () => resolve());
+      } catch (_err) {
+        resolve();
+      }
+    });
+  }
+
+  async function sendRuntimeStateToActiveLinkedInTab(payload) {
+    try {
+      if (!chrome?.tabs?.query || !chrome?.tabs?.sendMessage) return;
+      const tabs = await new Promise((resolve) => {
+        try {
+          chrome.tabs.query({ active: true, currentWindow: true }, (result) => resolve(Array.isArray(result) ? result : []));
+        } catch (_err) {
+          resolve([]);
+        }
+      });
+      const tab = tabs.find((item) => /^https:\/\/www\.linkedin\.com\//i.test(String(item?.url || "")));
+      if (!tab?.id) return;
+      await new Promise((resolve) => {
+        try {
+          chrome.tabs.sendMessage(tab.id, { type: "ce:popup-runtime-state", ...payload }, () => resolve());
+        } catch (_err) {
+          resolve();
+        }
+      });
+    } catch (_err) {}
+  }
+
+  async function persistPreferencesDirectly(preferences) {
+    const next = normalizePreferencePatch(preferences);
+    const persistedAt = Date.now();
+    await setLocalStorageItems({
+      [POPUP_PREFERENCES_OVERRIDE_KEY]: next,
+      [LEGACY_PREFERENCES_STORAGE_KEY]: stringifyLegacyStoredObject(next),
+      [LEGACY_PREFERENCES_CANONICAL_KEY]: JSON.stringify(next),
+      ce_legacy_preferences_canonical_at: persistedAt
+    });
+    await sendRuntimeStateToActiveLinkedInTab({ preferences: next });
+    return next;
+  }
+
+  async function persistReplyHintDirectly(value) {
+    const next = String(value ?? "").replace(/\s+/g, " ").trim().slice(0, 240);
+    await setLocalStorageItems({
+      [POPUP_REPLY_HINT_OVERRIDE_KEY]: next,
+      [REPLY_PROMPT_HINT_KEY]: next,
+      ce_reply_prompt_hint_at: Date.now()
+    });
+    await sendRuntimeStateToActiveLinkedInTab({ replyHint: next });
+    return next;
   }
 
   function getGasGxCardState(auth) {
@@ -542,6 +629,10 @@
       state.lang = "zh-CN";
       activeTab = isGasGxVerified(state?.gasgxAuth) ? "preferences" : "account";
       render();
+      if (isGasGxVerified(state?.gasgxAuth)) {
+        await persistPreferencesDirectly(state?.preferences || {});
+        await persistReplyHintDirectly(state?.replyHint || "");
+      }
     } catch (_err) {
       renderError(getCopy("en").genericError);
     }
@@ -577,11 +668,16 @@
       state.preferences = nextPreferences;
       errorMessage = "";
       render();
-      state.preferences = await runtime.savePreferences({ [key]: value });
+      await persistPreferencesDirectly(nextPreferences);
+      const savedPreferences = await runtime.savePreferences({ [key]: value });
+      state.preferences = normalizePreferencePatch({
+        ...(savedPreferences || {}),
+        ...nextPreferences
+      });
       pendingPreferenceKey = "";
       render();
     } catch (_err) {
-      state.preferences = previousPreferences;
+      state.preferences = nextPreferences;
       pendingPreferenceKey = "";
       setError(t("saveFailed"));
     }
@@ -636,12 +732,61 @@
     const input = root.querySelector("#pref-reply-hint");
     if (!(input instanceof HTMLTextAreaElement)) return;
     try {
+      state.replyHint = await persistReplyHintDirectly(input.value);
       state.replyHint = await runtime.saveReplyHint(input.value);
       input.value = state.replyHint;
       errorMessage = "";
     } catch (_err) {
+      state.replyHint = await persistReplyHintDirectly(input.value);
+      input.value = state.replyHint;
       setError(t("saveFailed"));
     }
+  }
+
+  function readPreferenceSnapshotFromDom() {
+    const readCheckbox = (selector, fallback) => {
+      const node = root.querySelector(selector);
+      return node instanceof HTMLInputElement ? !!node.checked : !!fallback;
+    };
+    const readSelect = (selector, fallback) => {
+      const node = root.querySelector(selector);
+      return node instanceof HTMLSelectElement ? String(node.value) : String(fallback);
+    };
+
+    return {
+      commentLength: Number(readSelect("#pref-comment-length", state?.preferences?.commentLength ?? 2)),
+      commentTone: readSelect("#pref-comment-tone", state?.preferences?.commentTone ?? "Polite"),
+      voiceGender: readSelect("#pref-voice-gender", state?.preferences?.voiceGender ?? "NotSpecified"),
+      engageInEnglish: readCheckbox("#pref-engage-english", state?.preferences?.engageInEnglish),
+      commentUseEmojis: readCheckbox("#pref-use-emojis", state?.preferences?.commentUseEmojis),
+      commentEndWithQuestion: readCheckbox("#pref-open-ended", state?.preferences?.commentEndWithQuestion)
+    };
+  }
+
+  async function flushPendingPreferenceState() {
+    if (!runtime || activeTab !== "preferences" || !isGasGxVerified()) return;
+
+    const snapshot = readPreferenceSnapshotFromDom();
+    const current = state?.preferences || {};
+    const patch = {};
+    for (const key of Object.keys(snapshot)) {
+      if (snapshot[key] !== current[key]) {
+        patch[key] = snapshot[key];
+      }
+    }
+
+    try {
+      await persistPreferencesDirectly(snapshot);
+      if (Object.keys(patch).length) {
+        state.preferences = await runtime.savePreferences(patch);
+      }
+    } catch (_err) {}
+
+    try {
+      clearTimeout(replyHintSaveTimer);
+      replyHintSaveTimer = 0;
+      await saveReplyHint();
+    } catch (_err) {}
   }
 
   function scheduleSaveReplyHint() {
@@ -793,7 +938,18 @@
       render();
     });
 
+    const flushOnExit = () => {
+      void flushPendingPreferenceState();
+    };
+
+    window.addEventListener("pagehide", flushOnExit, { once: true });
+    window.addEventListener("beforeunload", flushOnExit, { once: true });
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") flushOnExit();
+    });
+
     window.addEventListener("unload", () => {
+      flushOnExit();
       removeAuthListener();
     }, { once: true });
 
